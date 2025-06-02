@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Burnin Test Dashboard",
   description: "View Test Summaries, and Individual Tests",
+  icons: "/logo.png"
 };
 
 export default function RootLayout({

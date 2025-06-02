@@ -14,6 +14,16 @@ interface SummaryStats {
   failureRate: number;
 }
 
+interface TestRecord {
+  test_id: number;
+  inv_id: number;
+  firmware_version: string;
+  duration: number;
+  non_zero_status_flags: number;
+  passed: boolean;
+  failure_reason: string | null;
+}
+
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432'),
@@ -59,6 +69,42 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(summaryStats);
     }
     
+    if (view === 'tests') {
+      // Get detailed test records for the data table
+      const testsQuery = `
+        SELECT
+          t.test_id,
+          t.inv_id,
+          t.firmware_version,
+          EXTRACT(EPOCH FROM (t.end_time - t.start_time)) * 1000 as duration,
+          (
+            CASE WHEN t.ac_status IS NOT NULL AND t.ac_status != '' THEN 1 ELSE 0 END +
+            CASE WHEN t.ch1_status IS NOT NULL AND t.ch1_status != '' THEN 1 ELSE 0 END +
+            CASE WHEN t.ch2_status IS NOT NULL AND t.ch2_status != '' THEN 1 ELSE 0 END +
+            CASE WHEN t.ch3_status IS NOT NULL AND t.ch3_status != '' THEN 1 ELSE 0 END +
+            CASE WHEN t.ch4_status IS NOT NULL AND t.ch4_status != '' THEN 1 ELSE 0 END
+          ) as non_zero_status_flags,
+          (t.overall_status = 'PASS') as passed,
+          t.failure_description as failure_reason
+        FROM Tests t
+        ORDER BY t.start_time DESC
+        LIMIT 100
+      `;
+      const result = await client.query(testsQuery);
+
+      const tests: TestRecord[] = result.rows.map(row => ({
+        test_id: row.test_id,
+        inv_id: row.inv_id,
+        firmware_version: row.firmware_version || 'Unknown',
+        duration: Math.round(row.duration) || 0,
+        non_zero_status_flags: row.non_zero_status_flags || 0,
+        passed: row.passed || false,
+        failure_reason: row.failure_reason || null,
+      }));
+
+      return NextResponse.json(tests);
+    }
+
     // Default: return daily statistics
     const query = `
       SELECT 
