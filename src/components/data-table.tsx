@@ -26,6 +26,7 @@ import { z } from "zod"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import {
@@ -57,6 +58,7 @@ export const testSchema = z.object({
   non_zero_status_flags: z.number(),
   passed: z.boolean(),
   failure_reason: z.string().nullable(),
+  start_time: z.string(),
 })
 
 const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
@@ -69,6 +71,9 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
       </div>
     ),
     enableHiding: false,
+    filterFn: (row, id, value) => {
+      return row.getValue(id).toString().toLowerCase().includes(value.toLowerCase())
+    },
   },
   {
     accessorKey: "firmware_version",
@@ -78,6 +83,36 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
         {row.original.firmware_version}
       </div>
     ),
+  },
+  {
+    accessorKey: "start_time",
+    header: "Test Date",
+    cell: ({ row }) => {
+      const date = new Date(row.original.start_time);
+      return (
+        <div className="w-32 text-sm">
+          {date.toLocaleDateString()} {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </div>
+      );
+    },
+    filterFn: (row, id, value) => {
+      const rowDate = new Date(row.getValue(id) as string)
+      const { from, to } = value as { from: string, to: string }
+      if (from && to) {
+        const fromDate = new Date(from)
+        const toDate = new Date(to)
+        toDate.setHours(23, 59, 59, 999) // Include the entire day
+        return rowDate >= fromDate && rowDate <= toDate
+      } else if (from) {
+        const fromDate = new Date(from)
+        return rowDate >= fromDate
+      } else if (to) {
+        const toDate = new Date(to)
+        toDate.setHours(23, 59, 59, 999) // Include the entire day
+        return rowDate <= toDate
+      }
+      return true
+    },
   },
   {
     accessorKey: "duration",
@@ -95,17 +130,6 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
     },
   },
   {
-    accessorKey: "non_zero_status_flags",
-    header: "Status Flags",
-    cell: ({ row }) => (
-      <div className="w-16 text-center">
-        <Badge variant={row.original.non_zero_status_flags > 0 ? "destructive" : "secondary"} className="text-xs">
-          {row.original.non_zero_status_flags}
-        </Badge>
-      </div>
-    ),
-  },
-  {
     accessorKey: "passed",
     header: "Result",
     cell: ({ row }) => (
@@ -120,15 +144,9 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
         )}
       </Badge>
     ),
-  },
-  {
-    accessorKey: "failure_reason",
-    header: "Failure Reason",
-    cell: ({ row }) => (
-      <div className="max-w-48 truncate text-sm text-muted-foreground">
-        {row.original.failure_reason || "-"}
-      </div>
-    ),
+    filterFn: (row, id, value) => {
+      return row.getValue(id) === value
+    },
   },
 ]
 
@@ -146,6 +164,11 @@ export function DataTable() {
     pageIndex: 0,
     pageSize: 10,
   })
+  // Filter states
+  const [serialSearch, setSerialSearch] = React.useState("")
+  const [statusFilter, setStatusFilter] = React.useState("all")
+  const [dateFromFilter, setDateFromFilter] = React.useState("")
+  const [dateToFilter, setDateToFilter] = React.useState("")
 
   const handleRowClick = (testId: number) => {
     router.push(`/test/${testId}`)
@@ -169,6 +192,37 @@ export function DataTable() {
 
     fetchData()
   }, [])
+
+  // Apply filters to table
+  React.useEffect(() => {
+    const filters: ColumnFiltersState = []
+
+    // Serial number search
+    if (serialSearch) {
+      filters.push({
+        id: "serial_number",
+        value: serialSearch,
+      })
+    }
+
+    // Status filter
+    if (statusFilter !== "all") {
+      filters.push({
+        id: "passed",
+        value: statusFilter === "passed",
+      })
+    }
+
+    // Date range filter
+    if (dateFromFilter || dateToFilter) {
+      filters.push({
+        id: "start_time",
+        value: { from: dateFromFilter, to: dateToFilter },
+      })
+    }
+
+    setColumnFilters(filters)
+  }, [serialSearch, statusFilter, dateFromFilter, dateToFilter])
 
   const table = useReactTable({
     data: data || [],
@@ -209,6 +263,73 @@ export function DataTable() {
         value="outline"
         className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6"
       >
+        {/* Filters Section */}
+        <div className="flex flex-col gap-4 rounded-lg border p-4 bg-muted/50">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end">
+            {/* Search Input */}
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="serial-search">Search Serial Number</Label>
+              <Input
+                id="serial-search"
+                placeholder="Enter inverter serial number..."
+                value={serialSearch}
+                onChange={(e) => setSerialSearch(e.target.value)}
+                className="max-w-sm"
+              />
+            </div>
+
+            {/* Status Filter */}
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="passed">Pass</SelectItem>
+                  <SelectItem value="failed">Fail</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Date Range Filters */}
+            <div className="flex gap-2">
+              <div className="space-y-2">
+                <Label htmlFor="date-from">From Date</Label>
+                <Input
+                  id="date-from"
+                  type="date"
+                  value={dateFromFilter}
+                  onChange={(e) => setDateFromFilter(e.target.value)}
+                  className="w-40"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="date-to">To Date</Label>
+                <Input
+                  id="date-to"
+                  type="date"
+                  value={dateToFilter}
+                  onChange={(e) => setDateToFilter(e.target.value)}
+                  className="w-40"
+                />
+              </div>
+            </div>
+            {/* Clear Filters Button */}
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSerialSearch("")
+                setStatusFilter("all")
+                setDateFromFilter("")
+                setDateToFilter("")
+              }}
+              className="h-10"
+            >
+              Clear Filters
+            </Button>
+          </div>
+        </div>
         <div className="overflow-hidden rounded-lg border">
           <Table>
             <TableHeader className="bg-muted sticky top-0 z-10">

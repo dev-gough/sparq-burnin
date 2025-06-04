@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Area, AreaChart, CartesianGrid, XAxis } from "recharts"
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import {
@@ -193,6 +193,17 @@ export function ChartAreaInteractive() {
                   month: "short",
                   day: "numeric",
                 })
+              }}
+            />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              label={{
+                value: 'Number of Tests',
+                angle: -90,
+                position: 'insideLeft',
+                style: { textAnchor: 'middle' }
               }}
             />
             <ChartTooltip

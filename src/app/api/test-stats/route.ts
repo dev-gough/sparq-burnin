@@ -23,6 +23,7 @@ interface TestRecord {
   non_zero_status_flags: number;
   passed: boolean;
   failure_reason: string | null;
+  start_time: string;
 }
 
 const dbConfig = {
@@ -87,7 +88,8 @@ export async function GET(request: NextRequest) {
             CASE WHEN t.ch4_status IS NOT NULL AND t.ch4_status != '' THEN 1 ELSE 0 END
           ) as non_zero_status_flags,
           (t.overall_status = 'PASS') as passed,
-          t.failure_description as failure_reason
+          t.failure_description as failure_reason,
+          t.start_time
         FROM Tests t
         JOIN Inverters i ON t.inv_id = i.inv_id
         ORDER BY t.start_time DESC
@@ -104,6 +106,7 @@ export async function GET(request: NextRequest) {
         non_zero_status_flags: row.non_zero_status_flags || 0,
         passed: row.passed || false,
         failure_reason: row.failure_reason || null,
+        start_time: row.start_time ? row.start_time.toISOString() : '',
       }));
 
       return NextResponse.json(tests);

@@ -13,6 +13,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 interface TestData {
   test_id: number
   inv_id: number
+  serial_number: string
   firmware_version: string
   start_time: string
   end_time: string
@@ -228,7 +229,8 @@ export default function TestPage() {
 
       <div className="space-y-4">
         <div>
-          <h1 className="text-3xl font-bold">Inverter {testData.inv_id}</h1>
+          <h1 className="text-3xl font-bold">Inverter S/N: {testData.serial_number}</h1>
+          <h2 className="text-xl text-muted-foreground">Test {testData.test_id}</h2>
           <p className="text-lg text-muted-foreground">{startDate}</p>
           <div className="flex items-center gap-2 mt-2">
             <Badge variant={testData.overall_status === 'PASS' ? 'default' : 'destructive'}>

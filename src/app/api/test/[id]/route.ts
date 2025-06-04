@@ -33,6 +33,7 @@ interface DataPoint {
 interface TestData {
   test_id: number;
   inv_id: number;
+  serial_number: string;
   firmware_version: string;
   start_time: string;
   end_time: string;
@@ -70,15 +71,17 @@ export async function GET(
     // Get test metadata
     const testQuery = `
       SELECT 
-        test_id,
-        inv_id,
-        firmware_version,
-        start_time,
-        end_time,
-        overall_status,
-        failure_description
-      FROM Tests 
-      WHERE test_id = $1
+        t.test_id,
+        t.inv_id,
+        i.serial_number,
+        t.firmware_version,
+        t.start_time,
+        t.end_time,
+        t.overall_status,
+        t.failure_description
+      FROM Tests t
+      JOIN Inverters i ON t.inv_id = i.inv_id
+      WHERE t.test_id = $1
     `;
     
     const testResult = await client.query(testQuery, [testId]);
@@ -112,6 +115,7 @@ export async function GET(
     const testData: TestData = {
       test_id: testInfo.test_id,
       inv_id: testInfo.inv_id,
+      serial_number: testInfo.serial_number || 'Unknown',
       firmware_version: testInfo.firmware_version || 'Unknown',
       start_time: testInfo.start_time.toISOString(),
       end_time: testInfo.end_time?.toISOString() || new Date().toISOString(),
