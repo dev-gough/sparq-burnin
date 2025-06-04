@@ -28,7 +28,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import Link from "next/link"
 import {
   Select,
   SelectContent,
@@ -72,7 +71,7 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
     ),
     enableHiding: false,
     filterFn: (row, id, value) => {
-      return row.getValue(id).toString().toLowerCase().includes(value.toLowerCase())
+      return (row.getValue(id) as string).toLowerCase().includes(value.toLowerCase())
     },
   },
   {

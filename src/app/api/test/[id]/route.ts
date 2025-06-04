@@ -3,19 +3,30 @@ import { Client } from 'pg';
 
 interface DataPoint {
   timestamp: string;
-  Vpv1?: number;
-  Ppv1?: number;
-  Vpv2?: number;
-  Ppv2?: number;
-  Vpv3?: number;
-  Ppv3?: number;
-  Vpv4?: number;
-  Ppv4?: number;
+  vgrid?: number;
+  pgrid?: number;
+  qgrid?: number;
+  vpv1?: number;
+  ppv1?: number;
+  vpv2?: number;
+  ppv2?: number;
+  vpv3?: number;
+  ppv3?: number;
+  vpv4?: number;
+  ppv4?: number;
   frequency?: number;
-  Vgrid?: number;
-  Pgrid?: number;
-  Qgrid?: number;
-  Vbus?: number;
+  vbus?: number;
+  extstatus?: number;
+  status?: number;
+  temperature?: number;
+  epv1?: number;
+  epv2?: number;
+  epv3?: number;
+  epv4?: number;
+  activeenergy?: number;
+  reactiveenergy?: number;
+  extstatus_latch?: string;
+  status_latch?: string;
   vgrid_inst_latch?: number;
   vntrl_inst_latch?: number;
   igrid_inst_latch?: number;
@@ -28,6 +39,7 @@ interface DataPoint {
   ipv3_inst_latch?: number;
   vpv4_inst_latch?: number;
   ipv4_inst_latch?: number;
+  status_bits?: string;
 }
 
 interface TestData {
@@ -95,16 +107,9 @@ export async function GET(
     
     const testInfo = testResult.rows[0];
     
-    // Get test data points
+    // Get test data points - select ALL columns
     const dataQuery = `
-      SELECT 
-        timestamp,
-        vpv1, ppv1, vpv2, ppv2, vpv3, ppv3, vpv4, ppv4,
-        frequency,
-        vgrid, pgrid, qgrid, vbus,
-        vgrid_inst_latch, vntrl_inst_latch, igrid_inst_latch, vbus_inst_latch,
-        vpv1_inst_latch, ipv1_inst_latch, vpv2_inst_latch, ipv2_inst_latch,
-        vpv3_inst_latch, ipv3_inst_latch, vpv4_inst_latch, ipv4_inst_latch
+      SELECT *
       FROM TestData 
       WHERE test_id = $1 
       ORDER BY timestamp ASC
@@ -121,34 +126,14 @@ export async function GET(
       end_time: testInfo.end_time?.toISOString() || new Date().toISOString(),
       overall_status: testInfo.overall_status,
       failure_description: testInfo.failure_description,
-      data_points: dataResult.rows.map(row => ({
-        timestamp: row.timestamp.toISOString(),
-        Vpv1: row.vpv1,
-        Ppv1: row.ppv1,
-        Vpv2: row.vpv2,
-        Ppv2: row.ppv2,
-        Vpv3: row.vpv3,
-        Ppv3: row.ppv3,
-        Vpv4: row.vpv4,
-        Ppv4: row.ppv4,
-        frequency: row.frequency,
-        Vgrid: row.vgrid,
-        Pgrid: row.pgrid,
-        Qgrid: row.qgrid,
-        Vbus: row.vbus,
-        vgrid_inst_latch: row.vgrid_inst_latch,
-        vntrl_inst_latch: row.vntrl_inst_latch,
-        igrid_inst_latch: row.igrid_inst_latch,
-        vbus_inst_latch: row.vbus_inst_latch,
-        vpv1_inst_latch: row.vpv1_inst_latch,
-        ipv1_inst_latch: row.ipv1_inst_latch,
-        vpv2_inst_latch: row.vpv2_inst_latch,
-        ipv2_inst_latch: row.ipv2_inst_latch,
-        vpv3_inst_latch: row.vpv3_inst_latch,
-        ipv3_inst_latch: row.ipv3_inst_latch,
-        vpv4_inst_latch: row.vpv4_inst_latch,
-        ipv4_inst_latch: row.ipv4_inst_latch,
-      }))
+      data_points: dataResult.rows.map(row => {
+        // Convert timestamp to ISO string, keep all other fields as-is
+        const point = { ...row };
+        if (point.timestamp) {
+          point.timestamp = point.timestamp.toISOString();
+        }
+        return point;
+      })
     };
     
     return NextResponse.json(testData);

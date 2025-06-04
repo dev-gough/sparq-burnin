@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft } from "lucide-react"
+import { Label } from "@/components/ui/label"
+import { ArrowLeft, ZoomIn, ZoomOut, RotateCcw, Download } from "lucide-react"
 import Link from "next/link"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
 
@@ -24,19 +25,30 @@ interface TestData {
 
 interface DataPoint {
   timestamp: string
-  Vpv1?: number
-  Ppv1?: number
-  Vpv2?: number
-  Ppv2?: number
-  Vpv3?: number
-  Ppv3?: number
-  Vpv4?: number
-  Ppv4?: number
+  vgrid?: number
+  pgrid?: number
+  qgrid?: number
+  vpv1?: number
+  ppv1?: number
+  vpv2?: number
+  ppv2?: number
+  vpv3?: number
+  ppv3?: number
+  vpv4?: number
+  ppv4?: number
   frequency?: number
-  Vgrid?: number
-  Pgrid?: number
-  Qgrid?: number
-  Vbus?: number
+  vbus?: number
+  extstatus?: number
+  status?: number
+  temperature?: number
+  epv1?: number
+  epv2?: number
+  epv3?: number
+  epv4?: number
+  activeenergy?: number
+  reactiveenergy?: number
+  extstatus_latch?: string
+  status_latch?: string
   vgrid_inst_latch?: number
   vntrl_inst_latch?: number
   igrid_inst_latch?: number
@@ -49,10 +61,11 @@ interface DataPoint {
   ipv3_inst_latch?: number
   vpv4_inst_latch?: number
   ipv4_inst_latch?: number
+  status_bits?: string
 }
 
-const pvColumns = ["Vpv1", "Ppv1", "Vpv2", "Ppv2", "Vpv3", "Ppv3", "Vpv4", "Ppv4", "frequency"]
-const gridColumns = ["Vgrid", "Pgrid", "Qgrid", "Vbus"]
+const pvColumns = ["vpv1", "ppv1", "vpv2", "ppv2", "vpv3", "ppv3", "vpv4", "ppv4", "frequency"]
+const gridColumns = ["vgrid", "pgrid", "qgrid", "vbus"]
 const latchColumns = [
   "vgrid_inst_latch", "vntrl_inst_latch", "igrid_inst_latch", "vbus_inst_latch",
   "vpv1_inst_latch", "ipv1_inst_latch", "vpv2_inst_latch", "ipv2_inst_latch", 
@@ -76,6 +89,10 @@ function ConfigurableChart({
   const [selectedColumns, setSelectedColumns] = useState<Set<string>>(
     new Set(availableColumns.slice(0, 3))
   )
+  // Zoom controls
+  const [zoomStart, setZoomStart] = useState(0)
+  const [zoomEnd, setZoomEnd] = useState(100)
+  const [zoomLevel, setZoomLevel] = useState(1)
 
   const toggleColumn = (column: string) => {
     const newSelected = new Set(selectedColumns)
@@ -87,17 +104,110 @@ function ConfigurableChart({
     setSelectedColumns(newSelected)
   }
 
-  const chartData = data.map(point => ({
+  // Calculate zoom range
+  const totalPoints = data.length
+  const startIndex = Math.floor((zoomStart / 100) * totalPoints)
+  const endIndex = Math.ceil((zoomEnd / 100) * totalPoints)
+  const zoomedData = data.slice(startIndex, endIndex)
+
+  const chartData = zoomedData.map((point, index) => ({
     timestamp: new Date(point.timestamp).toLocaleTimeString(),
+    originalIndex: startIndex + index,
     ...Object.fromEntries(
       Array.from(selectedColumns).map(col => [col, point[col as keyof DataPoint]])
     )
   }))
 
+  const zoomIn = () => {
+    const currentRange = zoomEnd - zoomStart
+    const newRange = Math.max(currentRange * 0.5, 5) // Minimum 5% range
+    const newEnd = Math.min(100, zoomStart + newRange)
+    setZoomEnd(newEnd)
+    setZoomLevel(zoomLevel * 2)
+  }
+
+  const zoomOut = () => {
+    const currentRange = zoomEnd - zoomStart
+    const newRange = Math.min(currentRange * 2, 100)
+    const newEnd = Math.min(100, zoomStart + newRange)
+    setZoomEnd(newEnd)
+    setZoomLevel(Math.max(zoomLevel * 0.5, 1))
+  }
+
+  const resetZoom = () => {
+    setZoomStart(0)
+    setZoomEnd(100)
+    setZoomLevel(1)
+  }
+
+  const panLeft = () => {
+    const currentRange = zoomEnd - zoomStart
+    const panAmount = currentRange * 0.1
+    if (zoomStart - panAmount >= 0) {
+      setZoomStart(zoomStart - panAmount)
+      setZoomEnd(zoomEnd - panAmount)
+    }
+  }
+
+  const panRight = () => {
+    const currentRange = zoomEnd - zoomStart
+    const panAmount = currentRange * 0.1
+    if (zoomEnd + panAmount <= 100) {
+      setZoomStart(zoomStart + panAmount)
+      setZoomEnd(zoomEnd + panAmount)
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <div className="flex justify-between items-start">
+          <CardTitle>{title}</CardTitle>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={panLeft} disabled={zoomStart <= 0}>
+              ←
+            </Button>
+            <Button size="sm" variant="outline" onClick={zoomOut} disabled={zoomLevel <= 1}>
+              <ZoomOut className="h-4 w-4" />
+            </Button>
+            <span className="text-xs text-muted-foreground px-2">
+              {zoomLevel.toFixed(1)}x
+            </span>
+            <Button size="sm" variant="outline" onClick={zoomIn}>
+              <ZoomIn className="h-4 w-4" />
+            </Button>
+            <Button size="sm" variant="outline" onClick={panRight} disabled={zoomEnd >= 100}>
+              →
+            </Button>
+            <Button size="sm" variant="outline" onClick={resetZoom} disabled={zoomLevel <= 1}>
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        {/* Range slider for zoom position */}
+        {zoomLevel > 1 && (
+          <div className="space-y-2">
+            <Label className="text-sm">Zoom Position</Label>
+            <div className="flex items-center gap-4">
+              <input
+                type="range"
+                min="0"
+                max={100 - (zoomEnd - zoomStart)}
+                value={zoomStart}
+                onChange={(e) => {
+                  const newStart = parseFloat(e.target.value)
+                  const range = zoomEnd - zoomStart
+                  setZoomStart(newStart)
+                  setZoomEnd(newStart + range)
+                }}
+                className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+              />
+              <span className="text-xs text-muted-foreground w-20">
+                {Math.round((zoomStart / 100) * totalPoints)} - {Math.round((zoomEnd / 100) * totalPoints)}
+              </span>
+            </div>
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           {availableColumns.map(column => (
             <div key={column} className="flex items-center space-x-2">
@@ -123,7 +233,7 @@ function ConfigurableChart({
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
                 dataKey="timestamp" 
-                interval={Math.ceil(chartData.length / 6)}
+                interval={Math.max(0, Math.ceil(chartData.length / 8))}
                 tick={{ fontSize: 12 }}
                 angle={-45}
                 textAnchor="end"
@@ -216,15 +326,68 @@ export default function TestPage() {
 
   const startDate = new Date(testData.start_time).toLocaleString()
 
+  const downloadCSV = () => {
+    // Create CSV filename based on test data
+    const testDate = new Date(testData.start_time)
+    const dateStr = testDate.toISOString().split('T')[0]
+    const timeStr = testDate.toTimeString().split(' ')[0].replace(/:/g, '-')
+    const fileName = `test_${testData.test_id}_${testData.serial_number}_${dateStr}_${timeStr}.csv`
+    // Convert data points to CSV format
+    if (testData.data_points.length === 0) {
+      alert('No data points available for download')
+      return
+    }
+    // Get all column headers from the first data point
+    const headers = Object.keys(testData.data_points[0])
+    // Helper function to escape CSV values
+    const escapeCsvValue = (value: string | number | undefined): string => {
+      if (value === undefined || value === null) return ''
+      const str = value.toString()
+      // If value contains comma, semicolon, newline, or quotes, wrap in quotes and escape internal quotes
+      if (str.includes(',') || str.includes(';') || str.includes('\n') || str.includes('\r') || str.includes('"')) {
+        return '"' + str.replace(/"/g, '""') + '"'
+      }
+      return str
+    }
+
+    // Create CSV content
+    const csvContent = [
+      headers.join(','), // Header row
+      ...testData.data_points.map(point =>
+        headers.map(header => {
+          const value = point[header as keyof DataPoint]
+          return escapeCsvValue(value)
+        }).join(',')
+      )
+    ].join('\n')
+    // Create and trigger download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob)
+      link.setAttribute('href', url)
+      link.setAttribute('download', fileName)
+      link.style.visibility = 'hidden'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    }
+  }
+
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between">
         <Link href="/">
           <Button variant="outline" size="sm">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Dashboard
           </Button>
         </Link>
+        <Button variant="outline" size="sm" onClick={downloadCSV}>
+          <Download className="h-4 w-4 mr-2" />
+          Download CSV
+        </Button>
       </div>
 
       <div className="space-y-4">
