@@ -10,6 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run lint` - Run ESLint
 - `npm run setup-db` - Setup PostgreSQL database and schema
 - `npm run ingest` - Ingest CSV files from data/to_process/ into database
+- `npm run reprocess` - Clear database and re-ingest all files from data/processed/ (use when ingestion logic changes)
 - `npm run db:schema` - Re-run database schema setup
 
 ## Project Architecture

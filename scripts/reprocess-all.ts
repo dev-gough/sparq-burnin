@@ -71,9 +71,8 @@ interface TestDataRecord {
   source_file: string;
 }
 
-class CSVIngester {
+class ReprocessingIngester {
   private client: Client;
-  private readonly toProcessPath = 'data/to_process';
   private readonly processedPath = 'data/processed';
 
   constructor() {
@@ -99,6 +98,26 @@ class CSVIngester {
   async disconnect(): Promise<void> {
     await this.client.end();
     console.log('Disconnected from PostgreSQL database');
+  }
+
+  async clearDatabase(): Promise<void> {
+    console.log('Clearing existing data...');
+    
+    // Clear tables in reverse dependency order
+    await this.client.query('DELETE FROM TestData');
+    console.log('Cleared TestData table');
+    
+    await this.client.query('DELETE FROM Tests');
+    console.log('Cleared Tests table');
+    
+    await this.client.query('DELETE FROM Inverters');
+    console.log('Cleared Inverters table');
+    
+    // Reset sequences
+    await this.client.query('ALTER SEQUENCE testdata_data_id_seq RESTART WITH 1');
+    await this.client.query('ALTER SEQUENCE tests_test_id_seq RESTART WITH 1');
+    await this.client.query('ALTER SEQUENCE inverters_inv_id_seq RESTART WITH 1');
+    console.log('Reset all sequences');
   }
 
   async ensureInverter(serialNumber: string): Promise<number> {
@@ -182,6 +201,45 @@ class CSVIngester {
         })
         .on('error', reject);
     });
+  }
+
+  async findTestIdForDataFile(dataFileName: string): Promise<number | null> {
+    // Extract serial number and datetime from filename (format: inverter_{12-digit-SN}_{YYYY-MM-DD}_{HH-MM}.csv)
+    const match = dataFileName.match(/inverter_(\d{12})_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2})\.csv$/);
+    if (!match) {
+      console.warn(`Could not extract serial number and date from filename: ${dataFileName}`);
+      return null;
+    }
+    
+    const serialNumber = match[1];
+    const dateStr = match[2]; // YYYY-MM-DD
+    const timeStr = match[3]; // HH-MM
+    
+    // Convert filename date/time to a timestamp for comparison
+    const fileDateTime = new Date(`${dateStr}T${timeStr.replace('-', ':')}:00`);
+    
+    // Find the test that started closest to this file's date/time
+    const query = `
+      SELECT t.test_id, t.start_time,
+             ABS(EXTRACT(EPOCH FROM (t.start_time - $2))) as time_diff_seconds
+      FROM Tests t 
+      JOIN Inverters i ON t.inv_id = i.inv_id 
+      WHERE i.serial_number = $1 
+      ORDER BY time_diff_seconds ASC
+      LIMIT 1
+    `;
+    
+    const result = await this.client.query(query, [serialNumber, fileDateTime.toISOString()]);
+    
+    if (result.rows.length === 0) {
+      console.warn(`No test found for inverter ${serialNumber}`);
+      return null;
+    }
+    
+    const timeDiffHours = result.rows[0].time_diff_seconds / 3600;
+    console.log(`Matched file ${dataFileName} to test ${result.rows[0].test_id} (time difference: ${timeDiffHours.toFixed(2)} hours)`);
+    
+    return result.rows[0].test_id;
   }
 
   async processTestDataCSV(filePath: string, testId: number): Promise<void> {
@@ -308,104 +366,71 @@ class CSVIngester {
     return isNaN(parsed) ? null : parsed;
   }
 
-  async moveFile(sourcePath: string, destinationDir: string): Promise<void> {
-    const fileName = path.basename(sourcePath);
-    const destinationPath = path.join(destinationDir, fileName);
-    
-    // Ensure destination directory exists
-    await fs.mkdir(destinationDir, { recursive: true });
-    
-    await fs.rename(sourcePath, destinationPath);
-    console.log(`Moved ${sourcePath} to ${destinationPath}`);
-  }
-
-  async findTestIdForDataFile(dataFileName: string): Promise<number | null> {
-    // Extract serial number and datetime from filename (format: inverter_{12-digit-SN}_{YYYY-MM-DD}_{HH-MM}.csv)
-    const match = dataFileName.match(/inverter_(\d{12})_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2})\.csv$/);
-    if (!match) {
-      console.warn(`Could not extract serial number and date from filename: ${dataFileName}`);
-      return null;
-    }
-    
-    const serialNumber = match[1];
-    const dateStr = match[2]; // YYYY-MM-DD
-    const timeStr = match[3]; // HH-MM
-    
-    // Convert filename date/time to a timestamp for comparison
-    const fileDateTime = new Date(`${dateStr}T${timeStr.replace('-', ':')}:00`);
-
-    // Find the test that started closest to this file's date/time
-    const query = `
-      SELECT t.test_id, t.start_time,
-             ABS(EXTRACT(EPOCH FROM (t.start_time - $2))) as time_diff_seconds
-      FROM Tests t 
-      JOIN Inverters i ON t.inv_id = i.inv_id 
-      WHERE i.serial_number = $1 
-      ORDER BY time_diff_seconds ASC
-      LIMIT 1
-    `;
-    
-    const result = await this.client.query(query, [serialNumber, fileDateTime.toISOString()]);
-    
-    if (result.rows.length === 0) {
-      console.warn(`No test found for inverter ${serialNumber}`);
-      return null;
-    }
-    
-    const timeDiffHours = result.rows[0].time_diff_seconds / 3600;
-    console.log(`Matched file ${dataFileName} to test ${result.rows[0].test_id} (time difference: ${timeDiffHours.toFixed(2)} hours)`);
-
-    return result.rows[0].test_id;
-  }
-
-  async processAllFiles(): Promise<void> {
+  async reprocessAllFiles(): Promise<void> {
     try {
-      // Process results files first
-      const resultsDir = path.join(this.toProcessPath, 'results');
-      const resultsFiles = await fs.readdir(resultsDir);
+      console.log('=== Starting reprocessing of all files ===');
       
-      for (const file of resultsFiles) {
-        if (file.endsWith('.csv')) {
-          const filePath = path.join(resultsDir, file);
-          await this.processResultsCSV(filePath);
-          await this.moveFile(filePath, path.join(this.processedPath, 'results'));
+      // Clear existing data
+      await this.clearDatabase();
+      
+      // Process results files first
+      const resultsDir = path.join(this.processedPath, 'results');
+      console.log(`\n=== Processing results files from ${resultsDir} ===`);
+      
+      try {
+        const resultsFiles = await fs.readdir(resultsDir);
+        console.log(`Found ${resultsFiles.length} files in results directory`);
+        
+        for (const file of resultsFiles) {
+          if (file.endsWith('.csv')) {
+            const filePath = path.join(resultsDir, file);
+            await this.processResultsCSV(filePath);
+          }
         }
+      } catch (error) {
+        console.log(`Results directory not found or empty: ${resultsDir}`);
       }
       
       // Process test data files
-      const testsDir = path.join(this.toProcessPath, 'tests');
-      const testFiles = await fs.readdir(testsDir);
+      const testsDir = path.join(this.processedPath, 'tests');
+      console.log(`\n=== Processing test data files from ${testsDir} ===`);
       
-      for (const file of testFiles) {
-        if (file.endsWith('.csv')) {
-          const filePath = path.join(testsDir, file);
-          const testId = await this.findTestIdForDataFile(file);
-          
-          if (testId) {
-            await this.processTestDataCSV(filePath, testId);
-            await this.moveFile(filePath, path.join(this.processedPath, 'tests'));
-          } else {
-            console.error(`Skipping ${file} - no matching test found`);
+      try {
+        const testFiles = await fs.readdir(testsDir);
+        console.log(`Found ${testFiles.length} files in tests directory`);
+        
+        for (const file of testFiles) {
+          if (file.endsWith('.csv')) {
+            const filePath = path.join(testsDir, file);
+            const testId = await this.findTestIdForDataFile(file);
+            
+            if (testId) {
+              await this.processTestDataCSV(filePath, testId);
+            } else {
+              console.error(`Skipping ${file} - no matching test found`);
+            }
           }
         }
+      } catch (error) {
+        console.log(`Tests directory not found or empty: ${testsDir}`);
       }
       
-      console.log('All files processed successfully!');
+      console.log('\n=== All files reprocessed successfully! ===');
     } catch (error) {
-      console.error('Error processing files:', error);
+      console.error('Error reprocessing files:', error);
       throw error;
     }
   }
 }
 
 async function main() {
-  const ingester = new CSVIngester();
+  const ingester = new ReprocessingIngester();
   
   try {
     await ingester.connect();
-    await ingester.processAllFiles();
+    await ingester.reprocessAllFiles();
   } catch (error) {
-    console.error('Ingestion failed:', error);
+    console.error('Reprocessing failed:', error);
     process.exit(1);
   } finally {
     await ingester.disconnect();

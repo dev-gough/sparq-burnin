@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "ingest": "tsx scripts/ingest-csv.ts",
+    "reprocess": "tsx scripts/reprocess-all.ts",
     "setup-db": "./scripts/setup.sh",
     "db:schema": "psql -d burnin_dashboard -f scripts/setup-database.sql"
   },

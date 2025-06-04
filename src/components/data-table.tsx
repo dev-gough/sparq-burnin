@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 
 import {
   IconChevronLeft,
@@ -50,6 +51,7 @@ import {
 export const testSchema = z.object({
   test_id: z.number(),
   inv_id: z.number(),
+  serial_number: z.string(),
   firmware_version: z.string(),
   duration: z.number(),
   non_zero_status_flags: z.number(),
@@ -59,15 +61,12 @@ export const testSchema = z.object({
 
 const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
   {
-    accessorKey: "inv_id",
-    header: "Inverter ID",
+    accessorKey: "serial_number",
+    header: "Inverter Serial Number",
     cell: ({ row }) => (
-      <Link
-        href={`/test/${row.original.test_id}`}
-        className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
-      >
-        {row.original.inv_id}
-      </Link>
+      <div className="font-medium">
+        {row.original.serial_number}
+      </div>
     ),
     enableHiding: false,
   },
@@ -134,6 +133,7 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
 ]
 
 export function DataTable() {
+  const router = useRouter()
   const [data, setData] = React.useState([])
   const [loading, setLoading] = React.useState(false)
   const [rowSelection, setRowSelection] = React.useState({})
@@ -146,6 +146,10 @@ export function DataTable() {
     pageIndex: 0,
     pageSize: 10,
   })
+
+  const handleRowClick = (testId: number) => {
+    router.push(`/test/${testId}`)
+  }
 
   React.useEffect(() => {
     const fetchData = async () => {
@@ -233,7 +237,8 @@ export function DataTable() {
                       <TableRow
                         key={row.id}
                         data-state={row.getIsSelected() && "selected"}
-                        className="relative z-0"
+                        className="relative z-0 cursor-pointer hover:bg-muted/50"
+                        onClick={() => handleRowClick(row.original.test_id)}
                       >
                         {row.getVisibleCells().map((cell) => (
                           <TableCell key={cell.id}>
@@ -279,7 +284,7 @@ export function DataTable() {
                   />
                 </SelectTrigger>
                 <SelectContent side="top">
-                  {[10, 20, 30, 40, 50].map((pageSize) => (
+                  {[10, 20, 30, 40, 50, 75, 100].map((pageSize) => (
                     <SelectItem key={pageSize} value={`${pageSize}`}>
                       {pageSize}
                     </SelectItem>

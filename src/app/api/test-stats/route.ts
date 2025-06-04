@@ -17,6 +17,7 @@ interface SummaryStats {
 interface TestRecord {
   test_id: number;
   inv_id: number;
+  serial_number: string;
   firmware_version: string;
   duration: number;
   non_zero_status_flags: number;
@@ -75,6 +76,7 @@ export async function GET(request: NextRequest) {
         SELECT
           t.test_id,
           t.inv_id,
+          i.serial_number,
           t.firmware_version,
           EXTRACT(EPOCH FROM (t.end_time - t.start_time)) * 1000 as duration,
           (
@@ -87,6 +89,7 @@ export async function GET(request: NextRequest) {
           (t.overall_status = 'PASS') as passed,
           t.failure_description as failure_reason
         FROM Tests t
+        JOIN Inverters i ON t.inv_id = i.inv_id
         ORDER BY t.start_time DESC
         LIMIT 100
       `;
@@ -95,6 +98,7 @@ export async function GET(request: NextRequest) {
       const tests: TestRecord[] = result.rows.map(row => ({
         test_id: row.test_id,
         inv_id: row.inv_id,
+        serial_number: row.serial_number || 'Unknown',
         firmware_version: row.firmware_version || 'Unknown',
         duration: Math.round(row.duration) || 0,
         non_zero_status_flags: row.non_zero_status_flags || 0,
