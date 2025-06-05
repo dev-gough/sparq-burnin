@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
         SELECT DISTINCT firmware_version
         FROM Tests
         WHERE firmware_version IS NOT NULL AND firmware_version != ''
-        ORDER BY firmware_version
+        ORDER BY firmware_version DESC
       `;
       const result = await client.query(firmwareQuery);
       const versions = result.rows.map(row => row.firmware_version);
