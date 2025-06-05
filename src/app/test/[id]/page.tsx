@@ -325,6 +325,7 @@ export default function TestPage() {
   }
 
   const startDate = new Date(testData.start_time).toLocaleString()
+  const endDate = new Date(testData.end_time).toLocaleString()
 
   const downloadCSV = () => {
     // Create CSV filename based on test data
@@ -394,7 +395,8 @@ export default function TestPage() {
         <div>
           <h1 className="text-3xl font-bold">Inverter S/N: {testData.serial_number}</h1>
           <h2 className="text-xl text-muted-foreground">Test {testData.test_id}</h2>
-          <p className="text-lg text-muted-foreground">{startDate}</p>
+          <p className="text-lg text-muted-foreground">Started: {startDate}</p>
+          <p className="text-lg text-muted-foreground">Ended: {endDate}</p>
           <div className="flex items-center gap-2 mt-2">
             <Badge variant={testData.overall_status === 'PASS' ? 'default' : 'destructive'}>
               {testData.overall_status}
