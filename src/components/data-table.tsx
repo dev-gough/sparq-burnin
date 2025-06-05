@@ -82,6 +82,9 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
         {row.original.firmware_version}
       </div>
     ),
+    filterFn: (row, id, value) => {
+      return row.getValue(id) === value
+    },
   },
   {
     accessorKey: "start_time",
@@ -166,8 +169,10 @@ export function DataTable() {
   // Filter states
   const [serialSearch, setSerialSearch] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState("all")
+  const [firmwareFilter, setFirmwareFilter] = React.useState("all")
   const [dateFromFilter, setDateFromFilter] = React.useState("")
   const [dateToFilter, setDateToFilter] = React.useState("")
+  const [firmwareVersions, setFirmwareVersions] = React.useState<string[]>([])
 
   const handleRowClick = (testId: number) => {
     router.push(`/test/${testId}`)
@@ -177,13 +182,22 @@ export function DataTable() {
     const fetchData = async () => {
       setLoading(true)
       try {
-        const response = await fetch('/api/test-stats?view=tests')
-        if (response.ok) {
-          const testData = await response.json()
+        const [testsResponse, firmwareResponse] = await Promise.all([
+          fetch('/api/test-stats?view=tests'),
+          fetch('/api/test-stats?view=firmware-versions')
+        ])
+
+        if (testsResponse.ok) {
+          const testData = await testsResponse.json()
           setData(testData)
         }
+
+        if (firmwareResponse.ok) {
+          const versions = await firmwareResponse.json()
+          setFirmwareVersions(versions)
+        }
       } catch (error) {
-        console.error('Failed to fetch test data:', error)
+        console.error('Failed to fetch data:', error)
       } finally {
         setLoading(false)
       }
@@ -212,6 +226,14 @@ export function DataTable() {
       })
     }
 
+    // Firmware version filter
+    if (firmwareFilter !== "all") {
+      filters.push({
+        id: "firmware_version",
+        value: firmwareFilter,
+      })
+    }
+
     // Date range filter
     if (dateFromFilter || dateToFilter) {
       filters.push({
@@ -221,7 +243,7 @@ export function DataTable() {
     }
 
     setColumnFilters(filters)
-  }, [serialSearch, statusFilter, dateFromFilter, dateToFilter])
+  }, [serialSearch, statusFilter, firmwareFilter, dateFromFilter, dateToFilter])
 
   const table = useReactTable({
     data: data || [],
@@ -291,6 +313,24 @@ export function DataTable() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Firmware Version Filter */}
+            <div className="space-y-2">
+              <Label>Firmware</Label>
+              <Select value={firmwareFilter} onValueChange={setFirmwareFilter}>
+                <SelectTrigger className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Versions</SelectItem>
+                  {firmwareVersions.map((version) => (
+                    <SelectItem key={version} value={version}>
+                      {version}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             {/* Date Range Filters */}
             <div className="flex gap-2">
               <div className="space-y-2">
@@ -320,6 +360,7 @@ export function DataTable() {
               onClick={() => {
                 setSerialSearch("")
                 setStatusFilter("all")
+                setFirmwareFilter("all")
                 setDateFromFilter("")
                 setDateToFilter("")
               }}

@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
         FROM Tests t
         JOIN Inverters i ON t.inv_id = i.inv_id
         ORDER BY t.start_time DESC
-        LIMIT 100
+        LIMIT 1000
       `;
       const result = await client.query(testsQuery);
 
@@ -110,6 +110,19 @@ export async function GET(request: NextRequest) {
       }));
 
       return NextResponse.json(tests);
+    }
+
+    if (view === 'firmware-versions') {
+      // Get unique firmware versions
+      const firmwareQuery = `
+        SELECT DISTINCT firmware_version
+        FROM Tests
+        WHERE firmware_version IS NOT NULL AND firmware_version != ''
+        ORDER BY firmware_version
+      `;
+      const result = await client.query(firmwareQuery);
+      const versions = result.rows.map(row => row.firmware_version);
+      return NextResponse.json(versions);
     }
 
     // Default: return daily statistics
