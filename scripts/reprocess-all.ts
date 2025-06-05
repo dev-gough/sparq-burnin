@@ -141,7 +141,7 @@ class ReprocessingIngester {
   }
 
   async processResultsCSV(filePath: string): Promise<number[]> {
-    console.log(`Processing results CSV: ${filePath}`);
+    console.log(`\nProcessing results CSV: ${filePath}`);
     const testIds: number[] = [];
     
     return new Promise((resolve, reject) => {
@@ -210,47 +210,57 @@ class ReprocessingIngester {
     });
   }
 
-  async findTestIdForDataFile(dataFileName: string): Promise<number | null> {
-    // Extract serial number and datetime from filename (format: inverter_{12-digit-SN}_{YYYY-MM-DD}_{HH-MM}.csv)
-    const match = dataFileName.match(/inverter_(\d{12})_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2})\.csv$/);
-    if (!match) {
-      console.warn(`Could not extract serial number and date from filename: ${dataFileName}`);
-      return null;
-    }
-    
-    const serialNumber = match[1];
-    const dateStr = match[2]; // YYYY-MM-DD
-    const timeStr = match[3]; // HH-MM
-    
-    // Convert filename date/time to a timestamp for comparison
-    const fileDateTime = new Date(`${dateStr}T${timeStr.replace('-', ':')}:00`);
-    
-    // Find the test that started closest to this file's date/time
+  async findTestDataFileForTest(testId: number, testsDir: string): Promise<string | null> {
+    // Get test details from database
     const query = `
-      SELECT t.test_id, t.start_time,
-             ABS(EXTRACT(EPOCH FROM (t.start_time - $2))) as time_diff_seconds
-      FROM Tests t 
-      JOIN Inverters i ON t.inv_id = i.inv_id 
-      WHERE i.serial_number = $1 
-      ORDER BY time_diff_seconds ASC
-      LIMIT 1
+      SELECT t.start_time, i.serial_number
+      FROM Tests t
+      JOIN Inverters i ON t.inv_id = i.inv_id
+      WHERE t.test_id = $1
     `;
     
-    const result = await this.client.query(query, [serialNumber, fileDateTime.toISOString()]);
+    const result = await this.client.query(query, [testId]);
     
     if (result.rows.length === 0) {
-      console.warn(`No test found for inverter ${serialNumber}`);
+      console.warn(`Test ${testId} not found in database`);
       return null;
     }
     
-    const timeDiffHours = result.rows[0].time_diff_seconds / 3600;
-    console.log(`Matched file ${dataFileName} to test ${result.rows[0].test_id} (time difference: ${timeDiffHours.toFixed(2)} hours)`);
+    const { start_time, serial_number } = result.rows[0];
+    // Convert start time to filename format
+    const startDate = new Date(start_time);
+    const dateStr = startDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    const timeStr = startDate.toTimeString().substring(0, 5).replace(':', '-'); // HH-MM
+    // Expected filename pattern
+    const expectedFileName = `inverter_${serial_number}_${dateStr}_${timeStr}.csv`;
+    // Check if the exact file exists
+    const expectedFilePath = path.join(testsDir, expectedFileName);
+    try {
+      await fs.access(expectedFilePath);
+      console.log(`Found exact match: ${expectedFileName} for test ${testId}`);
+      return expectedFileName;
+    } catch {
+      // If exact match not found, look for files with same serial and date
+      try {
+        const files = await fs.readdir(testsDir);
+        const pattern = `inverter_${serial_number}_${dateStr}_`;
+        for (const file of files) {
+          if (file.startsWith(pattern) && file.endsWith('.csv')) {
+            console.log(`Found approximate match: ${file} for test ${testId} (expected: ${expectedFileName})`);
+            return file;
+          }
+        }
+      } catch (error) {
+        console.warn(`Could not read tests directory: ${testsDir}`);
+      }
+    }
     
-    return result.rows[0].test_id;
+    console.warn(`No test data file found for test ${testId} (serial: ${serial_number}, start: ${dateStr}_${timeStr})`);
+    return null;
   }
 
   async processTestDataCSV(filePath: string, testId: number): Promise<void> {
-    console.log(`Processing test data CSV: ${filePath} for test_id: ${testId}`);
+    console.log(`\nProcessing test data CSV: ${filePath} for test_id: ${testId}`);
     
     return new Promise((resolve, reject) => {
       const dataRows: any[] = [];
@@ -380,46 +390,35 @@ class ReprocessingIngester {
       // Clear existing data
       await this.clearDatabase();
       
-      // Process results files first
+      // Process results files and their corresponding test data files together
       const resultsDir = path.join(this.processedPath, 'results');
-      console.log(`\n=== Processing results files from ${resultsDir} ===`);
+      const testsDir = path.join(this.processedPath, 'tests');
+      console.log(`\n=== Processing paired results and test files ===`);
       
       try {
         const resultsFiles = await fs.readdir(resultsDir);
         console.log(`Found ${resultsFiles.length} files in results directory`);
         
-        for (const file of resultsFiles) {
-          if (file.endsWith('.csv')) {
-            const filePath = path.join(resultsDir, file);
-            await this.processResultsCSV(filePath);
-          }
-        }
-      } catch (error) {
-        console.log(`Results directory not found or empty: ${resultsDir}`);
-      }
-      
-      // Process test data files
-      const testsDir = path.join(this.processedPath, 'tests');
-      console.log(`\n=== Processing test data files from ${testsDir} ===`);
-      
-      try {
-        const testFiles = await fs.readdir(testsDir);
-        console.log(`Found ${testFiles.length} files in tests directory`);
-        
-        for (const file of testFiles) {
-          if (file.endsWith('.csv')) {
-            const filePath = path.join(testsDir, file);
-            const testId = await this.findTestIdForDataFile(file);
+        for (const resultsFile of resultsFiles) {
+          if (resultsFile.endsWith('.csv')) {
+            const resultsFilePath = path.join(resultsDir, resultsFile);
             
-            if (testId) {
-              await this.processTestDataCSV(filePath, testId);
-            } else {
-              console.error(`Skipping ${file} - no matching test found`);
+            // Process the results file and get the test IDs
+            const testIds = await this.processResultsCSV(resultsFilePath);
+            // For each test created, find and process its corresponding test data file
+            for (const testId of testIds) {
+              const testDataFile = await this.findTestDataFileForTest(testId, testsDir);
+              if (testDataFile) {
+                const testDataFilePath = path.join(testsDir, testDataFile);
+                await this.processTestDataCSV(testDataFilePath, testId);
+              } else {
+                console.warn(`No test data file found for test ${testId}`);
+              }
             }
           }
         }
       } catch (error) {
-        console.log(`Tests directory not found or empty: ${testsDir}`);
+        console.log(`Results directory not found or empty: ${resultsDir}`);
       }
       
       console.log('\n=== All files reprocessed successfully! ===');
