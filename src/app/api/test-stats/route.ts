@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
           COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
           COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
         FROM Tests
+        WHERE firmware_version != '1.11.11' OR firmware_version IS NULL
       `;
       
       const summaryResult = await client.query(summaryQuery);
@@ -92,6 +93,7 @@ export async function GET(request: NextRequest) {
           t.start_time
         FROM Tests t
         JOIN Inverters i ON t.inv_id = i.inv_id
+        WHERE t.firmware_version != '1.11.11' OR t.firmware_version IS NULL
         ORDER BY t.start_time DESC
         LIMIT 1000
       `;
@@ -117,7 +119,7 @@ export async function GET(request: NextRequest) {
       const firmwareQuery = `
         SELECT DISTINCT firmware_version
         FROM Tests
-        WHERE firmware_version IS NOT NULL AND firmware_version != ''
+        WHERE firmware_version IS NOT NULL AND firmware_version != '' AND firmware_version != '1.11.11'
         ORDER BY firmware_version DESC
       `;
       const result = await client.query(firmwareQuery);
@@ -133,6 +135,7 @@ export async function GET(request: NextRequest) {
         COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
       FROM Tests 
       WHERE start_time >= CURRENT_DATE - INTERVAL '90 days'
+        AND (firmware_version != '1.11.11' OR firmware_version IS NULL)
       GROUP BY DATE(start_time)
       ORDER BY test_date ASC
     `;

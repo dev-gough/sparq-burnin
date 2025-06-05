@@ -93,7 +93,7 @@ export async function GET(
         t.failure_description
       FROM Tests t
       JOIN Inverters i ON t.inv_id = i.inv_id
-      WHERE t.test_id = $1
+      WHERE t.test_id = $1 AND (t.firmware_version != '1.11.11' OR t.firmware_version IS NULL)
     `;
     
     const testResult = await client.query(testQuery, [testId]);

@@ -143,6 +143,13 @@ class CSVIngester {
                 continue;
               }
 
+              // Skip debug firmware version 1.11.11
+              const firmwareVersion = test['Inverter Firmware'];
+              if (firmwareVersion === '1.11.11') {
+                console.log(`Skipping test with debug firmware version 1.11.11 for inverter ${serialNumber}`);
+                continue;
+              }
+
               const invId = await this.ensureInverter(serialNumber);
               
               const query = `
