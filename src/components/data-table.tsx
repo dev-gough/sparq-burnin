@@ -312,39 +312,40 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
             </div>
 
             {/* Status Filter */}
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="passed">Pass</SelectItem>
-                  <SelectItem value="failed">Fail</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Firmware Version Filter */}
-            <div className="space-y-2">
-              <Label>Firmware</Label>
-              <Select value={firmwareFilter} onValueChange={setFirmwareFilter}>
-                <SelectTrigger className="w-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Versions</SelectItem>
-                  {firmwareVersions.map((version) => (
-                    <SelectItem key={version} value={version}>
-                      {version}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex justify-between sm:gap-4">
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="passed">Pass</SelectItem>
+                    <SelectItem value="failed">Fail</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* Firmware Version Filter */}
+              <div className="space-y-2">
+                <Label>Firmware</Label>
+                <Select value={firmwareFilter} onValueChange={setFirmwareFilter}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Versions</SelectItem>
+                    {firmwareVersions.map((version) => (
+                      <SelectItem key={version} value={version}>
+                        {version}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             {/* Date Range Filters */}
-            <div className="flex gap-2">
+            <div className="flex justify-between sm:gap-4">
               <div className="space-y-2">
                 <Label htmlFor="date-from">From Date</Label>
                 <Input
@@ -352,7 +353,7 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
                   type="date"
                   value={dateFromFilter}
                   onChange={(e) => setDateFromFilter(e.target.value)}
-                  className="w-40"
+                  className="w-40 sm:px-3 px-1"
                 />
               </div>
               <div className="space-y-2">
@@ -362,7 +363,7 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
                   type="date"
                   value={dateToFilter}
                   onChange={(e) => setDateToFilter(e.target.value)}
-                  className="w-40"
+                  className="w-40 sm:px-3 px-1"
                 />
               </div>
             </div>

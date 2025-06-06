@@ -30,7 +30,7 @@ import {
   ToggleGroupItem,
 } from "@/components/ui/toggle-group"
 
-export const description = "An interactive area chart"
+export const description = "Burnin Daily Pass/Fail Results"
 
 interface TestStats {
   date: string;
@@ -64,7 +64,7 @@ export function ChartAreaInteractive({ onDateClick }: ChartAreaInteractiveProps 
 
   React.useEffect(() => {
     if (isMobile) {
-      setTimeRange("7d")
+      setTimeRange("30d")
     }
   }, [isMobile])
 
