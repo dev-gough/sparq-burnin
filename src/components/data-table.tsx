@@ -101,16 +101,15 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
       const rowDate = new Date(row.getValue(id) as string)
       const { from, to } = value as { from: string, to: string }
       if (from && to) {
-        const fromDate = new Date(from)
-        const toDate = new Date(to)
-        toDate.setHours(23, 59, 59, 999) // Include the entire day
+        // Create dates using UTC to match the ISO string format from the database
+        const fromDate = new Date(from + 'T00:00:00.000Z')
+        const toDate = new Date(to + 'T23:59:59.999Z')
         return rowDate >= fromDate && rowDate <= toDate
       } else if (from) {
-        const fromDate = new Date(from)
+        const fromDate = new Date(from + 'T00:00:00.000Z')
         return rowDate >= fromDate
       } else if (to) {
-        const toDate = new Date(to)
-        toDate.setHours(23, 59, 59, 999) // Include the entire day
+        const toDate = new Date(to + 'T23:59:59.999Z')
         return rowDate <= toDate
       }
       return true
@@ -152,7 +151,12 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
   },
 ]
 
-export function DataTable() {
+interface DataTableProps {
+  selectedDate?: string;
+  onClearDateFilter?: () => void;
+}
+
+export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = {}) {
   const router = useRouter()
   const [data, setData] = React.useState([])
   const [loading, setLoading] = React.useState(false)
@@ -164,7 +168,7 @@ export function DataTable() {
   )
   const [pagination, setPagination] = React.useState({
     pageIndex: 0,
-    pageSize: 10,
+    pageSize: 30,
   })
   // Filter states
   const [serialSearch, setSerialSearch] = React.useState("")
@@ -205,6 +209,14 @@ export function DataTable() {
 
     fetchData()
   }, [])
+
+  // Apply selectedDate from chart click to date filters
+  React.useEffect(() => {
+    if (selectedDate) {
+      setDateFromFilter(selectedDate)
+      setDateToFilter(selectedDate)
+    }
+  }, [selectedDate])
 
   // Apply filters to table
   React.useEffect(() => {
@@ -363,6 +375,7 @@ export function DataTable() {
                 setFirmwareFilter("all")
                 setDateFromFilter("")
                 setDateToFilter("")
+                onClearDateFilter?.()
               }}
               className="h-10"
             >

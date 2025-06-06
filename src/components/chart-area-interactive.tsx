@@ -38,6 +38,10 @@ interface TestStats {
   failed: number;
 }
 
+interface ChartAreaInteractiveProps {
+  onDateClick?: (date: string) => void;
+}
+
 const chartConfig = {
   tests: {
     label: "Tests",
@@ -52,7 +56,7 @@ const chartConfig = {
   },
 } satisfies ChartConfig
 
-export function ChartAreaInteractive() {
+export function ChartAreaInteractive({ onDateClick }: ChartAreaInteractiveProps = {}) {
   const isMobile = useIsMobile()
   const [timeRange, setTimeRange] = React.useState("90d")
   const [chartData, setChartData] = React.useState<TestStats[]>([])
@@ -153,7 +157,14 @@ export function ChartAreaInteractive() {
             config={chartConfig}
             className="aspect-auto h-[250px] w-full"
           >
-            <AreaChart data={filteredData}>
+            <AreaChart
+              data={filteredData}
+              onClick={(data) => {
+                if (data && data.activeLabel && onDateClick) {
+                  onDateClick(data.activeLabel)
+                }
+              }}
+            >
             <defs>
               <linearGradient id="fillPassed" x1="0" y1="0" x2="0" y2="1">
                 <stop
