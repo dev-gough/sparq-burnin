@@ -130,20 +130,20 @@ export async function GET(request: NextRequest) {
     // Default: return daily statistics
     const query = `
       SELECT 
-        DATE(start_time) as test_date,
+        to_char(DATE(start_time), 'YYYY-MM-DD') as test_date,
         COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
         COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
       FROM Tests 
       WHERE start_time >= CURRENT_DATE - INTERVAL '90 days'
         AND (firmware_version != '1.11.11' OR firmware_version IS NULL)
       GROUP BY DATE(start_time)
-      ORDER BY test_date ASC
+      ORDER BY DATE(start_time) ASC
     `;
     
     const result = await client.query(query);
     
     const stats: TestStats[] = result.rows.map(row => ({
-      date: row.test_date.toISOString().split('T')[0],
+      date: row.test_date,
       passed: parseInt(row.passed) || 0,
       failed: parseInt(row.failed) || 0,
     }));
