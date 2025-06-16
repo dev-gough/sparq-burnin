@@ -87,6 +87,10 @@ function ConfigurableChart({
   data: DataPoint[]
   availableColumns: string[]
 }) {
+  // Function to get display name for columns
+  const getDisplayName = (column: string) => {
+    return column.replace('_inst_latch', '')
+  }
   const [selectedColumns, setSelectedColumns] = useState<Set<string>>(
     new Set(availableColumns.slice(0, 3))
   )
@@ -221,10 +225,85 @@ function ConfigurableChart({
                 htmlFor={column}
                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
               >
-                {column}
+                {getDisplayName(column)}
               </label>
             </div>
           ))}
+          {/* VPV toggle buttons - works for both vpv and vpv_inst_latch columns */}
+          {availableColumns.some(col => col.includes('vpv')) && (
+            <Button
+              size="sm"
+              variant={availableColumns.filter(col => col.includes('vpv')).every(col => selectedColumns.has(col)) ? "default" : "outline"}
+              onClick={() => {
+                const vpvColumns = availableColumns.filter(col => col.includes('vpv'))
+                const allVpvSelected = vpvColumns.every(col => selectedColumns.has(col))
+                const newSelected = new Set(selectedColumns)
+                
+                if (allVpvSelected) {
+                  // Deselect all VPV columns
+                  vpvColumns.forEach(col => newSelected.delete(col))
+                } else {
+                  // Select all VPV columns and deselect all other columns
+                  vpvColumns.forEach(col => newSelected.add(col))
+                  availableColumns.filter(col => !col.includes('vpv')).forEach(col => newSelected.delete(col))
+                }
+                setSelectedColumns(newSelected)
+              }}
+              className="ml-2"
+            >
+              VPV
+            </Button>
+          )}
+          {/* PPV toggle buttons - only for PV data chart */}
+          {availableColumns.some(col => col.includes('ppv')) && (
+            <Button
+              size="sm"
+              variant={availableColumns.filter(col => col.includes('ppv')).every(col => selectedColumns.has(col)) ? "default" : "outline"}
+              onClick={() => {
+                const ppvColumns = availableColumns.filter(col => col.includes('ppv'))
+                const allPpvSelected = ppvColumns.every(col => selectedColumns.has(col))
+                const newSelected = new Set(selectedColumns)
+                
+                if (allPpvSelected) {
+                  // Deselect all PPV columns
+                  ppvColumns.forEach(col => newSelected.delete(col))
+                } else {
+                  // Select all PPV columns and deselect VPV columns
+                  ppvColumns.forEach(col => newSelected.add(col))
+                  availableColumns.filter(col => col.includes('vpv')).forEach(col => newSelected.delete(col))
+                }
+                setSelectedColumns(newSelected)
+              }}
+              className="ml-1"
+            >
+              PPV
+            </Button>
+          )}
+          {/* IPV toggle buttons - only for latch data chart */}
+          {availableColumns.some(col => col.includes('ipv')) && (
+            <Button
+              size="sm"
+              variant={availableColumns.filter(col => col.includes('ipv')).every(col => selectedColumns.has(col)) ? "default" : "outline"}
+              onClick={() => {
+                const ipvColumns = availableColumns.filter(col => col.includes('ipv'))
+                const allIpvSelected = ipvColumns.every(col => selectedColumns.has(col))
+                const newSelected = new Set(selectedColumns)
+                
+                if (allIpvSelected) {
+                  // Deselect all IPV columns
+                  ipvColumns.forEach(col => newSelected.delete(col))
+                } else {
+                  // Select all IPV columns and deselect all other columns
+                  ipvColumns.forEach(col => newSelected.add(col))
+                  availableColumns.filter(col => !col.includes('ipv')).forEach(col => newSelected.delete(col))
+                }
+                setSelectedColumns(newSelected)
+              }}
+              className="ml-1"
+            >
+              IPV
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -244,7 +323,7 @@ function ConfigurableChart({
               <Tooltip 
                 formatter={(value: string | number, name: string) => [
                   typeof value === 'number' ? Number(value).toFixed(3) : value,
-                  name
+                  getDisplayName(name)
                 ]}
                 labelFormatter={(label) => `Time: ${label}`}
               />
@@ -254,6 +333,7 @@ function ConfigurableChart({
                   key={column}
                   type="monotone"
                   dataKey={column}
+                  name={getDisplayName(column)}
                   stroke={colors[index % colors.length]}
                   strokeWidth={2}
                   dot={false}

@@ -48,6 +48,42 @@ import {
   TabsContent,
 } from "@/components/ui/tabs"
 
+const FILTER_COOKIE_KEY = "burnin-data-table-filters"
+
+type FilterState = {
+  serialSearch: string
+  statusFilter: string
+  firmwareFilter: string
+  dateFromFilter: string
+  dateToFilter: string
+}
+
+const saveFiltersToCookie = (filters: FilterState) => {
+  try {
+    document.cookie = `${FILTER_COOKIE_KEY}=${encodeURIComponent(JSON.stringify(filters))}; path=/; max-age=${60 * 60 * 24 * 30}` // 30 days
+  } catch (error) {
+    console.warn('Failed to save filters to cookie:', error)
+  }
+}
+
+const loadFiltersFromCookie = (): Partial<FilterState> => {
+  try {
+    if (typeof document === 'undefined') return {}
+
+    const cookies = document.cookie.split(';')
+    const filterCookie = cookies.find(cookie => cookie.trim().startsWith(`${FILTER_COOKIE_KEY}=`))
+
+    if (!filterCookie) return {}
+
+    const cookieValue = filterCookie.split('=')[1]
+    const decodedValue = decodeURIComponent(cookieValue)
+    return JSON.parse(decodedValue)
+  } catch (error) {
+    console.warn('Failed to load filters from cookie:', error)
+    return {}
+  }
+}
+
 export const testSchema = z.object({
   test_id: z.number(),
   inv_id: z.number(),
@@ -180,12 +216,27 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
     pageIndex: 0,
     pageSize: 30,
   })
-  // Filter states
-  const [serialSearch, setSerialSearch] = React.useState("")
-  const [statusFilter, setStatusFilter] = React.useState("valid")
-  const [firmwareFilter, setFirmwareFilter] = React.useState("all")
-  const [dateFromFilter, setDateFromFilter] = React.useState("")
-  const [dateToFilter, setDateToFilter] = React.useState("")
+  // Initialize filter states from cookies
+  const [serialSearch, setSerialSearch] = React.useState(() => {
+    const savedFilters = loadFiltersFromCookie()
+    return savedFilters.serialSearch || ""
+  })
+  const [statusFilter, setStatusFilter] = React.useState(() => {
+    const savedFilters = loadFiltersFromCookie()
+    return savedFilters.statusFilter || "valid"
+  })
+  const [firmwareFilter, setFirmwareFilter] = React.useState(() => {
+    const savedFilters = loadFiltersFromCookie()
+    return savedFilters.firmwareFilter || "all"
+  })
+  const [dateFromFilter, setDateFromFilter] = React.useState(() => {
+    const savedFilters = loadFiltersFromCookie()
+    return savedFilters.dateFromFilter || ""
+  })
+  const [dateToFilter, setDateToFilter] = React.useState(() => {
+    const savedFilters = loadFiltersFromCookie()
+    return savedFilters.dateToFilter || ""
+  })
   const [firmwareVersions, setFirmwareVersions] = React.useState<string[]>([])
 
   const handleRowClick = (testId: number) => {
@@ -227,6 +278,18 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
       setDateToFilter(selectedDate)
     }
   }, [selectedDate])
+
+  // Save filters to cookies when they change
+  React.useEffect(() => {
+    const filterState: FilterState = {
+      serialSearch,
+      statusFilter,
+      firmwareFilter,
+      dateFromFilter,
+      dateToFilter,
+    }
+    saveFiltersToCookie(filterState)
+  }, [serialSearch, statusFilter, firmwareFilter, dateFromFilter, dateToFilter])
 
   // Apply filters to table
   React.useEffect(() => {
