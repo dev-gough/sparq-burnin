@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 9001",
     "lint": "next lint",
     "ingest": "tsx scripts/ingest-csv.ts",
     "reprocess": "tsx scripts/reprocess-all.ts",
