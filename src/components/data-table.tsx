@@ -55,7 +55,7 @@ export const testSchema = z.object({
   firmware_version: z.string(),
   duration: z.number(),
   non_zero_status_flags: z.number(),
-  passed: z.boolean(),
+  status: z.string(),
   failure_reason: z.string().nullable(),
   start_time: z.string(),
 })
@@ -131,22 +131,32 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
     },
   },
   {
-    accessorKey: "passed",
+    accessorKey: "status",
     header: "Result",
-    cell: ({ row }) => (
-      <Badge variant={row.original.passed ? "default" : "destructive"} className="px-2">
-        {row.original.passed ? (
-          <>
-            <IconCircleCheckFilled className="w-3 h-3 mr-1 fill-green-500 dark:fill-green-400" />
-            PASS
-          </>
-        ) : (
-          "FAIL"
-        )}
-      </Badge>
-    ),
+    cell: ({ row }) => {
+      const status = row.original.status;
+      const variant = status === 'PASS' ? 'default' : status === 'FAIL' ? 'destructive' : 'secondary';
+      return (
+        <Badge variant={variant} className="px-2">
+          {status === 'PASS' ? (
+            <>
+              <IconCircleCheckFilled className="w-3 h-3 mr-1 fill-green-500 dark:fill-green-400" />
+              PASS
+            </>
+          ) : status === 'FAIL' ? (
+            'FAIL'
+          ) : (
+            'INVALID'
+          )}
+        </Badge>
+      );
+    },
     filterFn: (row, id, value) => {
-      return row.getValue(id) === value
+      const status = row.getValue(id) as string;
+      if (value === "valid") {
+        return status === "PASS" || status === "FAIL";
+      }
+      return status === value;
     },
   },
 ]
@@ -172,7 +182,7 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
   })
   // Filter states
   const [serialSearch, setSerialSearch] = React.useState("")
-  const [statusFilter, setStatusFilter] = React.useState("all")
+  const [statusFilter, setStatusFilter] = React.useState("valid")
   const [firmwareFilter, setFirmwareFilter] = React.useState("all")
   const [dateFromFilter, setDateFromFilter] = React.useState("")
   const [dateToFilter, setDateToFilter] = React.useState("")
@@ -233,8 +243,8 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
     // Status filter
     if (statusFilter !== "all") {
       filters.push({
-        id: "passed",
-        value: statusFilter === "passed",
+        id: "status",
+        value: statusFilter,
       })
     }
 
@@ -320,9 +330,11 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="valid">Valid Only</SelectItem>
                     <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="passed">Pass</SelectItem>
-                    <SelectItem value="failed">Fail</SelectItem>
+                    <SelectItem value="PASS">Pass</SelectItem>
+                    <SelectItem value="FAIL">Fail</SelectItem>
+                    <SelectItem value="INVALID">Invalid</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

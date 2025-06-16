@@ -21,7 +21,7 @@ interface TestRecord {
   firmware_version: string;
   duration: number;
   non_zero_status_flags: number;
-  passed: boolean;
+  status: string;
   failure_reason: string | null;
   start_time: string;
 }
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
           COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
           COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
         FROM Tests
-        WHERE firmware_version != '1.11.11' OR firmware_version IS NULL
+        WHERE overall_status != 'INVALID'
       `;
       
       const summaryResult = await client.query(summaryQuery);
@@ -88,12 +88,11 @@ export async function GET(request: NextRequest) {
             CASE WHEN t.ch3_status IS NOT NULL AND t.ch3_status != '' THEN 1 ELSE 0 END +
             CASE WHEN t.ch4_status IS NOT NULL AND t.ch4_status != '' THEN 1 ELSE 0 END
           ) as non_zero_status_flags,
-          (t.overall_status = 'PASS') as passed,
+          t.overall_status as status,
           t.failure_description as failure_reason,
           t.start_time
         FROM Tests t
         JOIN Inverters i ON t.inv_id = i.inv_id
-        WHERE t.firmware_version != '1.11.11' OR t.firmware_version IS NULL
         ORDER BY t.start_time DESC
         LIMIT 1000
       `;
@@ -106,7 +105,7 @@ export async function GET(request: NextRequest) {
         firmware_version: row.firmware_version || 'Unknown',
         duration: Math.round(row.duration) || 0,
         non_zero_status_flags: row.non_zero_status_flags || 0,
-        passed: row.passed || false,
+        status: row.status || 'UNKNOWN',
         failure_reason: row.failure_reason || null,
         start_time: row.start_time ? row.start_time.toISOString() : '',
       }));
@@ -119,7 +118,7 @@ export async function GET(request: NextRequest) {
       const firmwareQuery = `
         SELECT DISTINCT firmware_version
         FROM Tests
-        WHERE firmware_version IS NOT NULL AND firmware_version != '' AND firmware_version != '1.11.11'
+        WHERE firmware_version IS NOT NULL AND firmware_version != ''
         ORDER BY firmware_version DESC
       `;
       const result = await client.query(firmwareQuery);
@@ -135,7 +134,7 @@ export async function GET(request: NextRequest) {
         COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
       FROM Tests 
       WHERE start_time >= CURRENT_DATE - INTERVAL '90 days'
-        AND (firmware_version != '1.11.11' OR firmware_version IS NULL)
+        AND overall_status != 'INVALID'
       GROUP BY DATE(start_time)
       ORDER BY DATE(start_time) ASC
     `;

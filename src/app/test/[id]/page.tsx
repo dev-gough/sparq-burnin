@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ArrowLeft, ZoomIn, ZoomOut, RotateCcw, Download } from "lucide-react"
 import Link from "next/link"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
@@ -272,6 +273,7 @@ export default function TestPage() {
   const [testData, setTestData] = useState<TestData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [updatingStatus, setUpdatingStatus] = useState(false)
 
   useEffect(() => {
     const fetchTestData = async () => {
@@ -293,6 +295,36 @@ export default function TestPage() {
       fetchTestData()
     }
   }, [testId])
+
+  const updateTestStatus = async (newStatus: string) => {
+    if (!testData) return
+    
+    setUpdatingStatus(true)
+    try {
+      const response = await fetch('/api/test-status', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          testId: testData.test_id,
+          status: newStatus,
+        }),
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to update test status')
+      }
+      
+      // Update local state
+      setTestData(prev => prev ? { ...prev, overall_status: newStatus } : null)
+    } catch (err) {
+      console.error('Error updating test status:', err)
+      alert('Failed to update test status')
+    } finally {
+      setUpdatingStatus(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -397,10 +429,31 @@ export default function TestPage() {
           <h2 className="text-xl text-muted-foreground">Test {testData.test_id}</h2>
           <p className="text-lg text-muted-foreground">Started: {startDate}</p>
           <p className="text-lg text-muted-foreground">Ended: {endDate}</p>
-          <div className="flex items-center gap-2 mt-2">
-            <Badge variant={testData.overall_status === 'PASS' ? 'default' : 'destructive'}>
-              {testData.overall_status}
-            </Badge>
+          <div className="flex items-center gap-4 mt-2">
+            <div className="flex items-center gap-2">
+              <Badge variant={
+                testData.overall_status === 'PASS' ? 'default' : 
+                testData.overall_status === 'FAIL' ? 'destructive' : 
+                'secondary'
+              }>
+                {testData.overall_status}
+              </Badge>
+              <Select
+                value={testData.overall_status}
+                onValueChange={updateTestStatus}
+                disabled={updatingStatus}
+              >
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PASS">PASS</SelectItem>
+                  <SelectItem value="FAIL">FAIL</SelectItem>
+                  <SelectItem value="INVALID">INVALID</SelectItem>
+                </SelectContent>
+              </Select>
+              {updatingStatus && <span className="text-sm text-muted-foreground">Updating...</span>}
+            </div>
             {testData.failure_description && (
               <span className="text-sm text-muted-foreground">
                 {testData.failure_description}

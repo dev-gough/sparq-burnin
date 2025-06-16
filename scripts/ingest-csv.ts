@@ -143,11 +143,29 @@ class CSVIngester {
                 continue;
               }
 
-              // Skip debug firmware version 1.11.11
+              // Get start and end times for validation
+              const startTime = test['Start Time'];
+              const endTime = test['End Time'];
+              let overallStatus = test['Overall'];
+              let invalidReason = '';
+
+              // Mark debug firmware version 1.11.11 as INVALID
               const firmwareVersion = test['Inverter Firmware'];
               if (firmwareVersion === '1.11.11') {
-                console.log(`Skipping test with debug firmware version 1.11.11 for inverter ${serialNumber}`);
-                continue;
+                console.log(`Marking test with debug firmware version 1.11.11 as INVALID for inverter ${serialNumber}`);
+                overallStatus = 'INVALID';
+                invalidReason = 'Debug firmware version';
+              }
+
+              // Check if start time is after end time
+              if (startTime && endTime) {
+                const start = new Date(startTime);
+                const end = new Date(endTime);
+                if (start > end) {
+                  console.log(`Marking test as INVALID due to start time (${startTime}) being after end time (${endTime}) for inverter ${serialNumber}`);
+                  overallStatus = 'INVALID';
+                  invalidReason = invalidReason ? `${invalidReason}, Invalid date range` : 'Invalid date range';
+                }
               }
 
               const invId = await this.ensureInverter(serialNumber);
@@ -166,7 +184,7 @@ class CSVIngester {
                 test['Start Time'],
                 test['End Time'],
                 test['Inverter Firmware'],
-                test['Overall'],
+                overallStatus,
                 test['AC'],
                 test['CH1'],
                 test['CH2'],
