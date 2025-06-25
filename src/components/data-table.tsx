@@ -1,7 +1,7 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { useRouter } from "next/navigation"
+import * as React from "react";
+import { useRouter } from "next/navigation";
 
 import {
   IconChevronLeft,
@@ -9,7 +9,7 @@ import {
   IconChevronsLeft,
   IconChevronsRight,
   IconCircleCheckFilled,
-} from "@tabler/icons-react"
+} from "@tabler/icons-react";
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -21,20 +21,20 @@ import {
   getPaginationRowModel,
   useReactTable,
   VisibilityState,
-} from "@tanstack/react-table"
-import { z } from "zod"
+} from "@tanstack/react-table";
+import { z } from "zod";
 
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -42,47 +42,48 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
-import {
-  Tabs,
-  TabsContent,
-} from "@/components/ui/tabs"
+} from "@/components/ui/table";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { Toggle } from "@/components/ui/toggle";
 
-const FILTER_COOKIE_KEY = "burnin-data-table-filters"
+const FILTER_COOKIE_KEY = "burnin-data-table-filters";
 
 type FilterState = {
-  serialSearch: string
-  statusFilter: string
-  firmwareFilter: string
-  dateFromFilter: string
-  dateToFilter: string
-}
+  serialSearch: string;
+  statusFilter: string;
+  firmwareFilter: string;
+  dateFromFilter: string;
+  dateToFilter: string;
+  latestOnly: boolean;
+};
 
 const saveFiltersToCookie = (filters: FilterState) => {
   try {
-    document.cookie = `${FILTER_COOKIE_KEY}=${encodeURIComponent(JSON.stringify(filters))}; path=/; max-age=${60 * 60 * 24 * 30}` // 30 days
+    document.cookie = `${FILTER_COOKIE_KEY}=${encodeURIComponent(JSON.stringify(filters))}; path=/; max-age=${60 * 60 * 24 * 30}`; // 30 days
   } catch (error) {
-    console.warn('Failed to save filters to cookie:', error)
+    console.warn("Failed to save filters to cookie:", error);
   }
-}
+};
 
 const loadFiltersFromCookie = (): Partial<FilterState> => {
   try {
-    if (typeof document === 'undefined') return {}
+    if (typeof document === "undefined") return {};
 
-    const cookies = document.cookie.split(';')
-    const filterCookie = cookies.find(cookie => cookie.trim().startsWith(`${FILTER_COOKIE_KEY}=`))
+    const cookies = document.cookie.split(";");
+    const filterCookie = cookies.find((cookie) =>
+      cookie.trim().startsWith(`${FILTER_COOKIE_KEY}=`),
+    );
 
-    if (!filterCookie) return {}
+    if (!filterCookie) return {};
 
-    const cookieValue = filterCookie.split('=')[1]
-    const decodedValue = decodeURIComponent(cookieValue)
-    return JSON.parse(decodedValue)
+    const cookieValue = filterCookie.split("=")[1];
+    const decodedValue = decodeURIComponent(cookieValue);
+    return JSON.parse(decodedValue);
   } catch (error) {
-    console.warn('Failed to load filters from cookie:', error)
-    return {}
+    console.warn("Failed to load filters from cookie:", error);
+    return {};
   }
-}
+};
 
 export const testSchema = z.object({
   test_id: z.number(),
@@ -94,32 +95,30 @@ export const testSchema = z.object({
   status: z.string(),
   failure_reason: z.string().nullable(),
   start_time: z.string(),
-})
+});
 
 const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
   {
     accessorKey: "serial_number",
     header: "Inverter Serial Number",
     cell: ({ row }) => (
-      <div className="font-medium">
-        {row.original.serial_number}
-      </div>
+      <div className="font-medium">{row.original.serial_number}</div>
     ),
     enableHiding: false,
     filterFn: (row, id, value) => {
-      return (row.getValue(id) as string).toLowerCase().includes(value.toLowerCase())
+      return (row.getValue(id) as string)
+        .toLowerCase()
+        .includes(value.toLowerCase());
     },
   },
   {
     accessorKey: "firmware_version",
     header: "Firmware Version",
     cell: ({ row }) => (
-      <div className="w-28">
-        {row.original.firmware_version}
-      </div>
+      <div className="w-28">{row.original.firmware_version}</div>
     ),
     filterFn: (row, id, value) => {
-      return row.getValue(id) === value
+      return row.getValue(id) === value;
     },
   },
   {
@@ -129,26 +128,27 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
       const date = new Date(row.original.start_time);
       return (
         <div className="w-32 text-sm">
-          {date.toLocaleDateString()} {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {date.toLocaleDateString()}{" "}
+          {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </div>
       );
     },
     filterFn: (row, id, value) => {
-      const rowDate = new Date(row.getValue(id) as string)
-      const { from, to } = value as { from: string, to: string }
+      const rowDate = new Date(row.getValue(id) as string);
+      const { from, to } = value as { from: string; to: string };
       if (from && to) {
         // Create dates using UTC to match the ISO string format from the database
-        const fromDate = new Date(from + 'T00:00:00.000Z')
-        const toDate = new Date(to + 'T23:59:59.999Z')
-        return rowDate >= fromDate && rowDate <= toDate
+        const fromDate = new Date(from + "T00:00:00.000Z");
+        const toDate = new Date(to + "T23:59:59.999Z");
+        return rowDate >= fromDate && rowDate <= toDate;
       } else if (from) {
-        const fromDate = new Date(from + 'T00:00:00.000Z')
-        return rowDate >= fromDate
+        const fromDate = new Date(from + "T00:00:00.000Z");
+        return rowDate >= fromDate;
       } else if (to) {
-        const toDate = new Date(to + 'T23:59:59.999Z')
-        return rowDate <= toDate
+        const toDate = new Date(to + "T23:59:59.999Z");
+        return rowDate <= toDate;
       }
-      return true
+      return true;
     },
   },
   {
@@ -161,7 +161,9 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
       const seconds = Math.floor((durationMs % (1000 * 60)) / 1000);
       return (
         <div className="w-24 text-right tabular-nums">
-          {hours > 0 ? `${hours}h ` : ""}{minutes > 0 ? `${minutes}m ` : ""}{seconds}s
+          {hours > 0 ? `${hours}h ` : ""}
+          {minutes > 0 ? `${minutes}m ` : ""}
+          {seconds}s
         </div>
       );
     },
@@ -171,18 +173,23 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
     header: "Result",
     cell: ({ row }) => {
       const status = row.original.status;
-      const variant = status === 'PASS' ? 'default' : status === 'FAIL' ? 'destructive' : 'secondary';
+      const variant =
+        status === "PASS"
+          ? "default"
+          : status === "FAIL"
+            ? "destructive"
+            : "secondary";
       return (
         <Badge variant={variant} className="px-2">
-          {status === 'PASS' ? (
+          {status === "PASS" ? (
             <>
               <IconCircleCheckFilled className="w-3 h-3 mr-1 fill-green-500 dark:fill-green-400" />
               PASS
             </>
-          ) : status === 'FAIL' ? (
-            'FAIL'
+          ) : status === "FAIL" ? (
+            "FAIL"
           ) : (
-            'INVALID'
+            "INVALID"
           )}
         </Badge>
       );
@@ -195,89 +202,101 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
       return status === value;
     },
   },
-]
+];
 
 interface DataTableProps {
   selectedDate?: string;
   onClearDateFilter?: () => void;
 }
 
-export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = {}) {
-  const router = useRouter()
-  const [data, setData] = React.useState([])
-  const [loading, setLoading] = React.useState(false)
-  const [rowSelection, setRowSelection] = React.useState({})
+export function DataTable({
+  selectedDate,
+  onClearDateFilter,
+}: DataTableProps = {}) {
+  const router = useRouter();
+  const [data, setData] = React.useState([]);
+  const [loading, setLoading] = React.useState(false);
+  const [rowSelection, setRowSelection] = React.useState({});
   const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({})
+    React.useState<VisibilityState>({});
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-    []
-  )
+    [],
+  );
   const [pagination, setPagination] = React.useState({
     pageIndex: 0,
     pageSize: 30,
-  })
+  });
   // Initialize filter states from cookies
   const [serialSearch, setSerialSearch] = React.useState(() => {
-    const savedFilters = loadFiltersFromCookie()
-    return savedFilters.serialSearch || ""
-  })
+    const savedFilters = loadFiltersFromCookie();
+    return savedFilters.serialSearch || "";
+  });
   const [statusFilter, setStatusFilter] = React.useState(() => {
-    const savedFilters = loadFiltersFromCookie()
-    return savedFilters.statusFilter || "valid"
-  })
+    const savedFilters = loadFiltersFromCookie();
+    return savedFilters.statusFilter || "valid";
+  });
   const [firmwareFilter, setFirmwareFilter] = React.useState(() => {
-    const savedFilters = loadFiltersFromCookie()
-    return savedFilters.firmwareFilter || "all"
-  })
+    const savedFilters = loadFiltersFromCookie();
+    return savedFilters.firmwareFilter || "all";
+  });
   const [dateFromFilter, setDateFromFilter] = React.useState(() => {
-    const savedFilters = loadFiltersFromCookie()
-    return savedFilters.dateFromFilter || ""
-  })
+    const savedFilters = loadFiltersFromCookie();
+    return savedFilters.dateFromFilter || "";
+  });
   const [dateToFilter, setDateToFilter] = React.useState(() => {
-    const savedFilters = loadFiltersFromCookie()
-    return savedFilters.dateToFilter || ""
-  })
-  const [firmwareVersions, setFirmwareVersions] = React.useState<string[]>([])
+    const savedFilters = loadFiltersFromCookie();
+    return savedFilters.dateToFilter || "";
+  });
+  const [latestOnly, setLatestOnly] = React.useState(() => {
+    const savedFilters = loadFiltersFromCookie();
+    return savedFilters.latestOnly || false;
+  });
+  const [firmwareVersions, setFirmwareVersions] = React.useState<string[]>([]);
 
   const handleRowClick = (testId: number) => {
-    router.push(`/test/${testId}`)
-  }
+    router.push(`/test/${testId}`);
+  };
 
   React.useEffect(() => {
     const fetchData = async () => {
-      setLoading(true)
+      setLoading(true);
       try {
+        const params = new URLSearchParams({ view: "tests" });
+        if (latestOnly) {
+          params.append("latestOnly", "true");
+        }
+
         const [testsResponse, firmwareResponse] = await Promise.all([
-          fetch('/api/test-stats?view=tests'),
-          fetch('/api/test-stats?view=firmware-versions')
-        ])
+          fetch(`/api/test-stats?${params}`),
+          fetch("/api/test-stats?view=firmware-versions"),
+        ]);
 
         if (testsResponse.ok) {
-          const testData = await testsResponse.json()
-          setData(testData)
+          const testData = await testsResponse.json();
+          setData(testData);
         }
 
         if (firmwareResponse.ok) {
-          const versions = await firmwareResponse.json()
-          setFirmwareVersions(versions)
+          const versions = await firmwareResponse.json();
+          setFirmwareVersions(versions);
         }
       } catch (error) {
-        console.error('Failed to fetch data:', error)
+        console.error("Failed to fetch data:", error);
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
+    };
 
-    fetchData()
-  }, [])
+    fetchData();
+  }, [latestOnly]);
 
   // Apply selectedDate from chart click to date filters
   React.useEffect(() => {
     if (selectedDate) {
-      setDateFromFilter(selectedDate)
-      setDateToFilter(selectedDate)
+      setDateFromFilter(selectedDate);
+      setDateToFilter(selectedDate);
     }
-  }, [selectedDate])
+  }, [selectedDate]);
 
   // Save filters to cookies when they change
   React.useEffect(() => {
@@ -287,20 +306,28 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
       firmwareFilter,
       dateFromFilter,
       dateToFilter,
-    }
-    saveFiltersToCookie(filterState)
-  }, [serialSearch, statusFilter, firmwareFilter, dateFromFilter, dateToFilter])
+      latestOnly,
+    };
+    saveFiltersToCookie(filterState);
+  }, [
+    serialSearch,
+    statusFilter,
+    firmwareFilter,
+    dateFromFilter,
+    dateToFilter,
+    latestOnly,
+  ]);
 
   // Apply filters to table
   React.useEffect(() => {
-    const filters: ColumnFiltersState = []
+    const filters: ColumnFiltersState = [];
 
     // Serial number search
     if (serialSearch) {
       filters.push({
         id: "serial_number",
         value: serialSearch,
-      })
+      });
     }
 
     // Status filter
@@ -308,7 +335,7 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
       filters.push({
         id: "status",
         value: statusFilter,
-      })
+      });
     }
 
     // Firmware version filter
@@ -316,7 +343,7 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
       filters.push({
         id: "firmware_version",
         value: firmwareFilter,
-      })
+      });
     }
 
     // Date range filter
@@ -324,11 +351,17 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
       filters.push({
         id: "start_time",
         value: { from: dateFromFilter, to: dateToFilter },
-      })
+      });
     }
 
-    setColumnFilters(filters)
-  }, [serialSearch, statusFilter, firmwareFilter, dateFromFilter, dateToFilter])
+    setColumnFilters(filters);
+  }, [
+    serialSearch,
+    statusFilter,
+    firmwareFilter,
+    dateFromFilter,
+    dateToFilter,
+  ]);
 
   const table = useReactTable({
     data: data || [],
@@ -350,14 +383,14 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
     getPaginationRowModel: getPaginationRowModel(),
     getFacetedRowModel: getFacetedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
-  })
+  });
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-muted-foreground">Loading test data...</div>
       </div>
-    )
+    );
   }
 
   return (
@@ -401,10 +434,25 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
                   </SelectContent>
                 </Select>
               </div>
+              {/* Latest Only Filter */}
+              <div className="space-y-2">
+                <Label>Filter Mode</Label>
+                <Toggle
+                  pressed={latestOnly}
+                  onPressedChange={setLatestOnly}
+                  variant="outline"
+                  className="h-10 px-3"
+                >
+                  Latest Only
+                </Toggle>
+              </div>
               {/* Firmware Version Filter */}
               <div className="space-y-2">
                 <Label>Firmware</Label>
-                <Select value={firmwareFilter} onValueChange={setFirmwareFilter}>
+                <Select
+                  value={firmwareFilter}
+                  onValueChange={setFirmwareFilter}
+                >
                   <SelectTrigger className="w-40">
                     <SelectValue />
                   </SelectTrigger>
@@ -446,12 +494,13 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
             <Button
               variant="outline"
               onClick={() => {
-                setSerialSearch("")
-                setStatusFilter("all")
-                setFirmwareFilter("all")
-                setDateFromFilter("")
-                setDateToFilter("")
-                onClearDateFilter?.()
+                setSerialSearch("");
+                setStatusFilter("all");
+                setFirmwareFilter("all");
+                setDateFromFilter("");
+                setDateToFilter("");
+                setLatestOnly(false);
+                onClearDateFilter?.();
               }}
               className="h-10"
             >
@@ -470,11 +519,11 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
                         {header.isPlaceholder
                           ? null
                           : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
+                              header.column.columnDef.header,
+                              header.getContext(),
+                            )}
                       </TableHead>
-                    )
+                    );
                   })}
                 </TableRow>
               ))}
@@ -482,22 +531,23 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
             <TableBody className="**:data-[slot=table-cell]:first:w-8">
               {table.getRowModel().rows?.length ? (
                 <>
-                  {
-                    table.getRowModel().rows.map((row) => (
-                      <TableRow
-                        key={row.id}
-                        data-state={row.getIsSelected() && "selected"}
-                        className="relative z-0 cursor-pointer hover:bg-muted/50"
-                        onClick={() => handleRowClick(row.original.test_id)}
-                      >
-                        {row.getVisibleCells().map((cell) => (
-                          <TableCell key={cell.id}>
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ))
-                  }
+                  {table.getRowModel().rows.map((row) => (
+                    <TableRow
+                      key={row.id}
+                      data-state={row.getIsSelected() && "selected"}
+                      className="relative z-0 cursor-pointer hover:bg-muted/50"
+                      onClick={() => handleRowClick(row.original.test_id)}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id}>
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext(),
+                          )}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
                 </>
               ) : (
                 <TableRow>
@@ -525,7 +575,7 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
               <Select
                 value={`${table.getState().pagination.pageSize}`}
                 onValueChange={(value) => {
-                  table.setPageSize(Number(value))
+                  table.setPageSize(Number(value));
                 }}
               >
                 <SelectTrigger size="sm" className="w-20" id="rows-per-page">
@@ -606,5 +656,5 @@ export function DataTable({ selectedDate, onClearDateFilter }: DataTableProps = 
         <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
       </TabsContent>
     </Tabs>
-  )
+  );
 }
