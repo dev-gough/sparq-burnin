@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run ingest` - Ingest CSV files from data/to_process/ into database
 - `npm run reprocess` - Clear database and re-ingest all files from data/processed/ (use when ingestion logic changes)
 - `npm run db:schema` - Re-run database schema setup
+- Dont ever call `npm run build`, `npm run lint` is enough to troubleshoot any errors you may find.
 
 ## Project Architecture
 
