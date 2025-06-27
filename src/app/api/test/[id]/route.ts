@@ -59,7 +59,7 @@ const dbConfig = {
   port: parseInt(process.env.DB_PORT || '5432'),
   database: process.env.DB_NAME || 'burnin_dashboard',
   user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || '1qaz!QAZ',
+  password: process.env.DB_PASSWORD
 };
 
 export async function GET(
