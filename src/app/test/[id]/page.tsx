@@ -69,20 +69,20 @@ const pvColumns = ["vpv1", "ppv1", "vpv2", "ppv2", "vpv3", "ppv3", "vpv4", "ppv4
 const gridColumns = ["vgrid", "pgrid", "qgrid", "vbus"]
 const latchColumns = [
   "vgrid_inst_latch", "vntrl_inst_latch", "igrid_inst_latch", "vbus_inst_latch",
-  "vpv1_inst_latch", "ipv1_inst_latch", "vpv2_inst_latch", "ipv2_inst_latch", 
+  "vpv1_inst_latch", "ipv1_inst_latch", "vpv2_inst_latch", "ipv2_inst_latch",
   "vpv3_inst_latch", "ipv3_inst_latch", "vpv4_inst_latch", "ipv4_inst_latch"
 ]
 
 const colors = [
-  "#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#8dd1e1", 
+  "#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#8dd1e1",
   "#d084d0", "#82d982", "#ffb347", "#87ceeb", "#dda0dd"
 ]
 
-function ConfigurableChart({ 
-  title, 
-  data, 
-  availableColumns 
-}: { 
+function ConfigurableChart({
+  title,
+  data,
+  availableColumns
+}: {
   title: string
   data: DataPoint[]
   availableColumns: string[]
@@ -91,8 +91,24 @@ function ConfigurableChart({
   const getDisplayName = (column: string) => {
     return column.replace('_inst_latch', '')
   }
+
+  // Set default columns based on chart type
+  const getDefaultColumns = () => {
+    if (title === "PV Data & Frequency") {
+      // Default to PPV columns for PV data
+      const ppvColumns = availableColumns.filter(col => col.includes('ppv'))
+      return ppvColumns.length > 0 ? ppvColumns : availableColumns.slice(0, 3)
+    } else if (title === "Latch Data") {
+      // Default to IPV columns for latch data
+      const ipvColumns = availableColumns.filter(col => col.includes('ipv'))
+      return ipvColumns.length > 0 ? ipvColumns : availableColumns.slice(0, 3)
+    }
+    // Default behavior for other charts
+    return availableColumns.slice(0, 3)
+  }
+
   const [selectedColumns, setSelectedColumns] = useState<Set<string>>(
-    new Set(availableColumns.slice(0, 3))
+    new Set(getDefaultColumns())
   )
   // Zoom controls
   const [zoomStart, setZoomStart] = useState(0)
@@ -238,7 +254,7 @@ function ConfigurableChart({
                 const vpvColumns = availableColumns.filter(col => col.includes('vpv'))
                 const allVpvSelected = vpvColumns.every(col => selectedColumns.has(col))
                 const newSelected = new Set(selectedColumns)
-                
+
                 if (allVpvSelected) {
                   // Deselect all VPV columns
                   vpvColumns.forEach(col => newSelected.delete(col))
@@ -263,7 +279,7 @@ function ConfigurableChart({
                 const ppvColumns = availableColumns.filter(col => col.includes('ppv'))
                 const allPpvSelected = ppvColumns.every(col => selectedColumns.has(col))
                 const newSelected = new Set(selectedColumns)
-                
+
                 if (allPpvSelected) {
                   // Deselect all PPV columns
                   ppvColumns.forEach(col => newSelected.delete(col))
@@ -288,7 +304,7 @@ function ConfigurableChart({
                 const ipvColumns = availableColumns.filter(col => col.includes('ipv'))
                 const allIpvSelected = ipvColumns.every(col => selectedColumns.has(col))
                 const newSelected = new Set(selectedColumns)
-                
+
                 if (allIpvSelected) {
                   // Deselect all IPV columns
                   ipvColumns.forEach(col => newSelected.delete(col))
@@ -311,8 +327,8 @@ function ConfigurableChart({
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="timestamp" 
+              <XAxis
+                dataKey="timestamp"
                 interval={Math.max(0, Math.ceil(chartData.length / 8))}
                 tick={{ fontSize: 12 }}
                 angle={-45}
@@ -320,7 +336,7 @@ function ConfigurableChart({
                 height={60}
               />
               <YAxis />
-              <Tooltip 
+              <Tooltip
                 formatter={(value: string | number, name: string) => [
                   typeof value === 'number' ? Number(value).toFixed(3) : value,
                   getDisplayName(name)
@@ -378,7 +394,7 @@ export default function TestPage() {
 
   const updateTestStatus = async (newStatus: string) => {
     if (!testData) return
-    
+
     setUpdatingStatus(true)
     try {
       const response = await fetch('/api/test-status', {
@@ -391,11 +407,11 @@ export default function TestPage() {
           status: newStatus,
         }),
       })
-      
+
       if (!response.ok) {
         throw new Error('Failed to update test status')
       }
-      
+
       // Update local state
       setTestData(prev => prev ? { ...prev, overall_status: newStatus } : null)
     } catch (err) {
@@ -512,9 +528,9 @@ export default function TestPage() {
           <div className="flex items-center gap-4 mt-2">
             <div className="flex items-center gap-2">
               <Badge variant={
-                testData.overall_status === 'PASS' ? 'default' : 
-                testData.overall_status === 'FAIL' ? 'destructive' : 
-                'secondary'
+                testData.overall_status === 'PASS' ? 'default' :
+                  testData.overall_status === 'FAIL' ? 'destructive' :
+                    'secondary'
               }>
                 {testData.overall_status}
               </Badge>
