@@ -1,7 +1,7 @@
 "use client"
 
 import { useParams } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
@@ -79,6 +79,69 @@ const colors = [
   "#d084d0", "#82d982", "#ffb347", "#87ceeb", "#dda0dd"
 ]
 
+const DECIMATION_COOKIE_KEY = "burnin-chart-decimation-enabled"
+
+const saveDecimationToCookie = (enabled: boolean) => {
+  try {
+    document.cookie = `${DECIMATION_COOKIE_KEY}=${enabled}; path=/; max-age=${60 * 60 * 24 * 30}` // 30 days
+  } catch (error) {
+    console.warn("Failed to save decimation setting to cookie:", error)
+  }
+}
+
+const loadDecimationFromCookie = (): boolean => {
+  try {
+    if (typeof document === "undefined") return true // Default to enabled
+
+    const cookies = document.cookie.split(";")
+    const decimationCookie = cookies.find((cookie) =>
+      cookie.trim().startsWith(`${DECIMATION_COOKIE_KEY}=`)
+    )
+
+    if (decimationCookie) {
+      const value = decimationCookie.split("=")[1]
+      return value === "true"
+    }
+  } catch (error) {
+    console.warn("Failed to load decimation setting from cookie:", error)
+  }
+  return true // Default to enabled
+}
+
+// Data decimation function to reduce points while preserving visual fidelity
+function decimateData(data: DataPoint[], maxPoints: number = 1000): DataPoint[] {
+  if (data.length <= maxPoints) return data
+
+  const step = Math.ceil(data.length / maxPoints)
+  const decimated: DataPoint[] = []
+
+  for (let i = 0; i < data.length; i += step) {
+    // Always include the first and last points
+    if (i === 0 || i >= data.length - step) {
+      decimated.push(data[i])
+    } else {
+      // For intermediate points, use a simple averaging approach
+      const slice = data.slice(i, Math.min(i + step, data.length))
+      const avgPoint = slice.reduce((acc, point, idx) => {
+        if (idx === 0) return { ...point }
+
+        // Average numeric values
+        Object.keys(point).forEach(key => {
+          const typedKey = key as keyof DataPoint
+          if (typeof point[typedKey] === 'number' && typeof acc[typedKey] === 'number') {
+            ; (acc[typedKey] as number) = ((acc[typedKey] as number) * idx + (point[typedKey] as number)) / (idx + 1)
+          }
+        })
+        return acc
+      }, { ...slice[0] })
+
+      decimated.push(avgPoint)
+    }
+  }
+
+  return decimated
+}
+
 function ConfigurableChart({
   title,
   data,
@@ -120,8 +183,10 @@ function ConfigurableChart({
   const [zoomStart, setZoomStart] = useState(0)
   const [zoomEnd, setZoomEnd] = useState(100)
   const [zoomLevel, setZoomLevel] = useState(1)
+  // Decimation toggle
+  const [decimationEnabled, setDecimationEnabled] = useState(() => loadDecimationFromCookie())
 
-  const toggleColumn = (column: string) => {
+  const toggleColumn = useCallback((column: string) => {
     const newSelected = new Set(selectedColumns)
     if (newSelected.has(column)) {
       newSelected.delete(column)
@@ -129,67 +194,91 @@ function ConfigurableChart({
       newSelected.add(column)
     }
     setSelectedColumns(newSelected)
-  }
+  }, [selectedColumns])
 
-  // Calculate zoom range
-  const totalPoints = data.length
-  const startIndex = Math.floor((zoomStart / 100) * totalPoints)
-  const endIndex = Math.ceil((zoomEnd / 100) * totalPoints)
-  const zoomedData = data.slice(startIndex, endIndex)
+  const toggleDecimation = useCallback(() => {
+    const newEnabled = !decimationEnabled
+    setDecimationEnabled(newEnabled)
+    saveDecimationToCookie(newEnabled)
+  }, [decimationEnabled])
 
-  const chartData = zoomedData.map((point, index) => ({
-    timestamp: new Date(point.timestamp).toLocaleTimeString(),
-    originalIndex: startIndex + index,
-    ...Object.fromEntries(
-      Array.from(selectedColumns).map(col => [col, point[col as keyof DataPoint]])
-    )
-  }))
+  // Calculate zoom range and apply adaptive decimation
+  const { totalPoints, zoomedData, zoomedSliceLength } = useMemo(() => {
+    const totalPoints = data.length
+    const startIndex = Math.floor((zoomStart / 100) * totalPoints)
+    const endIndex = Math.ceil((zoomEnd / 100) * totalPoints)
 
-  const zoomIn = () => {
+    // First slice the data based on zoom
+    const zoomedSlice = data.slice(startIndex, endIndex)
+
+    // Then apply decimation to the zoomed slice if enabled
+    const zoomedData = decimationEnabled ? decimateData(zoomedSlice, 1000) : zoomedSlice
+
+    return { totalPoints, zoomedData, zoomedSliceLength: zoomedSlice.length }
+  }, [data, zoomStart, zoomEnd, decimationEnabled])
+
+  // Memoize chart data transformation
+  const chartData = useMemo(() => {
+    return zoomedData.map((point, index) => ({
+      timestamp: new Date(point.timestamp).toLocaleTimeString(),
+      originalIndex: Math.floor((zoomStart / 100) * data.length) + index,
+      ...Object.fromEntries(
+        Array.from(selectedColumns).map(col => [col, point[col as keyof DataPoint]])
+      )
+    }))
+  }, [zoomedData, selectedColumns, zoomStart, data.length])
+
+  const zoomIn = useCallback(() => {
     const currentRange = zoomEnd - zoomStart
     const newRange = Math.max(currentRange * 0.5, 5) // Minimum 5% range
     const newEnd = Math.min(100, zoomStart + newRange)
     setZoomEnd(newEnd)
     setZoomLevel(zoomLevel * 2)
-  }
+  }, [zoomStart, zoomEnd, zoomLevel])
 
-  const zoomOut = () => {
+  const zoomOut = useCallback(() => {
     const currentRange = zoomEnd - zoomStart
     const newRange = Math.min(currentRange * 2, 100)
     const newEnd = Math.min(100, zoomStart + newRange)
     setZoomEnd(newEnd)
     setZoomLevel(Math.max(zoomLevel * 0.5, 1))
-  }
+  }, [zoomStart, zoomEnd, zoomLevel])
 
-  const resetZoom = () => {
+  const resetZoom = useCallback(() => {
     setZoomStart(0)
     setZoomEnd(100)
     setZoomLevel(1)
-  }
+  }, [])
 
-  const panLeft = () => {
+  const panLeft = useCallback(() => {
     const currentRange = zoomEnd - zoomStart
     const panAmount = currentRange * 0.1
     if (zoomStart - panAmount >= 0) {
       setZoomStart(zoomStart - panAmount)
       setZoomEnd(zoomEnd - panAmount)
     }
-  }
+  }, [zoomStart, zoomEnd])
 
-  const panRight = () => {
+  const panRight = useCallback(() => {
     const currentRange = zoomEnd - zoomStart
     const panAmount = currentRange * 0.1
     if (zoomEnd + panAmount <= 100) {
       setZoomStart(zoomStart + panAmount)
       setZoomEnd(zoomEnd + panAmount)
     }
-  }
+  }, [zoomStart, zoomEnd])
 
   return (
     <Card>
       <CardHeader>
         <div className="flex justify-between items-start">
-          <CardTitle>{title}</CardTitle>
+          <div className="flex flex-col">
+            <CardTitle>{title}</CardTitle>
+            <span className="text-xs text-muted-foreground">
+              Showing {chartData.length} of {data.length} data points
+              {decimationEnabled && zoomedData.length < zoomedSliceLength && " (decimated for performance)"}
+            </span>
+          </div>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={panLeft} disabled={zoomStart <= 0}>
               ←
@@ -209,6 +298,16 @@ function ConfigurableChart({
             <Button size="sm" variant="outline" onClick={resetZoom} disabled={zoomLevel <= 1}>
               <RotateCcw className="h-4 w-4" />
             </Button>
+            {zoomedSliceLength > 1000 && (
+              <Button
+                size="sm"
+                variant={decimationEnabled ? "default" : "outline"}
+                onClick={toggleDecimation}
+                title={decimationEnabled ? "Disable decimation (show all data points)" : "Enable decimation (improve performance)"}
+              >
+                {decimationEnabled ? "Decimated" : "Full Data"}
+              </Button>
+            )}
           </div>
         </div>
         {/* Range slider for zoom position */}
@@ -331,7 +430,10 @@ function ConfigurableChart({
       <CardContent>
         <div className="h-80">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
+            <LineChart
+              data={chartData}
+              margin={{ top: 5, right: 30, left: 20, bottom: 60 }}
+            >
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis
                 dataKey="timestamp"
@@ -348,6 +450,7 @@ function ConfigurableChart({
                   getDisplayName(name)
                 ]}
                 labelFormatter={(label) => `Time: ${label}`}
+                animationDuration={0}
               />
               <Legend />
               {Array.from(selectedColumns).map((column, index) => (
@@ -359,6 +462,8 @@ function ConfigurableChart({
                   stroke={colors[index % colors.length]}
                   strokeWidth={2}
                   dot={false}
+                  isAnimationActive={false}
+                  connectNulls={false}
                 />
               ))}
             </LineChart>
