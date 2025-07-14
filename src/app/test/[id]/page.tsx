@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, ZoomIn, ZoomOut, RotateCcw, Download } from "lucide-react"
+import { ArrowLeft, ZoomIn, ZoomOut, RotateCcw, Download, Maximize2, X } from "lucide-react"
 import Link from "next/link"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
 
@@ -22,6 +22,15 @@ interface TestData {
   overall_status: string
   failure_description?: string
   data_points: DataPoint[]
+}
+
+interface FullScreenState {
+  selectedColumns: string[]
+  zoomStart: number
+  zoomEnd: number
+  zoomLevel: number
+  decimationEnabled: boolean
+  sourceChartTitle: string
 }
 
 interface DataPoint {
@@ -73,6 +82,50 @@ const latchColumns = [
   "vpv3_inst_latch", "ipv3_inst_latch", "vpv4_inst_latch", "ipv4_inst_latch",
   "temperature"
 ]
+
+// All available columns for full-screen chart
+const allColumns = [
+  ...pvColumns,
+  ...gridColumns,
+  ...latchColumns,
+  "epv1", "epv2", "epv3", "epv4",
+  "activeenergy", "reactiveenergy",
+  "extstatus", "status", "extstatus_latch", "status_latch", "status_bits"
+].filter((col, index, arr) => arr.indexOf(col) === index) // Remove duplicates
+
+// Column groups for enhanced organization
+const columnGroups = {
+  "Power Generation": {
+    columns: ["vpv1", "vpv2", "vpv3", "vpv4", "ppv1", "ppv2", "ppv3", "ppv4"],
+    description: "PV voltages and power outputs",
+    color: "bg-green-50 border-green-200"
+  },
+  "Energy & Efficiency": {
+    columns: ["epv1", "epv2", "epv3", "epv4", "activeenergy", "reactiveenergy"],
+    description: "Energy measurements and efficiency metrics",
+    color: "bg-blue-50 border-blue-200"
+  },
+  "Grid Connection": {
+    columns: ["vgrid", "pgrid", "qgrid", "vbus", "frequency"],
+    description: "Grid interface measurements",
+    color: "bg-yellow-50 border-yellow-200"
+  },
+  "Current Latch": {
+    columns: ["ipv1_inst_latch", "ipv2_inst_latch", "ipv3_inst_latch", "ipv4_inst_latch", "igrid_inst_latch", "vntrl_inst_latch"],
+    description: "Instantaneous current latch readings",
+    color: "bg-purple-50 border-purple-200"
+  },
+  "Voltage Latch": {
+    columns: ["vgrid_inst_latch", "vbus_inst_latch", "vpv1_inst_latch", "vpv2_inst_latch", "vpv3_inst_latch", "vpv4_inst_latch"],
+    description: "Instantaneous voltage latch readings",
+    color: "bg-indigo-50 border-indigo-200"
+  },
+  "System Status": {
+    columns: ["temperature", "extstatus", "status", "status_bits", "extstatus_latch", "status_latch"],
+    description: "System health and diagnostics",
+    color: "bg-red-50 border-red-200"
+  }
+}
 
 const colors = [
   "#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#8dd1e1",
@@ -142,14 +195,358 @@ function decimateData(data: DataPoint[], maxPoints: number = 1000): DataPoint[] 
   return decimated
 }
 
+function FullScreenChart({
+  data,
+  initialState,
+  onClose
+}: {
+  data: DataPoint[]
+  initialState: FullScreenState
+  onClose: () => void
+}) {
+  // Initialize state from inherited values
+  const [selectedColumns, setSelectedColumns] = useState<Set<string>>(
+    new Set(initialState.selectedColumns)
+  )
+  const [zoomStart, setZoomStart] = useState(initialState.zoomStart)
+  const [zoomEnd, setZoomEnd] = useState(initialState.zoomEnd)
+  const [zoomLevel, setZoomLevel] = useState(initialState.zoomLevel)
+  const [decimationEnabled, setDecimationEnabled] = useState(initialState.decimationEnabled)
+
+  // Reuse the same logic from ConfigurableChart
+  const toggleColumn = useCallback((column: string) => {
+    const newSelected = new Set(selectedColumns)
+    if (newSelected.has(column)) {
+      newSelected.delete(column)
+    } else {
+      newSelected.add(column)
+    }
+    setSelectedColumns(newSelected)
+  }, [selectedColumns])
+
+  const toggleDecimation = useCallback(() => {
+    const newEnabled = !decimationEnabled
+    setDecimationEnabled(newEnabled)
+    saveDecimationToCookie(newEnabled)
+  }, [decimationEnabled])
+
+  // Group control functions
+  const selectAllInGroup = useCallback((groupColumns: string[]) => {
+    const newSelected = new Set(selectedColumns)
+    groupColumns.forEach(col => {
+      if (allColumns.includes(col)) {
+        newSelected.add(col)
+      }
+    })
+    setSelectedColumns(newSelected)
+  }, [selectedColumns])
+
+  const deselectAllInGroup = useCallback((groupColumns: string[]) => {
+    const newSelected = new Set(selectedColumns)
+    groupColumns.forEach(col => newSelected.delete(col))
+    setSelectedColumns(newSelected)
+  }, [selectedColumns])
+
+  const isGroupFullySelected = useCallback((groupColumns: string[]) => {
+    return groupColumns.every(col => selectedColumns.has(col))
+  }, [selectedColumns])
+
+  const getGroupSelectedCount = useCallback((groupColumns: string[]) => {
+    return groupColumns.filter(col => selectedColumns.has(col)).length
+  }, [selectedColumns])
+
+  // Quick preset functions
+  const applyPreset = useCallback((presetColumns: string[]) => {
+    const newSelected = new Set<string>()
+    presetColumns.forEach(col => {
+      if (allColumns.includes(col)) {
+        newSelected.add(col)
+      }
+    })
+    setSelectedColumns(newSelected)
+  }, [])
+
+  const clearAllSelections = useCallback(() => {
+    setSelectedColumns(new Set())
+  }, [])
+
+  // Calculate zoom range and apply adaptive decimation
+  const { zoomedData, zoomedSliceLength } = useMemo(() => {
+    const totalPoints = data.length
+    const startIndex = Math.floor((zoomStart / 100) * totalPoints)
+    const endIndex = Math.ceil((zoomEnd / 100) * totalPoints)
+
+    const zoomedSlice = data.slice(startIndex, endIndex)
+    const zoomedData = decimationEnabled ? decimateData(zoomedSlice, 1000) : zoomedSlice
+
+    return { zoomedData, zoomedSliceLength: zoomedSlice.length }
+  }, [data, zoomStart, zoomEnd, decimationEnabled])
+
+  // Memoize chart data transformation
+  const chartData = useMemo(() => {
+    return zoomedData.map((point, index) => ({
+      timestamp: new Date(point.timestamp).toLocaleTimeString(),
+      originalIndex: Math.floor((zoomStart / 100) * data.length) + index,
+      ...Object.fromEntries(
+        Array.from(selectedColumns).map(col => [col, point[col as keyof DataPoint]])
+      )
+    }))
+  }, [zoomedData, selectedColumns, zoomStart, data.length])
+
+  // Zoom functions (same as ConfigurableChart)
+  const zoomIn = useCallback(() => {
+    const currentRange = zoomEnd - zoomStart
+    const newRange = Math.max(currentRange * 0.5, 5)
+    const newEnd = Math.min(100, zoomStart + newRange)
+    setZoomEnd(newEnd)
+    setZoomLevel(zoomLevel * 2)
+  }, [zoomStart, zoomEnd, zoomLevel])
+
+  const zoomOut = useCallback(() => {
+    const currentRange = zoomEnd - zoomStart
+    const newRange = Math.min(currentRange * 2, 100)
+    const newEnd = Math.min(100, zoomStart + newRange)
+    setZoomEnd(newEnd)
+    setZoomLevel(Math.max(zoomLevel * 0.5, 1))
+  }, [zoomStart, zoomEnd, zoomLevel])
+
+  const resetZoom = useCallback(() => {
+    setZoomStart(0)
+    setZoomEnd(100)
+    setZoomLevel(1)
+  }, [])
+
+  const panLeft = useCallback(() => {
+    const currentRange = zoomEnd - zoomStart
+    const panAmount = currentRange * 0.1
+    if (zoomStart - panAmount >= 0) {
+      setZoomStart(zoomStart - panAmount)
+      setZoomEnd(zoomEnd - panAmount)
+    }
+  }, [zoomStart, zoomEnd])
+
+  const panRight = useCallback(() => {
+    const currentRange = zoomEnd - zoomStart
+    const panAmount = currentRange * 0.1
+    if (zoomEnd + panAmount <= 100) {
+      setZoomStart(zoomStart + panAmount)
+      setZoomEnd(zoomEnd + panAmount)
+    }
+  }, [zoomStart, zoomEnd])
+
+  const getDisplayName = (column: string) => {
+    return column.replace('_inst_latch', '')
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-background rounded-lg shadow-xl w-[95vw] h-[95vh] p-4 flex flex-col">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h2 className="text-xl font-bold">Full Screen - {initialState.sourceChartTitle}</h2>
+            <span className="text-sm text-muted-foreground">
+              Showing {chartData.length} of {data.length} data points
+              {decimationEnabled && zoomedData.length < zoomedSliceLength && " (decimated for performance)"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={panLeft} disabled={zoomStart <= 0}>
+              ←
+            </Button>
+            <Button size="sm" variant="outline" onClick={zoomOut} disabled={zoomLevel <= 1}>
+              <ZoomOut className="h-4 w-4" />
+            </Button>
+            <span className="text-xs text-muted-foreground px-2">
+              {zoomLevel.toFixed(1)}x
+            </span>
+            <Button size="sm" variant="outline" onClick={zoomIn}>
+              <ZoomIn className="h-4 w-4" />
+            </Button>
+            <Button size="sm" variant="outline" onClick={panRight} disabled={zoomEnd >= 100}>
+              →
+            </Button>
+            <Button size="sm" variant="outline" onClick={resetZoom} disabled={zoomLevel <= 1}>
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+            {zoomedSliceLength > 1000 && (
+              <Button
+                size="sm"
+                variant={decimationEnabled ? "default" : "outline"}
+                onClick={toggleDecimation}
+                title={decimationEnabled ? "Disable decimation (show all data points)" : "Enable decimation (improve performance)"}
+              >
+                {decimationEnabled ? "Decimated" : "Full Data"}
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Chart */}
+        <div className="flex-1 min-h-0 max-h-[calc(100vh-400px)]">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={chartData}
+              margin={{ top: 5, right: 30, left: 20, bottom: 60 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis
+                dataKey="timestamp"
+                interval={Math.max(0, Math.ceil(chartData.length / 12))}
+                tick={{ fontSize: 12 }}
+                angle={-45}
+                textAnchor="end"
+                height={60}
+              />
+              <YAxis />
+              <Tooltip
+                formatter={(value: string | number, name: string) => [
+                  typeof value === 'number' ? Number(value).toFixed(3) : value,
+                  getDisplayName(name)
+                ]}
+                labelFormatter={(label) => `Time: ${label}`}
+                animationDuration={0}
+              />
+              <Legend />
+              {Array.from(selectedColumns).map((column, index) => (
+                <Line
+                  key={column}
+                  type="monotone"
+                  dataKey={column}
+                  name={getDisplayName(column)}
+                  stroke={colors[index % colors.length]}
+                  strokeWidth={2}
+                  dot={false}
+                  isAnimationActive={false}
+                  connectNulls={false}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Enhanced Column Selection with Compact Grouping */}
+        <div className="mt-4 max-h-80 overflow-y-auto">
+          {/* Quick Presets */}
+          <div className="mb-3 p-2 bg-gray-50 rounded border">
+            <div className="flex flex-wrap gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => applyPreset(["ppv1", "ppv2", "ppv3", "ppv4"])}
+                className="h-6 px-2 text-xs"
+              >
+                All PPV
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => applyPreset(["vpv1", "vpv2", "vpv3", "vpv4"])}
+                className="h-6 px-2 text-xs"
+              >
+                All VPV
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => applyPreset(["temperature", "vgrid", "pgrid", "frequency"])}
+                className="h-6 px-2 text-xs"
+              >
+                Grid + Temp
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => applyPreset(["temperature", "extstatus", "status"])}
+                className="h-6 px-2 text-xs"
+              >
+                Diagnostics
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={clearAllSelections}
+                className="h-6 px-2 text-xs"
+              >
+                Clear All
+              </Button>
+            </div>
+          </div>
+
+          {/* Ultra-Compact Single-Row Layout */}
+          <div className="grid grid-cols-6 gap-1">
+            {Object.entries(columnGroups).map(([groupName, group]) => {
+              const selectedCount = getGroupSelectedCount(group.columns)
+              const totalCount = group.columns.length
+              const isFullySelected = isGroupFullySelected(group.columns)
+
+              return (
+                <div key={groupName} className={`border rounded p-2 ${group.color}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-medium text-sm truncate">{groupName}</h3>
+                    <span className="text-sm text-muted-foreground ml-1">
+                      {selectedCount}/{totalCount}
+                    </span>
+                  </div>
+                  <div className="flex gap-1 mb-2">
+                    <Button
+                      size="sm"
+                      variant={isFullySelected ? "default" : "outline"}
+                      onClick={() => selectAllInGroup(group.columns)}
+                      className="h-6 px-2 text-xs flex-1"
+                    >
+                      All
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => deselectAllInGroup(group.columns)}
+                      className="h-6 px-2 text-xs flex-1"
+                    >
+                      None
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                    {group.columns.map(column => (
+                      <div key={column} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`fs-${column}`}
+                          checked={selectedColumns.has(column)}
+                          onCheckedChange={() => toggleColumn(column)}
+                          className="h-4 w-4 flex-shrink-0"
+                        />
+                        <label
+                          htmlFor={`fs-${column}`}
+                          className="text-sm leading-relaxed cursor-pointer truncate"
+                        >
+                          {getDisplayName(column)}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ConfigurableChart({
   title,
   data,
-  availableColumns
+  availableColumns,
+  onFullScreen
 }: {
   title: string
   data: DataPoint[]
   availableColumns: string[]
+  onFullScreen?: (state: FullScreenState) => void
 }) {
   // Function to get display name for columns
   const getDisplayName = (column: string) => {
@@ -306,6 +703,23 @@ function ConfigurableChart({
                 title={decimationEnabled ? "Disable decimation (show all data points)" : "Enable decimation (improve performance)"}
               >
                 {decimationEnabled ? "Decimated" : "Full Data"}
+              </Button>
+            )}
+            {onFullScreen && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onFullScreen({
+                  selectedColumns: Array.from(selectedColumns),
+                  zoomStart,
+                  zoomEnd,
+                  zoomLevel,
+                  decimationEnabled,
+                  sourceChartTitle: title
+                })}
+                title="Open in full screen"
+              >
+                <Maximize2 className="h-4 w-4" />
               </Button>
             )}
           </div>
@@ -481,6 +895,29 @@ export default function TestPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [updatingStatus, setUpdatingStatus] = useState(false)
+  const [fullScreenState, setFullScreenState] = useState<FullScreenState | null>(null)
+
+  const openFullScreen = useCallback((state: FullScreenState) => {
+    setFullScreenState(state)
+  }, [])
+
+  const closeFullScreen = useCallback(() => {
+    setFullScreenState(null)
+  }, [])
+
+  // Handle ESC key to close fullscreen
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && fullScreenState) {
+        closeFullScreen()
+      }
+    }
+
+    if (fullScreenState) {
+      document.addEventListener('keydown', handleKeyDown)
+      return () => document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [fullScreenState, closeFullScreen])
 
   useEffect(() => {
     const fetchTestData = async () => {
@@ -674,20 +1111,32 @@ export default function TestPage() {
             title="PV Data & Frequency"
             data={testData.data_points}
             availableColumns={pvColumns}
+            onFullScreen={openFullScreen}
           />
 
           <ConfigurableChart
             title="Grid Data"
             data={testData.data_points}
             availableColumns={gridColumns}
+            onFullScreen={openFullScreen}
           />
 
           <ConfigurableChart
             title="Latch Data"
             data={testData.data_points}
             availableColumns={latchColumns}
+            onFullScreen={openFullScreen}
           />
         </div>
+
+        {/* Full Screen Modal */}
+        {fullScreenState && (
+          <FullScreenChart
+            data={testData.data_points}
+            initialState={fullScreenState}
+            onClose={closeFullScreen}
+          />
+        )}
       </div>
     </div>
   )
