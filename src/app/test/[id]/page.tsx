@@ -65,12 +65,13 @@ interface DataPoint {
   status_bits?: string
 }
 
-const pvColumns = ["vpv1", "ppv1", "vpv2", "ppv2", "vpv3", "ppv3", "vpv4", "ppv4", "frequency"]
-const gridColumns = ["vgrid", "pgrid", "qgrid", "vbus"]
+const pvColumns = ["vpv1", "ppv1", "vpv2", "ppv2", "vpv3", "ppv3", "vpv4", "ppv4", "frequency", "temperature"]
+const gridColumns = ["vgrid", "pgrid", "qgrid", "vbus", "temperature"]
 const latchColumns = [
   "vgrid_inst_latch", "vntrl_inst_latch", "igrid_inst_latch", "vbus_inst_latch",
   "vpv1_inst_latch", "ipv1_inst_latch", "vpv2_inst_latch", "ipv2_inst_latch",
-  "vpv3_inst_latch", "ipv3_inst_latch", "vpv4_inst_latch", "ipv4_inst_latch"
+  "vpv3_inst_latch", "ipv3_inst_latch", "vpv4_inst_latch", "ipv4_inst_latch",
+  "temperature"
 ]
 
 const colors = [
@@ -95,9 +96,14 @@ function ConfigurableChart({
   // Set default columns based on chart type
   const getDefaultColumns = () => {
     if (title === "PV Data & Frequency") {
-      // Default to PPV columns for PV data
+      // Default to PPV columns for PV data, plus temperature
       const ppvColumns = availableColumns.filter(col => col.includes('ppv'))
-      return ppvColumns.length > 0 ? ppvColumns : availableColumns.slice(0, 3)
+      const defaultCols = ppvColumns.length > 0 ? ppvColumns : availableColumns.slice(0, 3)
+      // Add temperature if it's available and not already included
+      if (availableColumns.includes('temperature') && !defaultCols.includes('temperature')) {
+        defaultCols.push('temperature')
+      }
+      return defaultCols
     } else if (title === "Latch Data") {
       // Default to IPV columns for latch data
       const ipvColumns = availableColumns.filter(col => col.includes('ipv'))
