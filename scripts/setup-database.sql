@@ -16,15 +16,15 @@ DROP TABLE IF EXISTS Inverters CASCADE;
 CREATE TABLE Inverters (
     inv_id SERIAL PRIMARY KEY,
     serial_number VARCHAR(50) UNIQUE NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create the Tests table
 CREATE TABLE Tests (
     test_id SERIAL PRIMARY KEY,
     inv_id INTEGER NOT NULL REFERENCES Inverters(inv_id),
-    start_time TIMESTAMP NOT NULL,
-    end_time TIMESTAMP NOT NULL,
+    start_time TIMESTAMPTZ NOT NULL,
+    end_time TIMESTAMPTZ NOT NULL,
     firmware_version VARCHAR(20),
     overall_status VARCHAR(10) NOT NULL,
     ac_status VARCHAR(10),
@@ -34,15 +34,16 @@ CREATE TABLE Tests (
     ch4_status VARCHAR(10),
     status_flags TEXT,
     failure_description TEXT,
+    failure_time TIMESTAMPTZ,
     source_file VARCHAR(255),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create the TestData table
 CREATE TABLE TestData (
     data_id SERIAL PRIMARY KEY,
     test_id INTEGER NOT NULL REFERENCES Tests(test_id),
-    timestamp TIMESTAMP NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL,
     vgrid FLOAT,
     pgrid FLOAT,
     qgrid FLOAT,
@@ -81,7 +82,7 @@ CREATE TABLE TestData (
     ipv4_inst_latch FLOAT,
     status_bits TEXT,
     source_file VARCHAR(255),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Add indexes for performance

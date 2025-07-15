@@ -101,7 +101,7 @@ CSV files containing time-series measurement data with columns:
 
 ### Ingestion Process
 
-The ingestion script (`scripts/ingest-csv.ts`):
+The ingestion script (`scripts/ingest.ts`):
 
 1. **Processes Results CSV files:**
    - Creates inverter records if they don't exist
