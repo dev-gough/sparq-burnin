@@ -242,13 +242,13 @@ class CSVIngester {
     await this.client.query(query, values);
   }
 
-  private parseFloat(value: string): number | null {
+  private parseFloat(value: string | undefined): number | null {
     if (!value || value.trim() === '') return null;
     const parsed = parseFloat(value);
     return isNaN(parsed) ? null : parsed;
   }
 
-  private parseInt(value: string): number | null {
+  private parseInt(value: string | undefined): number | null {
     if (!value || value.trim() === '') return null;
     const parsed = parseInt(value);
     return isNaN(parsed) ? null : parsed;
