@@ -1,0 +1,39 @@
+{
+  "paths": {
+    "source": {
+      "results_dir": "/path/to/pCloudDrive/BurnInTest/results",
+      "data_dir": "/path/to/pCloudDrive/BurnInTest/data"
+    },
+    "local": {
+      "main_dir": "/path/to/burnin/data",
+      "dashboard_dir": "/path/to/burnin",
+      "log_dir": "/path/to/burnin/log"
+    }
+  },
+  "settings": {
+    "check_interval": 60,
+    "cutoff_date": "2025-07-11",
+    "log_file": "file_sync.log",
+    "max_log_size_mb": 5,
+    "log_backup_count": 5,
+    "debug_firmware_version": "1.11.11",
+    "timeout": {
+      "cleanup": 120,
+      "ingestion": 300
+    }
+  },
+  "node": {
+    "nvm_path": "~/.nvm/versions/node/v22.*/bin",
+    "fallback_to_system": true
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "name": "burnin_dashboard",
+    "user": "postgres",
+    "password": "your_password_here"
+  },
+  "api": {
+    "base_url": "http://localhost:3000"
+  }
+}

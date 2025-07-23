@@ -7,85 +7,127 @@ import csvParser from 'csv-parser';
 import { createReadStream } from 'fs';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
-interface InverterRecord {
-  inv_id: number;
-  serial_number: string;
+interface Config {
+  paths: {
+    local: {
+      main_dir: string;
+    };
+  };
+  settings: {
+    debug_firmware_version: string;
+  };
+  database: {
+    host: string;
+    port: number;
+    name: string;
+    user: string;
+    password: string;
+  };
 }
 
-interface TestRecord {
-  test_id: number;
-  inv_id: number;
-  start_time: string;
-  end_time: string;
-  firmware_version?: string;
-  overall_status: string;
-  ac_status?: string;
-  ch1_status?: string;
-  ch2_status?: string;
-  ch3_status?: string;
-  ch4_status?: string;
-  status_flags?: string;
-  failure_description?: string;
-  failure_time?: string;
-  source_file: string;
+function loadConfig(): Config {
+  const configPath = path.join(__dirname, '..', 'config.json');
+  if (!require('fs').existsSync(configPath)) {
+    throw new Error(`Config file not found: ${configPath}. Please copy config.template.json to config.json and update the paths.`);
+  }
+  return require(configPath);
 }
 
-interface TestDataRecord {
-  test_id: number;
-  timestamp: string;
-  vgrid?: number;
-  pgrid?: number;
-  qgrid?: number;
-  vpv1?: number;
-  ppv1?: number;
-  vpv2?: number;
-  ppv2?: number;
-  vpv3?: number;
-  ppv3?: number;
-  vpv4?: number;
-  ppv4?: number;
-  frequency?: number;
-  vbus?: number;
-  extstatus?: number;
-  status?: number;
-  temperature?: number;
-  epv1?: number;
-  epv2?: number;
-  epv3?: number;
-  epv4?: number;
-  active_energy?: number;
-  reactive_energy?: number;
-  extstatus_latch?: number;
-  status_latch?: number;
-  vgrid_inst_latch?: number;
-  vntrl_inst_latch?: number;
-  igrid_inst_latch?: number;
-  vbus_inst_latch?: number;
-  vpv1_inst_latch?: number;
-  ipv1_inst_latch?: number;
-  vpv2_inst_latch?: number;
-  ipv2_inst_latch?: number;
-  vpv3_inst_latch?: number;
-  ipv3_inst_latch?: number;
-  vpv4_inst_latch?: number;
-  ipv4_inst_latch?: number;
-  status_bits?: string;
-  source_file: string;
+// CSV data interfaces for raw parsed data
+interface TestDataCsvRow {
+  Timestamp: string;
+  Vgrid?: string;
+  Pgrid?: string;
+  Qgrid?: string;
+  Vpv1?: string;
+  Ppv1?: string;
+  Vpv2?: string;
+  Ppv2?: string;
+  Vpv3?: string;
+  Ppv3?: string;
+  Vpv4?: string;
+  Ppv4?: string;
+  Frequency?: string;
+  Vbus?: string;
+  extstatus?: string;
+  status?: string;
+  Temperature?: string;
+  Epv1?: string;
+  Epv2?: string;
+  Epv3?: string;
+  Epv4?: string;
+  'Active Energy'?: string;
+  'Reactive Energy'?: string;
+  'extstatus_latch'?: string;
+  'status_latch'?: string;
+  'Vgrid Inst Latch'?: string;
+  'Vntrl Inst Latch'?: string;
+  'Igrid Inst Latch'?: string;
+  'Vbus Inst Latch'?: string;
+  'Vpv1 Inst Latch'?: string;
+  'Ipv1 Inst Latch'?: string;
+  'Vpv2 Inst Latch'?: string;
+  'Ipv2 Inst Latch'?: string;
+  'Vpv3 Inst Latch'?: string;
+  'Ipv3 Inst Latch'?: string;
+  'Vpv4 Inst Latch'?: string;
+  'Ipv4 Inst Latch'?: string;
+  'Status Bits'?: string;
+}
+
+interface TestResultsCsvRow {
+  'Serial Number': string;
+  'Start Time': string;
+  'End Time': string;
+  'Inverter Firmware'?: string;
+  Overall: string;
+  'AC Output'?: string;
+  'CH1 Output'?: string;
+  'CH2 Output'?: string;
+  'CH3 Output'?: string;
+  'CH4 Output'?: string;
+  'Status Flags'?: string;
+  'Failure Description'?: string;
+  'Failure time'?: string;
+}
+
+interface ProcessedTestResult {
+  serialNumber: string;
+  startTime: string;
+  endTime: string;
+  firmwareVersion?: string;
+  overallStatus: string;
+  acStatus?: string;
+  ch1Status?: string;
+  ch2Status?: string;
+  ch3Status?: string;
+  ch4Status?: string;
+  statusFlags?: string;
+  failureDescription?: string;
+  failureTime?: string;
+  priority: number;
+  invalidReason: string;
 }
 
 class CSVIngester {
   private client: Client;
-  private readonly toProcessPath = 'data/to_process';
-  private readonly processedPath = 'data/processed';
+  private readonly config: Config;
+  private readonly toProcessPath: string;
+  private readonly processedPath: string;
 
   constructor() {
+    this.config = loadConfig();
+
     this.client = new Client({
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '5432'),
-      database: process.env.DB_NAME || 'burnin_dashboard',
-      user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'root',
+      host: this.config.database.host,
+      port: this.config.database.port,
+      database: this.config.database.name,
+      user: this.config.database.user,
+      password: this.config.database.password,
     });
+
+    this.toProcessPath = path.join(this.config.paths.local.main_dir, 'to_process');
+    this.processedPath = path.join(this.config.paths.local.main_dir, 'processed');
   }
 
   async connect(): Promise<void> {
@@ -123,10 +165,10 @@ class CSVIngester {
     return selectResult.rows[0].inv_id;
   }
 
-  async insertTestDataBatch(rows: any[], testId: number, sourceFile: string): Promise<void> {
+  async insertTestDataBatch(rows: TestDataCsvRow[], testId: number, sourceFile: string): Promise<void> {
     if (rows.length === 0) return;
 
-    const values: any[] = [];
+    const values: (number | string | null)[] = [];
     const placeholders: string[] = [];
     let paramIndex = 1;
 
@@ -150,27 +192,27 @@ class CSVIngester {
         this.parseInt(row['extstatus']),
         this.parseInt(row['status']),
         this.parseFloat(row['Temperature']),
-        this.parseFloat(row['EPV1']),
-        this.parseFloat(row['EPV2']),
-        this.parseFloat(row['EPV3']),
-        this.parseFloat(row['EPV4']),
-        this.parseFloat(row['ActiveEnergy']),
-        this.parseFloat(row['ReactiveEnergy']),
+        this.parseFloat(row['Epv1']),
+        this.parseFloat(row['Epv2']),
+        this.parseFloat(row['Epv3']),
+        this.parseFloat(row['Epv4']),
+        this.parseFloat(row['Active Energy']),
+        this.parseFloat(row['Reactive Energy']),
         this.parseInt(row['extstatus_latch']),
         this.parseInt(row['status_latch']),
-        this.parseFloat(row['Vgrid_inst_latch']),
-        this.parseFloat(row['Vntrl_inst_latch']),
-        this.parseFloat(row['Igrid_inst_latch']),
-        this.parseFloat(row['Vbus_inst_latch']),
-        this.parseFloat(row['Vpv1_inst_latch']),
-        this.parseFloat(row['Ipv1_inst_latch']),
-        this.parseFloat(row['Vpv2_inst_latch']),
-        this.parseFloat(row['Ipv2_inst_latch']),
-        this.parseFloat(row['Vpv3_inst_latch']),
-        this.parseFloat(row['Ipv3_inst_latch']),
-        this.parseFloat(row['Vpv4_inst_latch']),
-        this.parseFloat(row['Ipv4_inst_latch']),
-        row['status_bits'] || null,
+        this.parseFloat(row['Vgrid Inst Latch']),
+        this.parseFloat(row['Vntrl Inst Latch']),
+        this.parseFloat(row['Igrid Inst Latch']),
+        this.parseFloat(row['Vbus Inst Latch']),
+        this.parseFloat(row['Vpv1 Inst Latch']),
+        this.parseFloat(row['Ipv1 Inst Latch']),
+        this.parseFloat(row['Vpv2 Inst Latch']),
+        this.parseFloat(row['Ipv2 Inst Latch']),
+        this.parseFloat(row['Vpv3 Inst Latch']),
+        this.parseFloat(row['Ipv3 Inst Latch']),
+        this.parseFloat(row['Vpv4 Inst Latch']),
+        this.parseFloat(row['Ipv4 Inst Latch']),
+        row['Status Bits'] || null,
         sourceFile
       ];
 
@@ -278,7 +320,7 @@ class CSVIngester {
     const testIds: number[] = [];
 
     return new Promise((resolve, reject) => {
-      const tests: any[] = [];
+      const tests: TestResultsCsvRow[] = [];
 
       createReadStream(filePath)
         .pipe(csvParser())
@@ -288,7 +330,7 @@ class CSVIngester {
         .on('end', async () => {
           try {
             // Process all rows and categorize them with priority levels
-            const allTests = [];
+            const allTests: ProcessedTestResult[] = [];
 
             for (const test of tests) {
               // Extract inverter serial from filename or use Serial Number column
@@ -305,10 +347,10 @@ class CSVIngester {
               let invalidReason = '';
               let priority = 4; // Start with highest priority (valid)
 
-              // Mark debug firmware version 1.11.11 as INVALID
+              // Mark debug firmware version as INVALID
               const firmwareVersion = test['Inverter Firmware'];
-              if (firmwareVersion === '1.11.11') {
-                console.log(`Marking test with debug firmware version 1.11.11 as INVALID for inverter ${serialNumber}`);
+              if (firmwareVersion === this.config.settings.debug_firmware_version) {
+                console.log(`Marking test with debug firmware version ${this.config.settings.debug_firmware_version} as INVALID for inverter ${serialNumber}`);
                 overallStatus = 'INVALID';
                 invalidReason = 'Debug firmware version';
                 priority = 3; // Medium priority - can be processed if no better options
@@ -344,12 +386,22 @@ class CSVIngester {
                 priority = 3; // If already marked invalid but no specific reason, medium priority
               }
 
-              const testInfo = {
-                ...test,
+              const testInfo: ProcessedTestResult = {
                 serialNumber,
+                startTime: test['Start Time'],
+                endTime: test['End Time'],
+                firmwareVersion: test['Inverter Firmware'],
                 overallStatus,
-                invalidReason,
-                priority
+                acStatus: test['AC Output'],
+                ch1Status: test['CH1 Output'],
+                ch2Status: test['CH2 Output'],
+                ch3Status: test['CH3 Output'],
+                ch4Status: test['CH4 Output'],
+                statusFlags: test['Status Flags'],
+                failureDescription: test['Failure Description'],
+                failureTime: test['Failure time'],
+                priority,
+                invalidReason
               };
 
               allTests.push(testInfo);
@@ -378,7 +430,7 @@ class CSVIngester {
               };
 
               console.log(`Multiple rows found - priority breakdown: P4(valid)=${priorityGroups[4]}, P3(debug/invalid)=${priorityGroups[3]}, P2(short)=${priorityGroups[2]}, P1(date-range)=${priorityGroups[1]}`);
-              console.log(`Selected: ${testToProcess.serialNumber} (${testToProcess['Start Time']}) with priority ${testToProcess.priority}`);
+              console.log(`Selected: ${testToProcess.serialNumber} (${testToProcess['startTime']}) with priority ${testToProcess.priority}`);
 
               if (testToProcess.priority === 1 && priorityGroups[1] === allTests.length) {
                 console.warn(`⚠️  WARNING: All rows in ${path.basename(filePath)} have date range issues (start > end). Skipping file.`);
@@ -400,18 +452,18 @@ class CSVIngester {
 
               const values = [
                 invId,
-                this.parseTimestampFromDelhi(testToProcess['Start Time']).toISOString(),
-                this.parseTimestampFromDelhi(testToProcess['End Time']).toISOString(),
-                testToProcess['Inverter Firmware'],
+                this.parseTimestampFromDelhi(testToProcess.startTime).toISOString(),
+                this.parseTimestampFromDelhi(testToProcess.endTime).toISOString(),
+                testToProcess.firmwareVersion,
                 testToProcess.overallStatus,
-                testToProcess['AC'],
-                testToProcess['CH1'],
-                testToProcess['CH2'],
-                testToProcess['CH3'],
-                testToProcess['CH4'],
-                testToProcess['Status Flags'] || null,
-                testToProcess['Failure Description'] || null,
-                this.parseFailureTime(testToProcess['Failure Time'] || null),
+                testToProcess.acStatus,
+                testToProcess.ch1Status,
+                testToProcess.ch2Status,
+                testToProcess.ch3Status,
+                testToProcess.ch4Status,
+                testToProcess.statusFlags || null,
+                testToProcess.failureDescription || null,
+                this.parseFailureTime(testToProcess.failureTime || null),
                 path.basename(filePath)
               ];
 
@@ -435,7 +487,7 @@ class CSVIngester {
     console.log(`Processing test data CSV: ${filePath} for test_id: ${testId}`);
 
     return new Promise((resolve, reject) => {
-      const dataRows: any[] = [];
+      const dataRows: TestDataCsvRow[] = [];
       let rowCount = 0;
 
       createReadStream(filePath)
@@ -479,7 +531,7 @@ class CSVIngester {
 
   private async parseStartTimeFromResultsFile(filePath: string): Promise<{ serialNumber: string; startTime: Date; filenameWithSeconds: string; filenameWithoutSeconds: string } | null> {
     return new Promise((resolve, reject) => {
-      let firstRow: any = null;
+      let firstRow: TestResultsCsvRow | null = null;
 
       createReadStream(filePath)
         .pipe(csvParser())
@@ -669,7 +721,6 @@ class CSVIngester {
     };
   }
 
-  // TODO: Implement new processing logic here
   async processAllFiles(): Promise<void> {
     console.log('Starting new ingestion process...');
 

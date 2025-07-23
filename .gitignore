@@ -42,4 +42,6 @@ next-env.d.ts
 
 data
 log
-scripts/watchdog.py
+
+# Local configuration (machine-specific)
+config.json

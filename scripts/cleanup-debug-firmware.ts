@@ -5,9 +5,35 @@ import * as path from 'path';
 import csvParser from 'csv-parser';
 import { createReadStream } from 'fs';
 
+interface Config {
+  paths: {
+    local: {
+      main_dir: string;
+    };
+  };
+  settings: {
+    debug_firmware_version: string;
+  };
+}
+
+function loadConfig(): Config {
+  const configPath = path.join(__dirname, '..', 'config.json');
+  if (!require('fs').existsSync(configPath)) {
+    throw new Error(`Config file not found: ${configPath}. Please copy config.template.json to config.json and update the paths.`);
+  }
+  return require(configPath);
+}
+
 class DebugFirmwareCleanup {
-  private readonly toProcessPath = 'data/to_process';
-  private readonly processedPath = 'data/processed';
+  private readonly config: Config;
+  private readonly toProcessPath: string;
+  private readonly processedPath: string;
+
+  constructor() {
+    this.config = loadConfig();
+    this.toProcessPath = path.join(this.config.paths.local.main_dir, 'to_process');
+    this.processedPath = path.join(this.config.paths.local.main_dir, 'processed');
+  }
   
   async checkFirmwareVersion(filePath: string): Promise<string | null> {
     return new Promise((resolve, reject) => {
@@ -55,7 +81,7 @@ class DebugFirmwareCleanup {
         try {
           const firmwareVersion = await this.checkFirmwareVersion(filePath);
           
-          if (firmwareVersion === '1.11.11') {
+          if (firmwareVersion === this.config.settings.debug_firmware_version) {
             console.log(`🗑️  Deleting debug firmware file: ${file}`);
             await fs.unlink(filePath);
             deletedCount++;
@@ -75,7 +101,7 @@ class DebugFirmwareCleanup {
   }
   
   async cleanupAllDirectories(): Promise<void> {
-    console.log('🧹 Starting cleanup of debug firmware files (version 1.11.11)...\n');
+    console.log(`🧹 Starting cleanup of debug firmware files (version ${this.config.settings.debug_firmware_version})...\n`);
     
     const directories = [
       path.join(this.toProcessPath, 'results'),
@@ -109,7 +135,7 @@ class DebugFirmwareCleanup {
 async function main() {
   const cleanup = new DebugFirmwareCleanup();
   
-  console.log('⚠️  WARNING: This script will permanently delete results files with firmware version 1.11.11');
+  console.log(`⚠️  WARNING: This script will permanently delete results files with firmware version ${cleanup['config'].settings.debug_firmware_version}`);
   console.log('🔍 Scanning both to_process and processed directories...\n');
   
   try {

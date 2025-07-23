@@ -4,14 +4,29 @@ import datetime
 import re
 import logging
 import csv
+import json
 from logging.handlers import RotatingFileHandler
 
-# Configuration - same as watchdog
-results_dir = '/home/devy/pCloudDrive/BurnInTest/results'  # Source directory for results files
-data_dir = '/home/devy/pCloudDrive/BurnInTest/data'        # Source directory for test data files
-main_dir = '/home/devy/Documents/burnin/data'            # Main directory containing the two subfolders
-to_process_dir = os.path.join(main_dir, 'to_process')  # Destination for new files
-processed_dir = os.path.join(main_dir, 'processed')    # Directory for processed files
+def load_config():
+    """Load configuration from config.json file."""
+    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.json')
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found: {config_path}. Please copy config.template.json to config.json and update the paths.")
+
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+
+    return config
+
+# Load configuration
+config = load_config()
+
+# Extract configuration values
+results_dir = config['paths']['source']['results_dir']
+data_dir = config['paths']['source']['data_dir']
+main_dir = config['paths']['local']['main_dir']
+to_process_dir = os.path.join(main_dir, 'to_process')
+processed_dir = os.path.join(main_dir, 'processed')
 
 # Define subdirectories for tests and results within to_process
 to_process_tests_dir = os.path.join(to_process_dir, 'tests')
@@ -21,16 +36,20 @@ to_process_results_dir = os.path.join(to_process_dir, 'results')
 os.makedirs(to_process_tests_dir, exist_ok=True)
 os.makedirs(to_process_results_dir, exist_ok=True)
 
-# Date filter: July 15, 2025
-CUTOFF_DATE = datetime.datetime(2025, 7, 11)
+# Date filter from config
+cutoff_date_str = config['settings']['cutoff_date']
+CUTOFF_DATE = datetime.datetime.strptime(cutoff_date_str, '%Y-%m-%d')
 
-# Firmware version to exclude
-EXCLUDED_FIRMWARE = "1.11.11"
+# Firmware version to exclude from config
+EXCLUDED_FIRMWARE = config['settings']['debug_firmware_version']
 
 # Configure logging
-log_file = '/home/devy/Documents/burnin/log/copy_filtered.log'  
-os.makedirs(os.path.dirname(log_file), exist_ok=True)
-file_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=5)
+log_dir = config['paths']['local']['log_dir']
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, 'copy_filtered.log')
+max_bytes = config['settings']['max_log_size_mb'] * 1024 * 1024
+backup_count = config['settings']['log_backup_count']
+file_handler = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=backup_count)
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 
 console_handler = logging.StreamHandler()
@@ -133,7 +152,7 @@ def main():
             
         sn, T = results_info
         
-        # Filter 1: Check if file is newer than July 15, 2025
+        # Filter 1: Check if file is newer than cutoff date
         if T <= CUTOFF_DATE:
             files_skipped_date += 1
             logger.debug(f"Skipping {file} - date {T} is not newer than {CUTOFF_DATE}")
