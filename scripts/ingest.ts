@@ -60,18 +60,18 @@ interface TestDataCsvRow {
   'Reactive Energy'?: string;
   'extstatus_latch'?: string;
   'status_latch'?: string;
-  'Vgrid Inst Latch'?: string;
-  'Vntrl Inst Latch'?: string;
-  'Igrid Inst Latch'?: string;
-  'Vbus Inst Latch'?: string;
-  'Vpv1 Inst Latch'?: string;
-  'Ipv1 Inst Latch'?: string;
-  'Vpv2 Inst Latch'?: string;
-  'Ipv2 Inst Latch'?: string;
-  'Vpv3 Inst Latch'?: string;
-  'Ipv3 Inst Latch'?: string;
-  'Vpv4 Inst Latch'?: string;
-  'Ipv4 Inst Latch'?: string;
+  'Vgrid_inst_latch'?: string;
+  'Vntrl_inst_latch'?: string;
+  'Igrid_inst_latch'?: string;
+  'Vbus_inst_latch'?: string;
+  'Vpv1_inst_latch'?: string;
+  'Ipv1_inst_latch'?: string;
+  'Vpv2_inst_latch'?: string;
+  'Ipv2_inst_latch'?: string;
+  'Vpv3_inst_latch'?: string;
+  'Ipv3_inst_latch'?: string;
+  'Vpv4_inst_latch'?: string;
+  'Ipv4_inst_latch'?: string;
   'Status Bits'?: string;
 }
 
@@ -200,18 +200,18 @@ class CSVIngester {
         this.parseFloat(row['Reactive Energy']),
         this.parseInt(row['extstatus_latch']),
         this.parseInt(row['status_latch']),
-        this.parseFloat(row['Vgrid Inst Latch']),
-        this.parseFloat(row['Vntrl Inst Latch']),
-        this.parseFloat(row['Igrid Inst Latch']),
-        this.parseFloat(row['Vbus Inst Latch']),
-        this.parseFloat(row['Vpv1 Inst Latch']),
-        this.parseFloat(row['Ipv1 Inst Latch']),
-        this.parseFloat(row['Vpv2 Inst Latch']),
-        this.parseFloat(row['Ipv2 Inst Latch']),
-        this.parseFloat(row['Vpv3 Inst Latch']),
-        this.parseFloat(row['Ipv3 Inst Latch']),
-        this.parseFloat(row['Vpv4 Inst Latch']),
-        this.parseFloat(row['Ipv4 Inst Latch']),
+        this.parseFloat(row['Vgrid_inst_latch']),
+        this.parseFloat(row['Vntrl_inst_latch']),
+        this.parseFloat(row['Igrid_inst_latch']),
+        this.parseFloat(row['Vbus_inst_latch']),
+        this.parseFloat(row['Vpv1_inst_latch']),
+        this.parseFloat(row['Ipv1_inst_latch']),
+        this.parseFloat(row['Vpv2_inst_latch']),
+        this.parseFloat(row['Ipv2_inst_latch']),
+        this.parseFloat(row['Vpv3_inst_latch']),
+        this.parseFloat(row['Ipv3_inst_latch']),
+        this.parseFloat(row['Vpv4_inst_latch']),
+        this.parseFloat(row['Ipv4_inst_latch']),
         row['Status Bits'] || null,
         sourceFile
       ];
