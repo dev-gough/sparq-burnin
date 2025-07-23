@@ -5,19 +5,48 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { spawn } from 'child_process';
 
+interface Config {
+  paths: {
+    local: {
+      main_dir: string;
+    };
+  };
+  database: {
+    host: string;
+    port: number;
+    name: string;
+    user: string;
+    password: string;
+  };
+}
+
+function loadConfig(): Config {
+  const configPath = path.join(__dirname, '..', 'config.json');
+  if (!require('fs').existsSync(configPath)) {
+    throw new Error(`Config file not found: ${configPath}. Please copy config.template.json to config.json and update the paths.`);
+  }
+  return require(configPath);
+}
+
 class SimpleReprocessor {
   private client: Client;
-  private readonly processedPath = 'data/processed';
-  private readonly toProcessPath = 'data/to_process';
+  private readonly config: Config;
+  private readonly processedPath: string;
+  private readonly toProcessPath: string;
 
   constructor() {
+    this.config = loadConfig();
+
     this.client = new Client({
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '5432'),
-      database: process.env.DB_NAME || 'burnin_dashboard',
-      user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'root',
+      host: this.config.database.host,
+      port: this.config.database.port,
+      database: this.config.database.name,
+      user: this.config.database.user,
+      password: this.config.database.password,
     });
+
+    this.processedPath = path.join(this.config.paths.local.main_dir, 'processed');
+    this.toProcessPath = path.join(this.config.paths.local.main_dir, 'to_process');
   }
 
   async connect(): Promise<void> {
@@ -57,11 +86,11 @@ class SimpleReprocessor {
 
   async moveFiles(fromDir: string, toDir: string, fileType: string): Promise<number> {
     let movedCount = 0;
-    
+
     try {
       // Ensure destination directory exists
       await fs.mkdir(toDir, { recursive: true });
-      
+
       // Check if source directory exists
       try {
         await fs.access(fromDir);
@@ -69,19 +98,19 @@ class SimpleReprocessor {
         console.log(`  ⚠️  Source directory does not exist: ${fromDir}`);
         return 0;
       }
-      
+
       const files = await fs.readdir(fromDir);
       const csvFiles = files.filter(file => file.endsWith('.csv'));
-      
+
       if (csvFiles.length === 0) {
         console.log(`  ℹ️  No CSV files found in ${fromDir}`);
         return 0;
       }
-      
+
       for (const file of csvFiles) {
         const sourcePath = path.join(fromDir, file);
         const destPath = path.join(toDir, file);
-        
+
         try {
           await fs.rename(sourcePath, destPath);
           movedCount++;
@@ -90,41 +119,41 @@ class SimpleReprocessor {
           console.error(`  ❌ Failed to move ${file}:`, error);
         }
       }
-      
+
     } catch (error) {
       console.error(`Error processing ${fileType} files:`, error);
     }
-    
+
     return movedCount;
   }
 
   async moveAllFiles(): Promise<void> {
     console.log('📁 Moving files from processed to to_process...');
-    
+
     const resultsFromDir = path.join(this.processedPath, 'results');
     const resultsToDir = path.join(this.toProcessPath, 'results');
-    
+
     const testsFromDir = path.join(this.processedPath, 'tests');
     const testsToDir = path.join(this.toProcessPath, 'tests');
-    
+
     console.log('\n  📋 Moving results files...');
     const resultsMoved = await this.moveFiles(resultsFromDir, resultsToDir, 'results');
-    
+
     console.log('\n  📊 Moving test files...');
     const testsMoved = await this.moveFiles(testsFromDir, testsToDir, 'tests');
-    
+
     console.log(`\n✅ File movement complete: ${resultsMoved} results files, ${testsMoved} test files moved`);
   }
 
   async runIngestion(): Promise<void> {
     console.log('🚀 Running new ingestion script...');
-    
+
     return new Promise((resolve, reject) => {
       const ingestionProcess = spawn('tsx', ['scripts/ingest.ts'], {
         stdio: 'inherit',
         cwd: process.cwd()
       });
-      
+
       ingestionProcess.on('close', (code) => {
         if (code === 0) {
           console.log('✅ Ingestion completed successfully');
@@ -134,7 +163,7 @@ class SimpleReprocessor {
           reject(new Error(`Ingestion process exited with code ${code}`));
         }
       });
-      
+
       ingestionProcess.on('error', (error) => {
         console.error('❌ Failed to start ingestion process:', error);
         reject(error);
@@ -144,19 +173,19 @@ class SimpleReprocessor {
 
   async reprocess(): Promise<void> {
     console.log('🔄 Starting simple reprocessing...\n');
-    
+
     try {
       // Step 1: Move files from processed back to to_process
       await this.moveAllFiles();
-      
+
       // Step 2: Clear database
       await this.clearDatabase();
-      
+
       // Step 3: Run new ingestion
       await this.runIngestion();
-      
+
       console.log('\n🎉 Reprocessing completed successfully!');
-      
+
     } catch (error) {
       console.error('💥 Reprocessing failed:', error);
       throw error;
