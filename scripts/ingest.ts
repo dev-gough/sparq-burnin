@@ -52,12 +52,12 @@ interface TestDataCsvRow {
   extstatus?: string;
   status?: string;
   Temperature?: string;
-  Epv1?: string;
-  Epv2?: string;
-  Epv3?: string;
-  Epv4?: string;
-  'Active Energy'?: string;
-  'Reactive Energy'?: string;
+  EPV1?: string;
+  EPV2?: string;
+  EPV3?: string;
+  EPV4?: string;
+  'ActiveEnergy'?: string;
+  'ReactiveEnergy'?: string;
   'extstatus_latch'?: string;
   'status_latch'?: string;
   'Vgrid_inst_latch'?: string;
@@ -72,7 +72,7 @@ interface TestDataCsvRow {
   'Ipv3_inst_latch'?: string;
   'Vpv4_inst_latch'?: string;
   'Ipv4_inst_latch'?: string;
-  'Status Bits'?: string;
+  'status_bits'?: string;
 }
 
 interface TestResultsCsvRow {
@@ -192,12 +192,12 @@ class CSVIngester {
         this.parseInt(row['extstatus']),
         this.parseInt(row['status']),
         this.parseFloat(row['Temperature']),
-        this.parseFloat(row['Epv1']),
-        this.parseFloat(row['Epv2']),
-        this.parseFloat(row['Epv3']),
-        this.parseFloat(row['Epv4']),
-        this.parseFloat(row['Active Energy']),
-        this.parseFloat(row['Reactive Energy']),
+        this.parseFloat(row['EPV1']),
+        this.parseFloat(row['EPV2']),
+        this.parseFloat(row['EPV3']),
+        this.parseFloat(row['EPV4']),
+        this.parseFloat(row['ActiveEnergy']),
+        this.parseFloat(row['ReactiveEnergy']),
         this.parseInt(row['extstatus_latch']),
         this.parseInt(row['status_latch']),
         this.parseFloat(row['Vgrid_inst_latch']),
@@ -212,7 +212,7 @@ class CSVIngester {
         this.parseFloat(row['Ipv3_inst_latch']),
         this.parseFloat(row['Vpv4_inst_latch']),
         this.parseFloat(row['Ipv4_inst_latch']),
-        row['Status Bits'] || null,
+        row['status_bits'] || null,
         sourceFile
       ];
 
