@@ -1,17 +1,24 @@
 "use client"
 
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { useEffect, useState, useMemo, useCallback } from "react"
+import { usePrefetchedTests } from "@/hooks/usePrefetchedTests"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, ZoomIn, ZoomOut, RotateCcw, Download, Maximize2, X } from "lucide-react"
+import { ArrowLeft, ZoomIn, ZoomOut, RotateCcw, Download, Maximize2, X, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react"
 import Link from "next/link"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
 import type { TooltipProps as RechartsTooltipProps } from "recharts"
+
+interface FailureInfo {
+  test_id: number
+  start_time: string
+  failure_description?: string
+}
 
 interface TestData {
   test_id: number
@@ -23,6 +30,12 @@ interface TestData {
   overall_status: string
   failure_description?: string
   data_points: DataPoint[]
+  navigation: {
+    previous_failed_test?: FailureInfo
+    next_failed_test?: FailureInfo
+    current_failure_index?: number
+    total_failed_tests: number
+  }
 }
 
 interface FullScreenState {
@@ -132,6 +145,105 @@ const colors = [
   "#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#8dd1e1",
   "#d084d0", "#82d982", "#ffb347", "#87ceeb", "#dda0dd"
 ]
+
+// Component for navigating between failed tests
+function FailedTestNavigation({
+  testData,
+  onNavigate
+}: {
+  testData: TestData
+  onNavigate: (testId: number) => void
+}) {
+  const { navigation } = testData
+
+  // Only show if there are other failed tests for this serial number
+  if (navigation.total_failed_tests <= 1) {
+    return null
+  }
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString()
+  }
+
+  const formatTime = (dateString: string) => {
+    return new Date(dateString).toLocaleString()
+  }
+
+  return (
+    <Card className="border-orange-200 bg-orange-50 w-full">
+      <CardHeader className="pb-3">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-orange-600" />
+            <CardTitle className="text-orange-800 text-base">Failed Test History</CardTitle>
+          </div>
+          {navigation.current_failure_index && (
+            <span className="text-sm text-orange-600 font-medium">
+              {navigation.current_failure_index} of {navigation.total_failed_tests} failures
+            </span>
+          )}
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => navigation.previous_failed_test && onNavigate(navigation.previous_failed_test.test_id)}
+              disabled={!navigation.previous_failed_test}
+              title={navigation.previous_failed_test ?
+                `Previous failure: ${formatTime(navigation.previous_failed_test.start_time)}` :
+                'No previous failures'
+              }
+              className="flex-1"
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Previous
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => navigation.next_failed_test && onNavigate(navigation.next_failed_test.test_id)}
+              disabled={!navigation.next_failed_test}
+              title={navigation.next_failed_test ?
+                `Next failure: ${formatTime(navigation.next_failed_test.start_time)}` :
+                'No next failures'
+              }
+              className="flex-1"
+            >
+              Next
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {(navigation.previous_failed_test || navigation.next_failed_test) && (
+          <div className="space-y-1 text-xs text-muted-foreground">
+            {navigation.previous_failed_test && (
+              <div>
+                ← {formatDate(navigation.previous_failed_test.start_time)}
+                {navigation.previous_failed_test.failure_description && (
+                  <div className="truncate">
+                    {navigation.previous_failed_test.failure_description.substring(0, 40)}...
+                  </div>
+                )}
+              </div>
+            )}
+            {navigation.next_failed_test && (
+              <div>
+                → {formatDate(navigation.next_failed_test.start_time)}
+                {navigation.next_failed_test.failure_description && (
+                  <div className="truncate">
+                    {navigation.next_failed_test.failure_description.substring(0, 40)}...
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
 
 // Custom tooltip component that shows status_bits for all charts
 function StatusBitsTooltip({ active, payload, label }: RechartsTooltipProps<string | number, string>) {
@@ -904,12 +1016,16 @@ function ConfigurableChart({
 
 export default function TestPage() {
   const params = useParams()
+  const router = useRouter()
   const testId = params.id as string
   const [testData, setTestData] = useState<TestData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [updatingStatus, setUpdatingStatus] = useState(false)
   const [fullScreenState, setFullScreenState] = useState<FullScreenState | null>(null)
+
+  // Prefetch hook
+  const { prefetchAdjacentTests, getCachedTest, clearCache } = usePrefetchedTests()
 
   const openFullScreen = useCallback((state: FullScreenState) => {
     setFullScreenState(state)
@@ -919,19 +1035,53 @@ export default function TestPage() {
     setFullScreenState(null)
   }, [])
 
-  // Handle ESC key to close fullscreen
+  const navigateToTest = useCallback((newTestId: number) => {
+    // Check if we have cached data for instant navigation
+    const cachedData = getCachedTest(newTestId)
+
+    if (cachedData) {
+      // Instant navigation with cached data
+      setTestData(cachedData)
+      setLoading(false)
+      setError(null)
+
+      // Update URL without triggering Next.js routing
+      window.history.replaceState(null, '', `/test/${newTestId}`)
+
+      // Prefetch new adjacent tests for the cached data
+      prefetchAdjacentTests(cachedData.navigation)
+    } else {
+      // Fallback to normal navigation
+      router.push(`/test/${newTestId}`)
+    }
+  }, [router, getCachedTest, prefetchAdjacentTests])
+
+  // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      // ESC key to close fullscreen
       if (event.key === 'Escape' && fullScreenState) {
         closeFullScreen()
+        return
+      }
+
+      // Arrow key navigation (only when not in fullscreen and no input focused)
+      if (!fullScreenState && testData && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+        const { navigation } = testData
+
+        if (event.key === 'ArrowLeft' && navigation.previous_failed_test) {
+          event.preventDefault()
+          navigateToTest(navigation.previous_failed_test.test_id)
+        } else if (event.key === 'ArrowRight' && navigation.next_failed_test) {
+          event.preventDefault()
+          navigateToTest(navigation.next_failed_test.test_id)
+        }
       }
     }
 
-    if (fullScreenState) {
-      document.addEventListener('keydown', handleKeyDown)
-      return () => document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [fullScreenState, closeFullScreen])
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [fullScreenState, closeFullScreen, testData, navigateToTest])
 
   useEffect(() => {
     const fetchTestData = async () => {
@@ -942,6 +1092,11 @@ export default function TestPage() {
         }
         const data = await response.json()
         setTestData(data)
+
+        // Trigger prefetch of adjacent tests after initial load
+        if (data.navigation) {
+          prefetchAdjacentTests(data.navigation)
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred')
       } finally {
@@ -952,7 +1107,14 @@ export default function TestPage() {
     if (testId) {
       fetchTestData()
     }
-  }, [testId])
+  }, [testId, prefetchAdjacentTests])
+
+  // Clear cache when component unmounts or testId changes
+  useEffect(() => {
+    return () => {
+      clearCache()
+    }
+  }, [testId, clearCache])
 
   const updateTestStatus = async (newStatus: string) => {
     if (!testData) return
@@ -1082,41 +1244,49 @@ export default function TestPage() {
       </div>
 
       <div className="space-y-4">
-        <div>
-          <h1 className="text-3xl font-bold">Inverter S/N: {testData.serial_number}</h1>
-          <h2 className="text-xl text-muted-foreground">Test {testData.test_id}</h2>
-          <p className="text-lg text-muted-foreground">Started: {startDate}</p>
-          <p className="text-lg text-muted-foreground">Ended: {endDate}</p>
-          <div className="flex items-center gap-4 mt-2">
-            <div className="flex items-center gap-2">
-              <Badge variant={
-                testData.overall_status === 'PASS' ? 'default' :
-                  testData.overall_status === 'FAIL' ? 'destructive' :
-                    'secondary'
-              }>
-                {testData.overall_status}
-              </Badge>
-              <Select
-                value={testData.overall_status}
-                onValueChange={updateTestStatus}
-                disabled={updatingStatus}
-              >
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="PASS">PASS</SelectItem>
-                  <SelectItem value="FAIL">FAIL</SelectItem>
-                  <SelectItem value="INVALID">INVALID</SelectItem>
-                </SelectContent>
-              </Select>
-              {updatingStatus && <span className="text-sm text-muted-foreground">Updating...</span>}
+        <div className="grid grid-cols-2 gap-6">
+          {/* Test Information - Left Column */}
+          <div>
+            <h1 className="text-3xl font-bold">Inverter S/N: {testData.serial_number}</h1>
+            <h2 className="text-xl text-muted-foreground">Test {testData.test_id}</h2>
+            <p className="text-lg text-muted-foreground">Started: {startDate}</p>
+            <p className="text-lg text-muted-foreground">Ended: {endDate}</p>
+            <div className="flex items-center gap-4 mt-2">
+              <div className="flex items-center gap-2">
+                <Badge variant={
+                  testData.overall_status === 'PASS' ? 'default' :
+                    testData.overall_status === 'FAIL' ? 'destructive' :
+                      'secondary'
+                }>
+                  {testData.overall_status}
+                </Badge>
+                <Select
+                  value={testData.overall_status}
+                  onValueChange={updateTestStatus}
+                  disabled={updatingStatus}
+                >
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PASS">PASS</SelectItem>
+                    <SelectItem value="FAIL">FAIL</SelectItem>
+                    <SelectItem value="INVALID">INVALID</SelectItem>
+                  </SelectContent>
+                </Select>
+                {updatingStatus && <span className="text-sm text-muted-foreground">Updating...</span>}
+              </div>
+              {testData.failure_description && (
+                <span className="text-sm text-muted-foreground">
+                  {testData.failure_description}
+                </span>
+              )}
             </div>
-            {testData.failure_description && (
-              <span className="text-sm text-muted-foreground">
-                {testData.failure_description}
-              </span>
-            )}
+          </div>
+
+          {/* Failed Test Navigation - Right Column */}
+          <div className="flex items-start">
+            <FailedTestNavigation testData={testData} onNavigate={navigateToTest} />
           </div>
         </div>
 
