@@ -7,31 +7,7 @@ import csvParser from 'csv-parser';
 import { createReadStream } from 'fs';
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
-interface Config {
-  paths: {
-    local: {
-      main_dir: string;
-    };
-  };
-  settings: {
-    debug_firmware_version: string;
-  };
-  database: {
-    host: string;
-    port: number;
-    name: string;
-    user: string;
-    password: string;
-  };
-}
-
-function loadConfig(): Config {
-  const configPath = path.join(__dirname, '..', 'config.json');
-  if (!require('fs').existsSync(configPath)) {
-    throw new Error(`Config file not found: ${configPath}. Please copy config.template.json to config.json and update the paths.`);
-  }
-  return require(configPath);
-}
+import { loadConfig, type Config } from '../src/lib/config';
 
 // CSV data interfaces for raw parsed data
 interface TestDataCsvRow {

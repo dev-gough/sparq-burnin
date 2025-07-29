@@ -5,28 +5,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { spawn } from 'child_process';
 
-interface Config {
-  paths: {
-    local: {
-      main_dir: string;
-    };
-  };
-  database: {
-    host: string;
-    port: number;
-    name: string;
-    user: string;
-    password: string;
-  };
-}
-
-function loadConfig(): Config {
-  const configPath = path.join(__dirname, '..', 'config.json');
-  if (!require('fs').existsSync(configPath)) {
-    throw new Error(`Config file not found: ${configPath}. Please copy config.template.json to config.json and update the paths.`);
-  }
-  return require(configPath);
-}
+import { loadConfig, type Config } from '../src/lib/config';
 
 class SimpleReprocessor {
   private client: Client;

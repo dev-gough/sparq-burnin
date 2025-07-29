@@ -23,8 +23,7 @@ def load_config():
 config = load_config()
 
 # Extract configuration values
-results_dir = config['paths']['source']['results_dir']
-data_dir = config['paths']['source']['data_dir']
+source_directories = config['paths']['source_directories']
 main_dir = config['paths']['local']['main_dir']
 to_process_dir = os.path.join(main_dir, 'to_process')
 processed_dir = os.path.join(main_dir, 'processed')
@@ -207,75 +206,82 @@ def main():
             cycle_count += 1
             logger.debug(f"Starting cycle {cycle_count}")
             
-            # Check if source directories exist
-            if not os.path.exists(results_dir):
-                logger.error(f"Results directory does not exist: {results_dir}")
-                time.sleep(check_interval)
-                continue
-                
-            if not os.path.exists(data_dir):
-                logger.error(f"Data directory does not exist: {data_dir}")
-                time.sleep(check_interval)
-                continue
-            
-            results_files = os.listdir(results_dir)
+            # Check and process each source directory
             files_copied = 0
-            logger.debug(f"Found {len(results_files)} files in results directory")
+            total_results_files = 0
             
-            for file in results_files:
-                results_path = os.path.join(results_dir, file)
-                processed_results_path = os.path.join(processed_dir, 'results', file)  # Check in processed/results/
-                to_process_results_path = os.path.join(to_process_results_dir, file)
+            for source_dir in source_directories:
+                results_dir = source_dir['results_dir']
+                data_dir = source_dir['data_dir']
+                source_name = source_dir['name']
                 
-                # Check if results file is already in the processed or to_process folder
-                if os.path.exists(processed_results_path) or os.path.exists(to_process_results_path):
-                    # Skip logging - file already exists (reduces log spam)
+                # Check if source directories exist
+                if not os.path.exists(results_dir):
+                    logger.debug(f"Results directory does not exist for {source_name}: {results_dir}")
                     continue
-                else:
-                    results_info = parse_results_file(file)
-                    if results_info:
-                        sn, T = results_info
-                        # Calculate 3 days before the results file's timestamp
-                        three_days_before_T = T - datetime.timedelta(days=3)
-                        
-                        # Find matching test files in data_dir
-                        test_candidates = []
-                        for test_file in os.listdir(data_dir):
-                            test_info = parse_test_file(test_file)
-                            if test_info and test_info[0] == sn and test_info[1] < T:
-                                test_candidates.append((test_file, test_info[1]))
-                        if test_candidates:
-                            # Select the latest test file before T
-                            test_file, S = max(test_candidates, key=lambda x: x[1])
-                            if S >= three_days_before_T:
-                                # Check if test file already exists in to_process/tests or processed/tests
-                                to_process_test_path = os.path.join(to_process_tests_dir, test_file)
-                                processed_test_path = os.path.join(processed_dir, 'tests', test_file)
-                                
-                                test_file_exists = os.path.exists(to_process_test_path) or os.path.exists(processed_test_path)
-                                
-                                if not test_file_exists:
-                                    # Copy test file to to_process/tests and results file to to_process/results
-                                    test_path = os.path.join(data_dir, test_file)
-                                    shutil.copy2(test_path, to_process_test_path)
-                                    shutil.copy2(results_path, os.path.join(to_process_results_dir, file))
-                                    logger.info(f"Copied {test_file} to {to_process_tests_dir} and {file} to {to_process_results_dir}")
-                                    files_copied += 1
+
+                if not os.path.exists(data_dir):
+                    logger.debug(f"Data directory does not exist for {source_name}: {data_dir}")
+                    continue
+
+                results_files = os.listdir(results_dir)
+                total_results_files += len(results_files)
+                logger.debug(f"Found {len(results_files)} files in {source_name} results directory")
+
+                for file in results_files:
+                    results_path = os.path.join(results_dir, file)
+                    processed_results_path = os.path.join(processed_dir, 'results', file)  # Check in processed/results/
+                    to_process_results_path = os.path.join(to_process_results_dir, file)
+
+                    # Check if results file is already in the processed or to_process folder
+                    if os.path.exists(processed_results_path) or os.path.exists(to_process_results_path):
+                        # Skip logging - file already exists (reduces log spam)
+                        continue
+                    else:
+                        results_info = parse_results_file(file)
+                        if results_info:
+                            sn, T = results_info
+                            # Calculate 3 days before the results file's timestamp
+                            three_days_before_T = T - datetime.timedelta(days=3)
+
+                            # Find matching test files in data_dir
+                            test_candidates = []
+                            for test_file in os.listdir(data_dir):
+                                test_info = parse_test_file(test_file)
+                                if test_info and test_info[0] == sn and test_info[1] < T:
+                                    test_candidates.append((test_file, test_info[1]))
+                            if test_candidates:
+                                # Select the latest test file before T
+                                test_file, S = max(test_candidates, key=lambda x: x[1])
+                                if S >= three_days_before_T:
+                                    # Check if test file already exists in to_process/tests or processed/tests
+                                    to_process_test_path = os.path.join(to_process_tests_dir, test_file)
+                                    processed_test_path = os.path.join(processed_dir, 'tests', test_file)
+
+                                    test_file_exists = os.path.exists(to_process_test_path) or os.path.exists(processed_test_path)
+
+                                    if not test_file_exists:
+                                        # Copy test file to to_process/tests and results file to to_process/results
+                                        test_path = os.path.join(data_dir, test_file)
+                                        shutil.copy2(test_path, to_process_test_path)
+                                        shutil.copy2(results_path, os.path.join(to_process_results_dir, file))
+                                        logger.info(f"[{source_name}] Copied {test_file} to {to_process_tests_dir} and {file} to {to_process_results_dir}")
+                                        files_copied += 1
+                                    else:
+                                        # Still copy the results file if test file already exists
+                                        shutil.copy2(results_path, os.path.join(to_process_results_dir, file))
+                                        logger.info(f"[{source_name}] Test file {test_file} already exists, copied only {file} to {to_process_results_dir}")
+                                        files_copied += 1
                                 else:
-                                    # Still copy the results file if test file already exists
-                                    shutil.copy2(results_path, os.path.join(to_process_results_dir, file))
-                                    logger.info(f"Test file {test_file} already exists, copied only {file} to {to_process_results_dir}")
-                                    files_copied += 1
+                                    logger.warning(f"[{source_name}] Test file {test_file} is more than 3 days before results file {file}; skipping")
                             else:
-                                logger.warning(f"Test file {test_file} is more than 3 days before results file {file}; skipping")
-                        else:
-                            logger.warning(f"No matching test file found for {file}; skipping")
+                                logger.warning(f"[{source_name}] No matching test file found for {file}; skipping")
             
             # Always log a summary (heartbeat every cycle, but less verbose when no files copied)
             if files_copied > 0:
-                logger.info(f"Cycle {cycle_count}: Checked {len(results_files)} files, copied {files_copied} new files")
+                logger.info(f"Cycle {cycle_count}: Checked {total_results_files} files across {len(source_directories)} source directories, copied {files_copied} new files")
             elif cycle_count % 10 == 0:
-                logger.info(f"Cycle {cycle_count}: Checked {len(results_files)} files, copied {files_copied} new files (heartbeat)")
+                logger.info(f"Cycle {cycle_count}: Checked {total_results_files} files across {len(source_directories)} source directories, copied {files_copied} new files (heartbeat)")
             else:
                 logger.debug(f"Cycle {cycle_count}: No new files to copy")
             

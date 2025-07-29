@@ -1,14 +1,34 @@
 import path from 'path';
 import fs from 'fs';
 
-interface Config {
+export interface Config {
   paths: {
+    source_directories: Array<{
+      name: string;
+      results_dir: string;
+      data_dir: string;
+    }>;
     local: {
       main_dir: string;
+      dashboard_dir: string;
+      log_dir: string;
     };
   };
   settings: {
+    check_interval: number;
+    cutoff_date: string;
+    log_file: string;
+    max_log_size_mb: number;
+    log_backup_count: number;
     debug_firmware_version: string;
+    timeout: {
+      cleanup: number;
+      ingestion: number;
+    };
+  };
+  node: {
+    nvm_path: string;
+    fallback_to_system: boolean;
   };
   database: {
     host: string;
@@ -16,6 +36,9 @@ interface Config {
     name: string;
     user: string;
     password: string;
+  };
+  api: {
+    base_url: string;
   };
 }
 

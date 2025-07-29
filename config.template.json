@@ -1,9 +1,17 @@
 {
   "paths": {
-    "source": {
-      "results_dir": "/path/to/pCloudDrive/BurnInTest/results",
-      "data_dir": "/path/to/pCloudDrive/BurnInTest/data"
-    },
+    "source_directories": [
+      {
+        "name": "BurnInTest",
+        "results_dir": "/path/to/pCloudDrive/BurnInTest/results",
+        "data_dir": "/path/to/pCloudDrive/BurnInTest/data"
+      },
+      {
+        "name": "BurnInTest2",
+        "results_dir": "/path/to/pCloudDrive/BurnInTest2/results",
+        "data_dir": "/path/to/pCloudDrive/BurnInTest2/data"
+      }
+    ],
     "local": {
       "main_dir": "/path/to/burnin/data",
       "dashboard_dir": "/path/to/burnin",
