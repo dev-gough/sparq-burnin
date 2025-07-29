@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Client } from "pg";
+import { getDatabaseConfig } from '@/lib/config';
 
 interface TestStats {
   date: string;
@@ -26,16 +27,9 @@ interface TestRecord {
   start_time: string;
 }
 
-const dbConfig = {
-  host: process.env.DB_HOST || "localhost",
-  port: parseInt(process.env.DB_PORT || "5432"),
-  database: process.env.DB_NAME || "burnin_dashboard",
-  user: process.env.DB_USER || "postgres",
-  password: process.env.DB_PASSWORD
-};
 
 export async function GET(request: NextRequest) {
-  const client = new Client(dbConfig);
+  const client = new Client(getDatabaseConfig());
 
   try {
     await client.connect();
@@ -160,7 +154,7 @@ export async function GET(request: NextRequest) {
           FROM latest_tests
           WHERE rn = 1
           ORDER BY start_time DESC
-          LIMIT 1000
+          LIMIT 10000
         `;
       } else {
         // Show all tests
@@ -184,7 +178,7 @@ export async function GET(request: NextRequest) {
           FROM Tests t
           JOIN Inverters i ON t.inv_id = i.inv_id
           ORDER BY t.start_time DESC
-          LIMIT 1000
+          LIMIT 10000
         `;
       }
 

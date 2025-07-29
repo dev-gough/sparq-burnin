@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from 'pg';
-
-const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME || 'burnin_dashboard',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD
-};
+import { getDatabaseConfig } from '@/lib/config';
 
 export async function PATCH(request: NextRequest) {
-  const client = new Client(dbConfig);
+  const client = new Client(getDatabaseConfig());
   
   try {
     await client.connect();

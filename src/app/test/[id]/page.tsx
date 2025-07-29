@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowLeft, ZoomIn, ZoomOut, RotateCcw, Download, Maximize2, X } from "lucide-react"
 import Link from "next/link"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
+import type { TooltipProps as RechartsTooltipProps } from "recharts"
 
 interface TestData {
   test_id: number
@@ -90,7 +91,7 @@ const allColumns = [
   ...latchColumns,
   "epv1", "epv2", "epv3", "epv4",
   "activeenergy", "reactiveenergy",
-  "extstatus", "status", "extstatus_latch", "status_latch", "status_bits"
+  "extstatus", "status", "extstatus_latch", "status_latch"
 ].filter((col, index, arr) => arr.indexOf(col) === index) // Remove duplicates
 
 // Column groups for enhanced organization
@@ -121,7 +122,7 @@ const columnGroups = {
     color: "bg-indigo-50 border-indigo-200"
   },
   "System Status": {
-    columns: ["temperature", "extstatus", "status", "status_bits", "extstatus_latch", "status_latch"],
+    columns: ["temperature", "extstatus", "status", "extstatus_latch", "status_latch"],
     description: "System health and diagnostics",
     color: "bg-red-50 border-red-200"
   }
@@ -131,6 +132,31 @@ const colors = [
   "#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#8dd1e1",
   "#d084d0", "#82d982", "#ffb347", "#87ceeb", "#dda0dd"
 ]
+
+// Custom tooltip component that shows status_bits for all charts
+function StatusBitsTooltip({ active, payload, label }: RechartsTooltipProps<string | number, string>) {
+  if (active && payload && payload.length) {
+    const dataPoint = payload[0]?.payload?.originalDataPoint as DataPoint
+
+    return (
+      <div className="bg-background/60 border border-border rounded-lg shadow-lg p-3 max-w-xs">
+        <p className="font-medium mb-2">{`Time: ${label}`}</p>
+        {payload.map((entry, index: number) => (
+          <p key={index} style={{ color: entry.color }} className="text-base">
+            {`${entry.name?.replace('_inst_latch', '') || entry.dataKey}: ${typeof entry.value === 'number' ? Number(entry.value).toFixed(3) : entry.value}`}
+          </p>
+        ))}
+        {dataPoint?.status_bits && (
+          <div className="mt-2 pt-2 border-t border-border">
+            <p className="text-sm font-medium text-muted-foreground">Status Bits:</p>
+            <p className="text-sm font-mono">{dataPoint.status_bits}</p>
+          </div>
+        )}
+      </div>
+    )
+  }
+  return null
+}
 
 const DECIMATION_COOKIE_KEY = "burnin-chart-decimation-enabled"
 
@@ -287,6 +313,7 @@ function FullScreenChart({
     return zoomedData.map((point, index) => ({
       timestamp: new Date(point.timestamp).toLocaleTimeString(),
       originalIndex: Math.floor((zoomStart / 100) * data.length) + index,
+      originalDataPoint: point, // Preserve full original data point for tooltip access
       ...Object.fromEntries(
         Array.from(selectedColumns).map(col => [col, point[col as keyof DataPoint]])
       )
@@ -402,14 +429,7 @@ function FullScreenChart({
                 height={60}
               />
               <YAxis />
-              <Tooltip
-                formatter={(value: string | number, name: string) => [
-                  typeof value === 'number' ? Number(value).toFixed(3) : value,
-                  getDisplayName(name)
-                ]}
-                labelFormatter={(label) => `Time: ${label}`}
-                animationDuration={0}
-              />
+              <Tooltip content={StatusBitsTooltip} animationDuration={0} />
               <Legend />
               {Array.from(selectedColumns).map((column, index) => (
                 <Line
@@ -619,6 +639,7 @@ function ConfigurableChart({
     return zoomedData.map((point, index) => ({
       timestamp: new Date(point.timestamp).toLocaleTimeString(),
       originalIndex: Math.floor((zoomStart / 100) * data.length) + index,
+      originalDataPoint: point, // Preserve full original data point for tooltip access
       ...Object.fromEntries(
         Array.from(selectedColumns).map(col => [col, point[col as keyof DataPoint]])
       )
@@ -858,14 +879,7 @@ function ConfigurableChart({
                 height={60}
               />
               <YAxis />
-              <Tooltip
-                formatter={(value: string | number, name: string) => [
-                  typeof value === 'number' ? Number(value).toFixed(3) : value,
-                  getDisplayName(name)
-                ]}
-                labelFormatter={(label) => `Time: ${label}`}
-                animationDuration={0}
-              />
+              <Tooltip content={StatusBitsTooltip} animationDuration={0} />
               <Legend />
               {Array.from(selectedColumns).map((column, index) => (
                 <Line

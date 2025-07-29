@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from 'pg';
+import { getDatabaseConfig } from '@/lib/config';
 
 interface DataPoint {
   timestamp: string;
@@ -54,20 +55,12 @@ interface TestData {
   data_points: DataPoint[];
 }
 
-const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME || 'burnin_dashboard',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD
-};
-
 export async function GET(
   request: NextRequest,
   props: { params: Promise<{ id: string }> }
 ) {
   const params = await props.params;
-  const client = new Client(dbConfig);
+  const client = new Client(getDatabaseConfig());
   
   try {
     await client.connect();
