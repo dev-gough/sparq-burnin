@@ -217,27 +217,31 @@ function FailedTestNavigation({
       </CardHeader>
       <CardContent className="pt-0">
         {(navigation.previous_failed_test || navigation.next_failed_test) && (
-          <div className="space-y-1 text-xs text-muted-foreground">
-            {navigation.previous_failed_test && (
-              <div>
-                ← {formatDate(navigation.previous_failed_test.start_time)}
-                {navigation.previous_failed_test.failure_description && (
-                  <div className="truncate">
-                    {navigation.previous_failed_test.failure_description.substring(0, 40)}...
-                  </div>
-                )}
-              </div>
-            )}
-            {navigation.next_failed_test && (
-              <div>
-                → {formatDate(navigation.next_failed_test.start_time)}
-                {navigation.next_failed_test.failure_description && (
-                  <div className="truncate">
-                    {navigation.next_failed_test.failure_description.substring(0, 40)}...
-                  </div>
-                )}
-              </div>
-            )}
+          <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+            <div>
+              {navigation.previous_failed_test && (
+                <>
+                  <div>← {formatDate(navigation.previous_failed_test.start_time)}</div>
+                  {navigation.previous_failed_test.failure_description && (
+                    <div className="truncate">
+                      {navigation.previous_failed_test.failure_description.substring(0, 30)}...
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div>
+              {navigation.next_failed_test && (
+                <>
+                  <div>→ {formatDate(navigation.next_failed_test.start_time)}</div>
+                  {navigation.next_failed_test.failure_description && (
+                    <div className="truncate">
+                      {navigation.next_failed_test.failure_description.substring(0, 30)}...
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         )}
       </CardContent>
@@ -251,7 +255,7 @@ function StatusBitsTooltip({ active, payload, label }: RechartsTooltipProps<stri
     const dataPoint = payload[0]?.payload?.originalDataPoint as DataPoint
 
     return (
-      <div className="bg-background/60 border border-border rounded-lg shadow-lg p-3 max-w-xs">
+      <div className="bg-background/80 border border-border rounded-lg shadow-lg p-3 max-w-xs">
         <p className="font-medium mb-2">{`Time: ${label}`}</p>
         {payload.map((entry, index: number) => (
           <p key={index} style={{ color: entry.color }} className="text-base">
