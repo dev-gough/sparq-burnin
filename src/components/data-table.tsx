@@ -127,9 +127,13 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
     cell: ({ row }) => {
       const date = new Date(row.original.start_time);
       return (
-        <div className="w-32 text-sm">
+        <div className="w-36 text-sm">
           {date.toLocaleDateString()}{" "}
-          {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          {date.toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            timeZoneName: "short"
+          })}
         </div>
       );
     },
@@ -137,15 +141,15 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
       const rowDate = new Date(row.getValue(id) as string);
       const { from, to } = value as { from: string; to: string };
       if (from && to) {
-        // Create dates using UTC to match the ISO string format from the database
-        const fromDate = new Date(from + "T00:00:00.000Z");
-        const toDate = new Date(to + "T23:59:59.999Z");
+        // Create dates in local timezone to match user's expectation
+        const fromDate = new Date(from + "T00:00:00");
+        const toDate = new Date(to + "T23:59:59.999");
         return rowDate >= fromDate && rowDate <= toDate;
       } else if (from) {
-        const fromDate = new Date(from + "T00:00:00.000Z");
+        const fromDate = new Date(from + "T00:00:00");
         return rowDate >= fromDate;
       } else if (to) {
-        const toDate = new Date(to + "T23:59:59.999Z");
+        const toDate = new Date(to + "T23:59:59.999");
         return rowDate <= toDate;
       }
       return true;
@@ -519,9 +523,9 @@ export function DataTable({
                         {header.isPlaceholder
                           ? null
                           : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
                       </TableHead>
                     );
                   })}
