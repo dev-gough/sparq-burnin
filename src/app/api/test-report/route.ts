@@ -34,6 +34,8 @@ export async function GET(request: NextRequest) {
   
   try {
     await client.connect();
+    // Set session timezone to UTC for consistent timestamp handling
+    await client.query("SET timezone = 'UTC'");
     
     const { searchParams } = new URL(request.url);
     const timeRange = searchParams.get('timeRange') || '90d';
@@ -48,20 +50,20 @@ export async function GET(request: NextRequest) {
     }
     
     const whereClause = daysToSubtract 
-      ? `WHERE start_time >= CURRENT_DATE - INTERVAL '${daysToSubtract} days'`
+      ? `WHERE start_time_utc >= CURRENT_DATE - INTERVAL '${daysToSubtract} days'`
       : '';
     
     const query = `
       SELECT 
-        to_char(DATE(start_time), 'YYYY-MM-DD') as test_date,
+        to_char(DATE(start_time_utc), 'YYYY-MM-DD') as test_date,
         COUNT(*) as total,
         COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
         COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed,
         COUNT(CASE WHEN overall_status = 'INVALID' THEN 1 END) as invalid
       FROM Tests 
       ${whereClause}
-      GROUP BY DATE(start_time)
-      ORDER BY DATE(start_time) ASC
+      GROUP BY DATE(start_time_utc)
+      ORDER BY DATE(start_time_utc) ASC
     `;
     
     const result = await client.query(query);

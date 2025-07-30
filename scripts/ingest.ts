@@ -5,9 +5,10 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import csvParser from 'csv-parser';
 import { createReadStream } from 'fs';
-import { fromZonedTime, toZonedTime } from 'date-fns-tz';
+import { toZonedTime } from 'date-fns-tz';
 
 import { loadConfig, type Config } from '../src/lib/config';
+import { runMigrations } from './migrate-db';
 
 // CSV data interfaces for raw parsed data
 interface TestDataCsvRow {
@@ -233,7 +234,68 @@ class CSVIngester {
   private parseTimestampFromDelhi(timestamp: string): Date {
     // Parse timestamp as Delhi time (Asia/Kolkata), convert to UTC for database storage
     try {
-      return fromZonedTime(timestamp, 'Asia/Kolkata');
+      // Parse the timestamp components manually to avoid any timezone interpretation
+      // Handle both full timestamps (with seconds) and partial ones (without seconds)
+      const match = timestamp.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{3}))?/);
+      if (!match) {
+        throw new Error(`Invalid timestamp format: ${timestamp}`);
+      }
+
+      const [, year, month, day, hour, minute, second, milliseconds] = match;
+
+      // Calculate UTC time directly from Delhi time components
+      // Delhi (IST) = UTC + 5:30, so UTC = Delhi time - 5:30
+
+      // Extract time components
+      const delhiHour = parseInt(hour);
+      const delhiMinute = parseInt(minute);
+      const delhiSecond = parseInt(second || '0');
+      const delhiMs = parseInt(milliseconds || '0');
+
+      // Subtract 5 hours 30 minutes from Delhi time to get UTC
+      let utcHour = delhiHour - 5;
+      let utcMinute = delhiMinute - 30;
+      let utcDay = parseInt(day);
+      let utcMonth = parseInt(month);
+      let utcYear = parseInt(year);
+
+      // Handle minute underflow
+      if (utcMinute < 0) {
+        utcMinute += 60;
+        utcHour -= 1;
+      }
+
+      // Handle hour underflow (day rollback)
+      if (utcHour < 0) {
+        utcHour += 24;
+        utcDay -= 1;
+
+        // Handle day underflow (month rollback)
+        if (utcDay < 1) {
+          utcMonth -= 1;
+          if (utcMonth < 1) {
+            utcMonth = 12;
+            utcYear -= 1;
+          }
+          // Get days in previous month (simplified)
+          const daysInMonth = new Date(utcYear, utcMonth, 0).getDate();
+          utcDay = daysInMonth;
+        }
+      }
+
+      // Create UTC date with calculated components
+      const utcDate = new Date(Date.UTC(
+        utcYear,
+        utcMonth - 1, // Month is 0-indexed
+        utcDay,
+        utcHour,
+        utcMinute,
+        delhiSecond,
+        delhiMs
+      ));
+
+      // console.log(`🕐 Delhi timestamp conversion: ${timestamp} (Delhi) -> ${utcDate.toISOString()} (UTC)`);
+      return utcDate;
     } catch (error) {
       console.warn(`Error parsing Delhi timestamp: ${timestamp}`, error);
       throw error;
@@ -419,16 +481,18 @@ class CSVIngester {
 
               const query = `
                 INSERT INTO Tests (
-                  inv_id, start_time, end_time, firmware_version, overall_status,
+                  inv_id, start_time, start_time_utc, end_time, firmware_version, overall_status,
                   ac_status, ch1_status, ch2_status, ch3_status, ch4_status,
                   status_flags, failure_description, failure_time, source_file
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                 RETURNING test_id
               `;
 
+              const startTimeUtc = this.parseTimestampFromDelhi(testToProcess.startTime).toISOString();
               const values = [
                 invId,
-                this.parseTimestampFromDelhi(testToProcess.startTime).toISOString(),
+                startTimeUtc,
+                startTimeUtc, // populate both start_time and start_time_utc with the same UTC value
                 this.parseTimestampFromDelhi(testToProcess.endTime).toISOString(),
                 testToProcess.firmwareVersion,
                 testToProcess.overallStatus,
@@ -691,7 +755,7 @@ class CSVIngester {
 
     console.log(`🔍 Found closest match: ${closest.filename} (${timeDiffMinutes.toFixed(2)} minutes difference)`);
 
-    return { 
+    return {
       filePath: path.join(this.toProcessPath, 'tests', closest.filename),
       timeDelta: closest.timeDiff
     };
@@ -771,7 +835,7 @@ class CSVIngester {
       if (closestResult.filePath && closestResult.timeDelta !== null) {
         // Store time delta for debugging
         timeDeltaMap.set(queued.serialNumber, closestResult.timeDelta);
-        
+
         // Process results file to get test ID
         const testIds = await this.processResultsCSV(queued.resultsFile);
 
@@ -835,8 +899,11 @@ class CSVIngester {
 }
 
 async function main() {
-  const ingester = new CSVIngester();
+  // Run database migrations before starting ingestion
+  console.log('🔄 Checking for database migrations...');
+  await runMigrations();
 
+  const ingester = new CSVIngester();
   try {
     await ingester.connect();
     await ingester.processAllFiles();

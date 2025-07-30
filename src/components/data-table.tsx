@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { useTimezone } from "@/contexts/TimezoneContext";
 
 import {
   IconChevronLeft,
@@ -97,7 +98,8 @@ export const testSchema = z.object({
   start_time: z.string(),
 });
 
-const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
+// Create columns dynamically to access timezone context
+const createColumns = (formatInTimezone: (dateString: string) => string, selectedTimezone: string): ColumnDef<z.infer<typeof testSchema>>[] => [
   {
     accessorKey: "serial_number",
     header: "Inverter Serial Number",
@@ -125,31 +127,40 @@ const columns: ColumnDef<z.infer<typeof testSchema>>[] = [
     accessorKey: "start_time",
     header: "Test Date",
     cell: ({ row }) => {
-      const date = new Date(row.original.start_time);
       return (
         <div className="w-36 text-sm">
-          {date.toLocaleDateString()}{" "}
-          {date.toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-            timeZoneName: "short"
-          })}
+          {formatInTimezone(row.original.start_time)}
         </div>
       );
     },
     filterFn: (row, id, value) => {
       const rowDate = new Date(row.getValue(id) as string);
       const { from, to } = value as { from: string; to: string };
+
+      // Helper function to create dates in the selected timezone
+      const createDateInTimezone = (dateString: string, endOfDay: boolean = false) => {
+        const time = endOfDay ? "T23:59:59.999" : "T00:00:00";
+        if (selectedTimezone === 'utc') {
+          return new Date(dateString + time + "Z");
+        } else if (selectedTimezone === 'delhi') {
+          // For Delhi time, we need to adjust for IST offset
+          const localDate = new Date(dateString + time);
+          return new Date(localDate.getTime() - (5.5 * 60 * 60 * 1000)); // Subtract IST offset
+        } else {
+          // For local timezone
+          return new Date(dateString + time);
+        }
+      };
+
       if (from && to) {
-        // Create dates in local timezone to match user's expectation
-        const fromDate = new Date(from + "T00:00:00");
-        const toDate = new Date(to + "T23:59:59.999");
+        const fromDate = createDateInTimezone(from, false);
+        const toDate = createDateInTimezone(to, true);
         return rowDate >= fromDate && rowDate <= toDate;
       } else if (from) {
-        const fromDate = new Date(from + "T00:00:00");
+        const fromDate = createDateInTimezone(from, false);
         return rowDate >= fromDate;
       } else if (to) {
-        const toDate = new Date(to + "T23:59:59.999");
+        const toDate = createDateInTimezone(to, true);
         return rowDate <= toDate;
       }
       return true;
@@ -218,6 +229,7 @@ export function DataTable({
   onClearDateFilter,
 }: DataTableProps = {}) {
   const router = useRouter();
+  const { formatInTimezone, selectedTimezone } = useTimezone();
   const [data, setData] = React.useState([]);
   const [loading, setLoading] = React.useState(false);
   const [rowSelection, setRowSelection] = React.useState({});
@@ -256,6 +268,12 @@ export function DataTable({
     return savedFilters.latestOnly || false;
   });
   const [firmwareVersions, setFirmwareVersions] = React.useState<string[]>([]);
+
+  // Create columns using timezone context
+  const columns = React.useMemo(() =>
+    createColumns(formatInTimezone, selectedTimezone),
+    [formatInTimezone, selectedTimezone]
+  );
 
   const handleRowClick = (testId: number) => {
     router.push(`/test/${testId}`);

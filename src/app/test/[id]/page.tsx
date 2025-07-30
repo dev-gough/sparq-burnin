@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useState, useMemo, useCallback } from "react"
 import { usePrefetchedTests } from "@/hooks/usePrefetchedTests"
+import { useTimezone } from "@/contexts/TimezoneContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
@@ -155,6 +156,7 @@ function FailedTestNavigation({
   onNavigate: (testId: number) => void
 }) {
   const { navigation } = testData
+  const { formatDateInTimezone, formatInTimezone } = useTimezone()
 
   // Only show if there are other failed tests for this serial number
   if (navigation.total_failed_tests <= 1) {
@@ -162,11 +164,11 @@ function FailedTestNavigation({
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString()
+    return formatDateInTimezone(dateString)
   }
 
   const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString()
+    return formatInTimezone(dateString)
   }
 
   return (
@@ -346,6 +348,8 @@ function FullScreenChart({
   initialState: FullScreenState
   onClose: () => void
 }) {
+  const { formatTimeInTimezone } = useTimezone()
+
   // Initialize state from inherited values
   const [selectedColumns, setSelectedColumns] = useState<Set<string>>(
     new Set(initialState.selectedColumns)
@@ -427,14 +431,14 @@ function FullScreenChart({
   // Memoize chart data transformation
   const chartData = useMemo(() => {
     return zoomedData.map((point, index) => ({
-      timestamp: new Date(point.timestamp).toLocaleTimeString(),
+      timestamp: formatTimeInTimezone(point.timestamp),
       originalIndex: Math.floor((zoomStart / 100) * data.length) + index,
       originalDataPoint: point, // Preserve full original data point for tooltip access
       ...Object.fromEntries(
         Array.from(selectedColumns).map(col => [col, point[col as keyof DataPoint]])
       )
     }))
-  }, [zoomedData, selectedColumns, zoomStart, data.length])
+  }, [zoomedData, selectedColumns, zoomStart, data.length, formatTimeInTimezone])
 
   // Zoom functions (same as ConfigurableChart)
   const zoomIn = useCallback(() => {
@@ -684,6 +688,8 @@ function ConfigurableChart({
   availableColumns: string[]
   onFullScreen?: (state: FullScreenState) => void
 }) {
+  const { formatTimeInTimezone } = useTimezone()
+
   // Function to get display name for columns
   const getDisplayName = (column: string) => {
     return column.replace('_inst_latch', '')
@@ -753,14 +759,14 @@ function ConfigurableChart({
   // Memoize chart data transformation
   const chartData = useMemo(() => {
     return zoomedData.map((point, index) => ({
-      timestamp: new Date(point.timestamp).toLocaleTimeString(),
+      timestamp: formatTimeInTimezone(point.timestamp),
       originalIndex: Math.floor((zoomStart / 100) * data.length) + index,
       originalDataPoint: point, // Preserve full original data point for tooltip access
       ...Object.fromEntries(
         Array.from(selectedColumns).map(col => [col, point[col as keyof DataPoint]])
       )
     }))
-  }, [zoomedData, selectedColumns, zoomStart, data.length])
+  }, [zoomedData, selectedColumns, zoomStart, data.length, formatTimeInTimezone])
 
   const zoomIn = useCallback(() => {
     const currentRange = zoomEnd - zoomStart
@@ -1027,6 +1033,7 @@ export default function TestPage() {
   const [error, setError] = useState<string | null>(null)
   const [updatingStatus, setUpdatingStatus] = useState(false)
   const [fullScreenState, setFullScreenState] = useState<FullScreenState | null>(null)
+  const { formatInTimezone } = useTimezone()
 
   // Prefetch hook
   const { prefetchAdjacentTests, getCachedTest, clearCache } = usePrefetchedTests()
@@ -1180,8 +1187,8 @@ export default function TestPage() {
     )
   }
 
-  const startDate = new Date(testData.start_time).toLocaleString()
-  const endDate = new Date(testData.end_time).toLocaleString()
+  const startDate = formatInTimezone(testData.start_time)
+  const endDate = formatInTimezone(testData.end_time)
 
   const downloadCSV = () => {
     // Create CSV filename based on test data

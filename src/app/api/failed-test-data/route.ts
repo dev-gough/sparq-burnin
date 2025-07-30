@@ -7,7 +7,7 @@ interface FailedTest {
   test_id: number;
   inv_id: number;
   serial_number: string;
-  start_time: string;
+  start_time_utc: string;
   end_time: string;
   firmware_version: string;
   overall_status: string;
@@ -61,6 +61,8 @@ export async function GET(request: NextRequest) {
   
   try {
     await client.connect();
+    // Set session timezone to UTC for consistent timestamp handling
+    await client.query("SET timezone = 'UTC'");
     
     const { searchParams } = new URL(request.url);
     const timeRange = searchParams.get('timeRange') || '90d';
@@ -75,7 +77,7 @@ export async function GET(request: NextRequest) {
     }
     
     const whereClause = daysToSubtract 
-      ? `AND t.start_time >= CURRENT_DATE - INTERVAL '${daysToSubtract} days'`
+      ? `AND t.start_time_utc >= CURRENT_DATE - INTERVAL '${daysToSubtract} days'`
       : '';
     
     // Query for failed tests in the specified time range
@@ -84,7 +86,7 @@ export async function GET(request: NextRequest) {
         t.test_id,
         t.inv_id,
         i.serial_number,
-        t.start_time,
+        t.start_time_utc,
         t.end_time,
         t.firmware_version,
         t.overall_status,
@@ -93,7 +95,7 @@ export async function GET(request: NextRequest) {
       JOIN Inverters i ON t.inv_id = i.inv_id
       WHERE t.overall_status = 'FAIL'
       ${whereClause}
-      ORDER BY t.start_time DESC
+      ORDER BY t.start_time_utc DESC
       LIMIT 100
     `;
     
@@ -132,7 +134,7 @@ export async function GET(request: NextRequest) {
     // Generate CSV for each failed test and add to archive
     for (const test of failedTests) {
       const csvContent = await generateTestCSV(client, test);
-      const filename = `${formatDate(test.start_time)}_test_${test.test_id}_${test.serial_number}_FAILED.csv`;
+      const filename = `${formatDate(test.start_time_utc)}_test_${test.test_id}_${test.serial_number}_FAILED.csv`;
       archive.append(csvContent, { name: filename });
     }
     
@@ -194,7 +196,7 @@ async function generateTestCSV(client: Client, test: FailedTest): Promise<string
   csvContent += `# Test ID: ${test.test_id}\n`;
   csvContent += `# Serial Number: ${test.serial_number}\n`;
   csvContent += `# Firmware Version: ${test.firmware_version || 'Unknown'}\n`;
-  csvContent += `# Start Time: ${test.start_time}\n`;
+  csvContent += `# Start Time: ${test.start_time_utc}\n`;
   csvContent += `# End Time: ${test.end_time}\n`;
   csvContent += `# Status: ${test.overall_status}\n`;
   csvContent += `# Failure Description: ${test.failure_description || 'Not specified'}\n`;

@@ -85,6 +85,9 @@ export async function GET(
       );
     }
     
+    // Set session timezone to UTC for consistent timestamp handling
+    await client.query("SET timezone = 'UTC'");
+    
     // Get test metadata
     const testQuery = `
       SELECT 
@@ -92,7 +95,7 @@ export async function GET(
         t.inv_id,
         i.serial_number,
         t.firmware_version,
-        t.start_time,
+        t.start_time_utc as start_time,
         t.end_time,
         t.overall_status,
         t.failure_description
@@ -112,9 +115,19 @@ export async function GET(
     
     const testInfo = testResult.rows[0];
     
-    // Get test data points - select ALL columns
+    // Get test data points - select ALL columns and cast timestamp as UTC
     const dataQuery = `
-      SELECT *
+      SELECT 
+        data_id, test_id,
+        -- Cast timestamp as UTC to prevent timezone interpretation issues
+        timestamp AT TIME ZONE 'UTC' as timestamp,
+        vgrid, pgrid, qgrid, vpv1, ppv1, vpv2, ppv2, vpv3, ppv3, vpv4, ppv4,
+        frequency, vbus, extstatus, status, temperature, epv1, epv2, epv3, epv4,
+        active_energy, reactive_energy, extstatus_latch, status_latch,
+        vgrid_inst_latch, vntrl_inst_latch, igrid_inst_latch, vbus_inst_latch,
+        vpv1_inst_latch, ipv1_inst_latch, vpv2_inst_latch, ipv2_inst_latch,
+        vpv3_inst_latch, ipv3_inst_latch, vpv4_inst_latch, ipv4_inst_latch,
+        status_bits, source_file, created_at
       FROM TestData 
       WHERE test_id = $1 
       ORDER BY timestamp ASC
@@ -128,29 +141,29 @@ export async function GET(
     
     // Find previous failed test (chronologically before current test)
     const previousFailQuery = `
-      SELECT t.test_id, t.start_time, t.failure_description
+      SELECT t.test_id, t.start_time_utc as start_time, t.failure_description
       FROM Tests t 
       JOIN Inverters i ON t.inv_id = i.inv_id 
       WHERE i.serial_number = $1 
         AND t.test_id != $2 
         AND t.overall_status = 'FAIL'
-        AND t.start_time < $3
+        AND t.start_time_utc < $3
         AND (t.firmware_version != '1.11.11' OR t.firmware_version IS NULL)
-      ORDER BY t.start_time DESC
+      ORDER BY t.start_time_utc DESC
       LIMIT 1
     `;
     
     // Find next failed test (chronologically after current test)
     const nextFailQuery = `
-      SELECT t.test_id, t.start_time, t.failure_description
+      SELECT t.test_id, t.start_time_utc as start_time, t.failure_description
       FROM Tests t 
       JOIN Inverters i ON t.inv_id = i.inv_id 
       WHERE i.serial_number = $1 
         AND t.test_id != $2 
         AND t.overall_status = 'FAIL'
-        AND t.start_time > $3
+        AND t.start_time_utc > $3
         AND (t.firmware_version != '1.11.11' OR t.firmware_version IS NULL)
-      ORDER BY t.start_time ASC
+      ORDER BY t.start_time_utc ASC
       LIMIT 1
     `;
     
@@ -171,7 +184,7 @@ export async function GET(
       JOIN Inverters i ON t.inv_id = i.inv_id 
       WHERE i.serial_number = $1 
         AND t.overall_status = 'FAIL'
-        AND t.start_time < $2
+        AND t.start_time_utc < $2
         AND (t.firmware_version != '1.11.11' OR t.firmware_version IS NULL)
     `;
     

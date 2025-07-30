@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button"
+import { TimezoneSelector } from "@/components/timezone-selector"
 
 export function SiteHeader() {
   return (
@@ -6,6 +7,7 @@ export function SiteHeader() {
       <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
         <h1 className="text-base font-medium">Burn-in Report Dashboard</h1>
         <div className="ml-auto flex items-center gap-2">
+          <TimezoneSelector />
           <Button variant="ghost" asChild size="sm" className="hidden sm:flex">
             <a
               href="http://git.labserver.local/devy/burnin-dashboard"

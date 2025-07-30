@@ -33,6 +33,8 @@ export async function GET(request: NextRequest) {
 
   try {
     await client.connect();
+    // Set the session timezone to UTC to prevent local timezone interpretation
+    await client.query("SET timezone = 'UTC'");
 
     const { searchParams } = new URL(request.url);
     const view = searchParams.get("view");
@@ -61,7 +63,7 @@ export async function GET(request: NextRequest) {
           default:
             days = 90;
         }
-        timeFilter = `AND t.start_time >= CURRENT_DATE - INTERVAL '${days} days'`;
+        timeFilter = `AND t.start_time_utc >= CURRENT_DATE - INTERVAL '${days} days'`;
       }
 
       if (summaryChartMode === "recent") {
@@ -71,7 +73,7 @@ export async function GET(request: NextRequest) {
             SELECT t.*, i.serial_number,
               ROW_NUMBER() OVER (
                 PARTITION BY i.serial_number
-                ORDER BY t.start_time DESC
+                ORDER BY t.start_time_utc DESC
               ) as rn
             FROM Tests t
             JOIN Inverters i ON t.inv_id = i.inv_id
@@ -139,10 +141,10 @@ export async function GET(request: NextRequest) {
               ) as non_zero_status_flags,
               t.overall_status as status,
               t.failure_description as failure_reason,
-              t.start_time,
+              t.start_time_utc as start_time,
               ROW_NUMBER() OVER (
                 PARTITION BY i.serial_number
-                ORDER BY t.start_time DESC
+                ORDER BY t.start_time_utc DESC
               ) as rn
             FROM Tests t
             JOIN Inverters i ON t.inv_id = i.inv_id
@@ -153,7 +155,7 @@ export async function GET(request: NextRequest) {
             non_zero_status_flags, status, failure_reason, start_time
           FROM latest_tests
           WHERE rn = 1
-          ORDER BY start_time DESC
+          ORDER BY start_time_utc DESC
           LIMIT 10000
         `;
       } else {
@@ -174,10 +176,10 @@ export async function GET(request: NextRequest) {
             ) as non_zero_status_flags,
             t.overall_status as status,
             t.failure_description as failure_reason,
-            t.start_time
+            t.start_time_utc as start_time
           FROM Tests t
           JOIN Inverters i ON t.inv_id = i.inv_id
-          ORDER BY t.start_time DESC
+          ORDER BY t.start_time_utc DESC
           LIMIT 10000
         `;
       }
@@ -221,16 +223,16 @@ export async function GET(request: NextRequest) {
       query = `
         WITH daily_latest_tests AS (
           SELECT
-            DATE(t.start_time) as test_date,
+            DATE(t.start_time_utc) as test_date,
             t.overall_status,
             i.serial_number,
             ROW_NUMBER() OVER (
-              PARTITION BY i.serial_number, DATE(t.start_time)
-              ORDER BY t.start_time DESC
+              PARTITION BY i.serial_number, DATE(t.start_time_utc)
+              ORDER BY t.start_time_utc DESC
             ) as rn
           FROM Tests t
           JOIN Inverters i ON t.inv_id = i.inv_id
-          WHERE t.start_time >= CURRENT_DATE - INTERVAL '90 days'
+          WHERE t.start_time_utc >= CURRENT_DATE - INTERVAL '90 days'
             AND t.overall_status != 'INVALID'
         )
         SELECT
@@ -246,14 +248,14 @@ export async function GET(request: NextRequest) {
       // Show daily statistics for all tests
       query = `
         SELECT
-          to_char(DATE(start_time), 'YYYY-MM-DD') as test_date,
+          to_char(DATE(start_time_utc), 'YYYY-MM-DD') as test_date,
           COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
           COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
         FROM Tests
-        WHERE start_time >= CURRENT_DATE - INTERVAL '90 days'
+        WHERE start_time_utc >= CURRENT_DATE - INTERVAL '90 days'
           AND overall_status != 'INVALID'
-        GROUP BY DATE(start_time)
-        ORDER BY DATE(start_time) ASC
+        GROUP BY DATE(start_time_utc)
+        ORDER BY DATE(start_time_utc) ASC
       `;
     }
 

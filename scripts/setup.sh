@@ -18,6 +18,10 @@ sudo -u postgres createdb burnin_dashboard 2>/dev/null || echo "Database already
 echo "Setting up database schema..."
 cat scripts/setup-database.sql | sudo -u postgres psql -d burnin_dashboard
 
+# Run database migrations
+echo "Running database migrations..."
+npm run migrate
+
 echo "Database setup complete!"
 echo ""
 echo "To ingest CSV files:"

@@ -6,6 +6,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 
 import { loadConfig, type Config } from '../src/lib/config';
+import { runMigrations } from './migrate-db';
 
 class SimpleReprocessor {
   private client: Client;
@@ -173,9 +174,13 @@ class SimpleReprocessor {
 }
 
 async function main() {
-  const reprocessor = new SimpleReprocessor();
+  // Run database migrations before starting reprocessing
+  console.log('🔄 Checking for database migrations...');
+  await runMigrations();
 
+  const reprocessor = new SimpleReprocessor();
   try {
+
     await reprocessor.connect();
     await reprocessor.reprocess();
   } catch (error) {
