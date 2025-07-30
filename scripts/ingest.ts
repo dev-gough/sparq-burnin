@@ -150,9 +150,11 @@ class CSVIngester {
     let paramIndex = 1;
 
     for (const row of rows) {
+      const timestampUtc = this.parseTimestampFromDelhi(row['Timestamp']).toISOString();
       const rowValues = [
         testId,
-        this.parseTimestampFromDelhi(row['Timestamp']).toISOString(),
+        timestampUtc,
+        timestampUtc, // populate both timestamp and timestamp_utc with the same UTC value
         this.parseFloat(row['Vgrid']),
         this.parseFloat(row['Pgrid']),
         this.parseFloat(row['Qgrid']),
@@ -206,7 +208,7 @@ class CSVIngester {
 
     const query = `
       INSERT INTO TestData (
-        test_id, timestamp, vgrid, pgrid, qgrid, vpv1, ppv1, vpv2, ppv2,
+        test_id, timestamp, timestamp_utc, vgrid, pgrid, qgrid, vpv1, ppv1, vpv2, ppv2,
         vpv3, ppv3, vpv4, ppv4, frequency, vbus, extstatus, status,
         temperature, epv1, epv2, epv3, epv4, active_energy, reactive_energy,
         extstatus_latch, status_latch, vgrid_inst_latch, vntrl_inst_latch,

@@ -115,12 +115,12 @@ export async function GET(
     
     const testInfo = testResult.rows[0];
     
-    // Get test data points - select ALL columns and cast timestamp as UTC
+    // Get test data points - use timestamp_utc if available, fallback to timestamp with UTC cast
     const dataQuery = `
       SELECT 
         data_id, test_id,
-        -- Cast timestamp as UTC to prevent timezone interpretation issues
-        timestamp AT TIME ZONE 'UTC' as timestamp,
+        -- Use timestamp_utc if available, otherwise cast timestamp as UTC
+        COALESCE(timestamp_utc, timestamp AT TIME ZONE 'UTC') as timestamp,
         vgrid, pgrid, qgrid, vpv1, ppv1, vpv2, ppv2, vpv3, ppv3, vpv4, ppv4,
         frequency, vbus, extstatus, status, temperature, epv1, epv2, epv3, epv4,
         active_energy, reactive_energy, extstatus_latch, status_latch,
@@ -130,7 +130,7 @@ export async function GET(
         status_bits, source_file, created_at
       FROM TestData 
       WHERE test_id = $1 
-      ORDER BY timestamp ASC
+      ORDER BY COALESCE(timestamp_utc, timestamp) ASC
     `;
     
     const dataResult = await client.query(dataQuery, [testId]);

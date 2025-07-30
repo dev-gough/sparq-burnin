@@ -35,6 +35,32 @@ const migrations: Migration[] = [
       END
       $$;
     `
+  },
+  {
+    id: '002',
+    name: 'add_testdata_timestamptz_column',
+    sql: `
+      -- Check if timestamp_utc column already exists in TestData
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'testdata' AND column_name = 'timestamp_utc'
+        ) THEN
+          -- Add new TIMESTAMPTZ column to TestData
+          ALTER TABLE TestData ADD COLUMN timestamp_utc TIMESTAMPTZ;
+          
+          -- Migrate data: set session timezone to UTC, then convert timestamps
+          SET timezone = 'UTC';
+          UPDATE TestData SET timestamp_utc = timestamp::timestamptz;
+          
+          RAISE NOTICE 'Added timestamp_utc column to TestData and migrated % rows', (SELECT COUNT(*) FROM TestData);
+        ELSE
+          RAISE NOTICE 'timestamp_utc column already exists in TestData, skipping migration';
+        END IF;
+      END
+      $$;
+    `
   }
 ];
 
