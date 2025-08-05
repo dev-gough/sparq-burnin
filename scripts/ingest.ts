@@ -763,6 +763,26 @@ class CSVIngester {
     };
   }
 
+  async relinkAnnotations(): Promise<void> {
+    console.log('🔗 Re-linking annotations to new test IDs...');
+
+    const query = `
+      UPDATE TestAnnotations
+      SET
+        current_test_id = t.test_id,
+        updated_at = CURRENT_TIMESTAMP
+      FROM Tests t
+      INNER JOIN Inverters i ON t.inv_id = i.inv_id
+      WHERE
+        TestAnnotations.serial_number = i.serial_number
+        AND TestAnnotations.start_time = t.start_time_utc
+        AND TestAnnotations.current_test_id IS NULL
+    `;
+
+    const result = await this.client.query(query);
+    console.log(`✅ Re-linked ${result.rowCount} annotations to new test IDs`);
+  }
+
   async processAllFiles(): Promise<void> {
     console.log('Starting new ingestion process...');
 
@@ -897,6 +917,9 @@ class CSVIngester {
         console.log(`   - ${path.basename(unmatchedFile.resultsFile)} (${unmatchedFile.serialNumber}): ${unmatchedFile.reason}`);
       }
     }
+
+    // Re-link annotations after processing all files
+    await this.relinkAnnotations();
   }
 }
 

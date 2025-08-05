@@ -61,6 +61,109 @@ const migrations: Migration[] = [
       END
       $$;
     `
+  },
+  {
+    id: '003',
+    name: 'create_test_annotations_table',
+    sql: `
+      -- Create TestAnnotations table
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_name = 'testannotations'
+        ) THEN
+          CREATE TABLE TestAnnotations (
+            annotation_id SERIAL PRIMARY KEY,
+            serial_number VARCHAR(50) NOT NULL,
+            start_time TIMESTAMPTZ NOT NULL,
+            annotation_type VARCHAR(100) NOT NULL,
+            annotation_text TEXT NOT NULL,
+            created_by VARCHAR(100),
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            current_test_id INTEGER REFERENCES Tests(test_id) ON DELETE SET NULL,
+            UNIQUE(serial_number, start_time, annotation_type)
+          );
+
+          -- Create indexes for performance
+          CREATE INDEX idx_testannotations_serial_start ON TestAnnotations(serial_number, start_time);
+          CREATE INDEX idx_testannotations_current_test ON TestAnnotations(current_test_id);
+          CREATE INDEX idx_testannotations_type ON TestAnnotations(annotation_type);
+
+          RAISE NOTICE 'Created TestAnnotations table with indexes';
+        ELSE
+          RAISE NOTICE 'TestAnnotations table already exists, skipping creation';
+        END IF;
+      END
+      $$;
+    `
+  },
+  {
+    id: '004',
+    name: 'create_annotation_quick_options_table',
+    sql: `
+      -- Create AnnotationQuickOptions table for customizable quick annotate options
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_name = 'annotationquickoptions'
+        ) THEN
+          CREATE TABLE AnnotationQuickOptions (
+            option_id SERIAL PRIMARY KEY,
+            option_text VARCHAR(100) NOT NULL UNIQUE,
+            display_order INTEGER DEFAULT 0,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+          );
+
+          -- Insert default quick options
+          INSERT INTO AnnotationQuickOptions (option_text, display_order) VALUES
+            ('Channel Short BA', 1),
+            ('Channel Short AA', 2),
+            ('Channel Undervoltage BA', 3),
+            ('Channel Undervoltage AA', 4),
+            ('GFDI Fault', 5),
+            ('Inverter Failure - Other', 6),
+            ('Setup - AC', 7),
+            ('Setup - DC', 8),
+            ('Setup - Mixed Connectors', 9);
+
+          RAISE NOTICE 'Created AnnotationQuickOptions table with default options';
+        ELSE
+          RAISE NOTICE 'AnnotationQuickOptions table already exists, skipping creation';
+        END IF;
+      END
+      $$;
+    `
+  },
+  {
+    id: '005',
+    name: 'update_annotation_quick_options',
+    sql: `
+      -- Update quick options with correct default fail reasons
+      DO $$
+      BEGIN
+        -- Clear existing options and insert new ones
+        DELETE FROM AnnotationQuickOptions;
+
+        -- Insert updated quick options
+        INSERT INTO AnnotationQuickOptions (option_text, display_order) VALUES
+          ('Channel Short BA', 1),
+          ('Channel Short AA', 2),
+          ('Channel Undervoltage BA', 3),
+          ('Channel Undervoltage AA', 4),
+          ('GFDI Fault', 5),
+          ('Inverter Failure - Other', 6),
+          ('Setup - AC', 7),
+          ('Setup - DC', 8),
+          ('Setup - Mixed Connectors', 9);
+
+        RAISE NOTICE 'Updated AnnotationQuickOptions with correct default options';
+      END
+      $$;
+    `
   }
 ];
 

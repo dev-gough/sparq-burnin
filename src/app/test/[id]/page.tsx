@@ -14,6 +14,7 @@ import { ArrowLeft, ZoomIn, ZoomOut, RotateCcw, Download, Maximize2, X, ChevronL
 import Link from "next/link"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
 import type { TooltipProps as RechartsTooltipProps } from "recharts"
+import TestAnnotations from "@/components/TestAnnotations"
 
 interface FailureInfo {
   test_id: number
@@ -1240,7 +1241,7 @@ export default function TestPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container p-6 mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <Link href="/">
           <Button variant="outline" size="sm">
@@ -1301,27 +1302,39 @@ export default function TestPage() {
           </div>
         </div>
 
-        <div className="grid gap-6">
-          <ConfigurableChart
-            title="PV Data & Frequency"
-            data={testData.data_points}
-            availableColumns={pvColumns}
-            onFullScreen={openFullScreen}
-          />
+        <div className="grid grid-cols-[1fr_320px] gap-6">
+          {/* Charts Column */}
+          <div className="space-y-6">
+            <ConfigurableChart
+              title="PV Data & Frequency"
+              data={testData.data_points}
+              availableColumns={pvColumns}
+              onFullScreen={openFullScreen}
+            />
 
-          <ConfigurableChart
-            title="Grid Data"
-            data={testData.data_points}
-            availableColumns={gridColumns}
-            onFullScreen={openFullScreen}
-          />
+            <ConfigurableChart
+              title="Grid Data"
+              data={testData.data_points}
+              availableColumns={gridColumns}
+              onFullScreen={openFullScreen}
+            />
 
-          <ConfigurableChart
-            title="Latch Data"
-            data={testData.data_points}
-            availableColumns={latchColumns}
-            onFullScreen={openFullScreen}
-          />
+            <ConfigurableChart
+              title="Latch Data"
+              data={testData.data_points}
+              availableColumns={latchColumns}
+              onFullScreen={openFullScreen}
+            />
+          </div>
+
+          {/* Annotations Sidebar */}
+          <div className="sticky top-6 h-fit">
+            <TestAnnotations
+              testId={testData.test_id}
+              serialNumber={testData.serial_number}
+              startTime={testData.start_time}
+            />
+          </div>
         </div>
 
         {/* Full Screen Modal */}

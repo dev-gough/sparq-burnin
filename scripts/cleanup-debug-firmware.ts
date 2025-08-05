@@ -82,11 +82,9 @@ class DebugFirmwareCleanup {
           const firmwareVersion = await this.checkFirmwareVersion(filePath);
           
           if (firmwareVersion === this.config.settings.debug_firmware_version) {
-            console.log(`🗑️  Deleting debug firmware file: ${file}`);
             await fs.unlink(filePath);
             deletedCount++;
           } else {
-            console.log(`✅ Keeping file: ${file} (firmware: ${firmwareVersion || 'unknown'})`);
           }
         } catch (error) {
           console.error(`❌ Error processing file ${file}:`, error);
