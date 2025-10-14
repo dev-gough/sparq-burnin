@@ -57,7 +57,6 @@ logger.addHandler(console_handler)  # Remove this line if you want file-only log
 
 def parse_results_file(filename):
     """Parse results file to extract inverter S/N and timestamp."""
-    # Try with seconds first (newer format)
     match = re.match(r'^(.+)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.csv$', filename)
     if match:
         base = os.path.splitext(filename)[0]
@@ -71,41 +70,10 @@ def parse_results_file(filename):
             return sn, T
         except ValueError:
             return None
-
-    # Try without seconds (older format)
-    match = re.match(r'^(.+)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}\.csv$', filename)
-    if match:
-        base = os.path.splitext(filename)[0]
-        parts = base.split('_')
-        sn = parts[0]
-        date_str = parts[1]
-        time_str = parts[2]
-        dt_str = date_str + ' ' + time_str + ':00'
-        try:
-            T = datetime.datetime.strptime(dt_str, '%Y-%m-%d %H-%M:%S')
-            return sn, T
-        except ValueError:
-            return None
     return None
 
 def parse_test_file(filename):
     """Parse test file to extract inverter S/N and timestamp."""
-    # Try with seconds first (newer format)
-    match = re.match(r'^inverter_(.+)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.csv$', filename)
-    if match:
-        base = os.path.splitext(filename)[0]
-        parts = base.split('_')
-        sn = parts[1]
-        date_str = parts[2]
-        time_str = parts[3]
-        dt_str = date_str + ' ' + time_str
-        try:
-            S = datetime.datetime.strptime(dt_str, '%Y-%m-%d %H-%M-%S')
-            return sn, S
-        except ValueError:
-            return None
-
-    # Try without seconds (older format)
     match = re.match(r'^inverter_(.+)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}\.csv$', filename)
     if match:
         base = os.path.splitext(filename)[0]
@@ -119,6 +87,7 @@ def parse_test_file(filename):
             return sn, S
         except ValueError:
             return None
+    logger.info(f'no match for filename: {filename}')
     return None
 
 def run_cleanup():
@@ -280,13 +249,6 @@ def main():
                             test_candidates = []
                             for test_file in os.listdir(data_dir):
                                 test_info = parse_test_file(test_file)
-                                if (not test_info):
-                                    logger.info(f'parse_test_file failed for file: {test_file}')
-                                    break
-                                logger.info(f"data_dir: {data_dir}")
-                                logger.info(f"test_info: {test_info}, test_file: {test_file}")
-                                logger.info(f"test_info[0]: {test_info[0]} sn: {sn}")
-                                logger.info(f"test_info[1]: {test_info[1]} T: {T}")
                                 if test_info and test_info[0] == sn and test_info[1] < T:
                                     test_candidates.append((test_file, test_info[1]))
                             if test_candidates:
