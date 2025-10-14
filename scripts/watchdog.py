@@ -283,11 +283,7 @@ def main():
                                 if (not test_info):
                                     logger.info(f'parse_test_file failed for file: {test_file}')
                                     break
-                                logger.info(f"data_dir: {data_dir}")
-                                logger.info(f"test_info: {test_info}, test_file: {test_file}")
-                                logger.info(f"test_info[0]: {test_info[0]} sn: {sn}")
-                                logger.info(f"test_info[1]: {test_info[1]} T: {T}")
-                                if test_info and test_info[0] == sn and test_info[1] < T:
+                                if test_info and test_info[0] == sn and test_info[1] <= T:
                                     test_candidates.append((test_file, test_info[1]))
                             if test_candidates:
                                 # Select the latest test file before T
