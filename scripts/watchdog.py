@@ -175,12 +175,12 @@ def run_ingestion():
     """Run the npm ingest command to process new files."""
     try:
         logger.info("Starting ingestion process...")
-        
+
         # Use nvm's Node.js path explicitly
         nvm_path = os.path.expanduser(config['node']['nvm_path'])
         import glob
         node_dirs = glob.glob(nvm_path)
-        
+
         if node_dirs:
             # Use the nvm Node.js version
             node_bin_path = node_dirs[0]  # Take the first match
@@ -193,7 +193,7 @@ def run_ingestion():
             logger.warning("nvm Node.js not found, using system Node.js")
         else:
             raise RuntimeError("nvm Node.js not found and fallback disabled in config")
-        
+
         # Check Node.js version being used
         version_check = subprocess.run(
             ['node', '--version'],
@@ -202,30 +202,40 @@ def run_ingestion():
             env=env
         )
         logger.info(f"Using Node.js version: {version_check.stdout.strip()}")
-        
-        result = subprocess.run(
+
+        # Use Popen to stream output in real-time
+        process = subprocess.Popen(
             ['npm', 'run', 'ingest'],
             cwd=dashboard_dir,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            timeout=config['settings']['timeout']['ingestion'],
+            bufsize=1,  # Line buffered
             env=env
         )
-        
-        if result.returncode == 0:
-            logger.info("Ingestion completed successfully")
-            if result.stdout.strip():
-                logger.info(f"Ingestion output: {result.stdout.strip()}")
-            return True
+
+        # Stream output line by line
+        if process.stdout:
+            for line in process.stdout:
+                logger.info(f"[ingest] {line.rstrip()}")
         else:
-            logger.error(f"Ingestion failed with return code {result.returncode}")
-            if result.stderr.strip():
-                logger.error(f"Ingestion error: {result.stderr.strip()}")
+            logger.info('no process.stdout??')
+
+        # Wait for completion with timeout
+        try:
+            process.wait(timeout=config['settings']['timeout']['ingestion'])
+            if process.returncode == 0:
+                logger.info("Ingestion completed successfully")
+                return True
+            else:
+                logger.error(f"Ingestion failed with return code {process.returncode}")
+                return False
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()  # Clean up the process
+            logger.error(f"Ingestion process timed out after {config['settings']['timeout']['ingestion']} seconds")
             return False
-            
-    except subprocess.TimeoutExpired:
-        logger.error(f"Ingestion process timed out after {config['settings']['timeout']['ingestion']} seconds")
-        return False
+
     except Exception as e:
         logger.error(f"Error running ingestion: {e}")
         return False
@@ -282,7 +292,7 @@ def main():
                                 test_info = parse_test_file(test_file)
                                 if (not test_info):
                                     logger.info(f'parse_test_file failed for file: {test_file}')
-                                    break
+                                    continue
                                 if test_info and test_info[0] == sn and test_info[1] <= T:
                                     test_candidates.append((test_file, test_info[1]))
                             if test_candidates:

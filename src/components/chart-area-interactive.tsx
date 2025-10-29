@@ -101,17 +101,31 @@ export function ChartAreaInteractive({
   }, [chartMode]);
 
   const filteredData = chartData.filter((item) => {
+    // Early return for all time - no filtering
     if (timeRange === "all") {
       return true;
     }
+
     const date = new Date(item.date);
     const referenceDate = new Date();
-    let daysToSubtract = 90;
-    if (timeRange === "30d") {
-      daysToSubtract = 30;
-    } else if (timeRange === "7d") {
-      daysToSubtract = 7;
+
+    // Determine days to subtract based on time range
+    let daysToSubtract: number;
+    switch (timeRange) {
+      case "7d":
+        daysToSubtract = 7;
+        break;
+      case "30d":
+        daysToSubtract = 30;
+        break;
+      case "90d":
+        daysToSubtract = 90;
+        break;
+      default:
+        // Fallback to 90 days for any unexpected value
+        daysToSubtract = 90;
     }
+
     const startDate = new Date(referenceDate);
     startDate.setDate(startDate.getDate() - daysToSubtract);
     return date >= startDate;
