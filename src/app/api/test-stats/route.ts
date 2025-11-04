@@ -216,6 +216,27 @@ export async function GET(request: NextRequest) {
 
     // Default: return daily statistics
     const chartMode = searchParams.get("chartMode") || "all"; // 'all' or 'recent'
+    const timeRange = searchParams.get("timeRange");
+
+    // Build time filter based on timeRange parameter
+    let timeFilter = "";
+    if (timeRange && timeRange !== "all") {
+      let days: number;
+      switch (timeRange) {
+        case "7d":
+          days = 7;
+          break;
+        case "30d":
+          days = 30;
+          break;
+        case "90d":
+          days = 90;
+          break;
+        default:
+          days = 90;
+      }
+      timeFilter = `t.start_time_utc >= CURRENT_DATE - INTERVAL '${days} days' AND`;
+    }
 
     let query: string;
     if (chartMode === "recent") {
@@ -232,8 +253,8 @@ export async function GET(request: NextRequest) {
             ) as rn
           FROM Tests t
           JOIN Inverters i ON t.inv_id = i.inv_id
-          WHERE t.start_time_utc >= CURRENT_DATE - INTERVAL '90 days'
-            AND t.overall_status != 'INVALID'
+          WHERE ${timeFilter}
+            t.overall_status != 'INVALID'
         )
         SELECT
           to_char(test_date, 'YYYY-MM-DD') as test_date,
@@ -252,8 +273,8 @@ export async function GET(request: NextRequest) {
           COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
           COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
         FROM Tests
-        WHERE start_time_utc >= CURRENT_DATE - INTERVAL '90 days'
-          AND overall_status != 'INVALID'
+        WHERE ${timeFilter}
+          overall_status != 'INVALID'
         GROUP BY DATE(start_time_utc)
         ORDER BY DATE(start_time_utc) ASC
       `;

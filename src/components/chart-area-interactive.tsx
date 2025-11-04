@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import ReactECharts from "echarts-for-react";
+import type { EChartsOption, TooltipComponentFormatterCallbackParams } from "echarts";
 import { IconDownload, IconFileZip } from "@tabler/icons-react";
 
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -13,12 +14,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  ChartConfig,
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@/components/ui/chart";
 import {
   Select,
   SelectContent,
@@ -45,19 +40,12 @@ interface ChartAreaInteractiveProps {
   onTimeRangeChange: (range: string) => void;
 }
 
-const chartConfig = {
-  tests: {
-    label: "Tests",
-  },
-  passed: {
-    label: "Passed",
-    color: "hsl(142.1 76.2% 36.3%)",
-  },
-  failed: {
-    label: "Failed",
-    color: "hsl(346.8 77.2% 49.8%)",
-  },
-} satisfies ChartConfig;
+const chartColors = {
+  passed: "hsl(142.1 76.2% 36.3%)",
+  failed: "hsl(346.8 77.2% 49.8%)",
+  passedWithAlpha: (alpha: number) => `hsla(142.1, 76.2%, 36.3%, ${alpha})`,
+  failedWithAlpha: (alpha: number) => `hsla(346.8, 77.2%, 49.8%, ${alpha})`,
+};
 
 export function ChartAreaInteractive({
   onDateClick,
@@ -72,6 +60,25 @@ export function ChartAreaInteractive({
   const [isGeneratingReport, setIsGeneratingReport] = React.useState(false);
   const [isGeneratingFailedData, setIsGeneratingFailedData] =
     React.useState(false);
+  const [isDarkMode, setIsDarkMode] = React.useState(false);
+  const chartRef = React.useRef<ReactECharts>(null);
+
+  // Dark mode detection
+  React.useEffect(() => {
+    const checkDarkMode = () => {
+      setIsDarkMode(document.documentElement.classList.contains("dark"));
+    };
+
+    checkDarkMode();
+
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   React.useEffect(() => {
     if (isMobile && timeRange === "90d") {
@@ -83,7 +90,7 @@ export function ChartAreaInteractive({
     const fetchTestStats = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/api/test-stats?chartMode=${chartMode}`);
+        const response = await fetch(`/api/test-stats?chartMode=${chartMode}&timeRange=${timeRange}`);
         if (response.ok) {
           const data = await response.json();
           setChartData(data);
@@ -98,38 +105,7 @@ export function ChartAreaInteractive({
     };
 
     fetchTestStats();
-  }, [chartMode]);
-
-  const filteredData = chartData.filter((item) => {
-    // Early return for all time - no filtering
-    if (timeRange === "all") {
-      return true;
-    }
-
-    const date = new Date(item.date);
-    const referenceDate = new Date();
-
-    // Determine days to subtract based on time range
-    let daysToSubtract: number;
-    switch (timeRange) {
-      case "7d":
-        daysToSubtract = 7;
-        break;
-      case "30d":
-        daysToSubtract = 30;
-        break;
-      case "90d":
-        daysToSubtract = 90;
-        break;
-      default:
-        // Fallback to 90 days for any unexpected value
-        daysToSubtract = 90;
-    }
-
-    const startDate = new Date(referenceDate);
-    startDate.setDate(startDate.getDate() - daysToSubtract);
-    return date >= startDate;
-  });
+  }, [chartMode, timeRange]);
 
   const getTimeRangeDescription = () => {
     switch (timeRange) {
@@ -275,6 +251,206 @@ export function ChartAreaInteractive({
     }
   };
 
+  // ECharts configuration
+  const chartOption: EChartsOption = React.useMemo(() => {
+    const textColor = isDarkMode ? "#e5e7eb" : "#374151";
+    const gridColor = isDarkMode ? "#374151" : "#e5e7eb";
+    const backgroundColor = isDarkMode ? "rgba(17, 24, 39, 0.8)" : "rgba(255, 255, 255, 0.9)";
+
+    return {
+      backgroundColor: "transparent",
+      textStyle: { color: textColor },
+      grid: {
+        left: 80,
+        right: 50,
+        bottom: 50,
+        top: 30,
+        containLabel: false,
+      },
+      xAxis: {
+        type: "category",
+        data: chartData.map((item) => item.date),
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: {
+          color: textColor,
+          margin: 8,
+          interval: "auto",
+          formatter: (value: string) => {
+            const date = new Date(value + "T00:00:00");
+            return date.toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+            });
+          },
+        },
+      },
+      yAxis: {
+        type: "value",
+        name: "Number of Tests",
+        nameLocation: "middle",
+        nameGap: 60,
+        nameTextStyle: {
+          color: textColor,
+          fontSize: 12,
+        },
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: {
+          color: textColor,
+          margin: 8,
+        },
+        splitLine: {
+          lineStyle: {
+            color: gridColor,
+            type: "solid",
+          },
+        },
+      },
+      series: [
+        {
+          name: "Failed",
+          type: "line",
+          stack: "total",
+          data: chartData.map((item) => item.failed),
+          smooth: true,
+          showSymbol: false,
+          lineStyle: {
+            width: 2,
+            color: chartColors.failed,
+          },
+          itemStyle: {
+            color: chartColors.failed,
+          },
+          areaStyle: {
+            color: {
+              type: "linear",
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: chartColors.failedWithAlpha(0.8) },
+                { offset: 1, color: chartColors.failedWithAlpha(0.1) },
+              ],
+            },
+          },
+          emphasis: {
+            focus: "none",
+            lineStyle: {
+              width: 2,
+              color: chartColors.failed,
+            },
+            areaStyle: {
+              color: {
+                type: "linear",
+                x: 0,
+                y: 0,
+                x2: 0,
+                y2: 1,
+                colorStops: [
+                  { offset: 0, color: chartColors.failedWithAlpha(0.8) },
+                  { offset: 1, color: chartColors.failedWithAlpha(0.1) },
+                ],
+              },
+            },
+          },
+        },
+        {
+          name: "Passed",
+          type: "line",
+          stack: "total",
+          data: chartData.map((item) => item.passed),
+          smooth: true,
+          showSymbol: false,
+          lineStyle: {
+            width: 2,
+            color: chartColors.passed,
+          },
+          itemStyle: {
+            color: chartColors.passed,
+          },
+          areaStyle: {
+            color: {
+              type: "linear",
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: chartColors.passedWithAlpha(0.8) },
+                { offset: 1, color: chartColors.passedWithAlpha(0.1) },
+              ],
+            },
+          },
+          emphasis: {
+            focus: "none",
+            lineStyle: {
+              width: 2,
+              color: chartColors.passed,
+            },
+            areaStyle: {
+              color: {
+                type: "linear",
+                x: 0,
+                y: 0,
+                x2: 0,
+                y2: 1,
+                colorStops: [
+                  { offset: 0, color: chartColors.passedWithAlpha(0.8) },
+                  { offset: 1, color: chartColors.passedWithAlpha(0.1) },
+                ],
+              },
+            },
+          },
+        },
+      ],
+      tooltip: {
+        trigger: "axis",
+        backgroundColor: backgroundColor,
+        borderColor: gridColor,
+        borderWidth: 1,
+        textStyle: { color: textColor },
+        formatter: (params: TooltipComponentFormatterCallbackParams) => {
+          if (!Array.isArray(params) || params.length === 0) return "";
+
+          const dateValue = params[0].name;
+          const date = new Date(dateValue + "T00:00:00");
+          const formattedDate = date.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          });
+
+          let html = `<div style="padding: 4px;"><div style="font-weight: 600; margin-bottom: 4px;">${formattedDate}</div>`;
+
+          // Reverse to show Passed first, then Failed
+          [...params].reverse().forEach((param) => {
+            html += `<div style="display: flex; align-items: center; margin: 2px 0;">`;
+            html += `<span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: ${param.color}; margin-right: 6px;"></span>`;
+            html += `<span style="flex: 1;">${param.seriesName}:</span>`;
+            html += `<span style="font-weight: 600; margin-left: 12px;">${param.value}</span>`;
+            html += `</div>`;
+          });
+
+          html += `</div>`;
+          return html;
+        },
+      },
+      legend: {
+        show: false,
+      },
+    };
+  }, [chartData, isDarkMode]);
+
+  // Handle chart click for date selection
+  const onEvents = React.useMemo(() => ({
+    click: (params: { componentType?: string; name?: string }) => {
+      if (params.componentType === "series" && params.name && onDateClick) {
+        onDateClick(params.name);
+      }
+    },
+  }), [onDateClick]);
+
   return (
     <Card className="@container/card">
       <CardHeader>
@@ -395,104 +571,15 @@ export function ChartAreaInteractive({
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           </div>
         ) : (
-          <ChartContainer
-            config={chartConfig}
-            className="aspect-auto h-[250px] w-full"
-          >
-            <AreaChart
-              data={filteredData}
-              onClick={(data) => {
-                if (data && data.activeLabel && onDateClick) {
-                  onDateClick(data.activeLabel);
-                }
-              }}
-            >
-              <defs>
-                <linearGradient id="fillPassed" x1="0" y1="0" x2="0" y2="1">
-                  <stop
-                    offset="5%"
-                    stopColor="var(--color-passed)"
-                    stopOpacity={0.8}
-                  />
-                  <stop
-                    offset="95%"
-                    stopColor="var(--color-passed)"
-                    stopOpacity={0.1}
-                  />
-                </linearGradient>
-                <linearGradient id="fillFailed" x1="0" y1="0" x2="0" y2="1">
-                  <stop
-                    offset="5%"
-                    stopColor="var(--color-failed)"
-                    stopOpacity={0.8}
-                  />
-                  <stop
-                    offset="95%"
-                    stopColor="var(--color-failed)"
-                    stopOpacity={0.1}
-                  />
-                </linearGradient>
-              </defs>
-              <CartesianGrid vertical={true} />
-              <XAxis
-                dataKey="date"
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-                minTickGap={32}
-                tickFormatter={(value) => {
-                  const date = new Date(value + "T00:00:00");
-                  return date.toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                  });
-                }}
-              />
-              <YAxis
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-                label={{
-                  value: "Number of Tests",
-                  angle: -90,
-                  position: "insideLeft",
-                  style: { textAnchor: "middle" },
-                }}
-              />
-              <ChartTooltip
-                cursor={false}
-                defaultIndex={isMobile ? -1 : 10}
-                content={
-                  <ChartTooltipContent
-                    labelFormatter={(value) => {
-                      return new Date(value + "T00:00:00").toLocaleDateString(
-                        "en-US",
-                        {
-                          month: "short",
-                          day: "numeric",
-                        },
-                      );
-                    }}
-                    indicator="dot"
-                  />
-                }
-              />
-              <Area
-                dataKey="failed"
-                type="natural"
-                fill="url(#fillFailed)"
-                stroke="var(--color-failed)"
-                stackId="a"
-              />
-              <Area
-                dataKey="passed"
-                type="natural"
-                fill="url(#fillPassed)"
-                stroke="var(--color-passed)"
-                stackId="a"
-              />
-            </AreaChart>
-          </ChartContainer>
+          <ReactECharts
+            ref={chartRef}
+            option={chartOption}
+            style={{ height: "250px", width: "100%", cursor: "pointer" }}
+            opts={{ renderer: "canvas" }}
+            onEvents={onEvents}
+            notMerge={false}
+            lazyUpdate={true}
+          />
         )}
       </CardContent>
     </Card>
