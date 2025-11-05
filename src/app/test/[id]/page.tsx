@@ -1,19 +1,18 @@
 "use client"
 
 import { useParams, useRouter } from "next/navigation"
-import { useEffect, useState, useMemo, useCallback } from "react"
+import { useEffect, useState, useMemo, useCallback, useRef } from "react"
 import { usePrefetchedTests } from "@/hooks/usePrefetchedTests"
 import { useTimezone } from "@/contexts/TimezoneContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, ZoomIn, ZoomOut, RotateCcw, Download, Maximize2, X, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react"
+import { ArrowLeft, Download, Maximize2, X, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react"
 import Link from "next/link"
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
-import type { TooltipProps as RechartsTooltipProps } from "recharts"
+import ReactECharts from "echarts-for-react"
+import type { EChartsOption } from "echarts"
 import TestAnnotations from "@/components/TestAnnotations"
 
 interface FailureInfo {
@@ -252,29 +251,49 @@ function FailedTestNavigation({
   )
 }
 
-// Custom tooltip component that shows status_bits for all charts
-function StatusBitsTooltip({ active, payload, label }: RechartsTooltipProps<string | number, string>) {
-  if (active && payload && payload.length) {
-    const dataPoint = payload[0]?.payload?.originalDataPoint as DataPoint
+// Helper function to create tooltip formatter for ECharts
+function createTooltipFormatter(chartData: Array<{ originalDataPoint?: DataPoint }>, isDarkMode: boolean, enabled: boolean = true) {
+  const textColor = isDarkMode ? "#e5e7eb" : "#374151"
+  const borderColor = isDarkMode ? "#374151" : "#e5e7eb"
 
-    return (
-      <div className="bg-background/80 border border-border rounded-lg shadow-lg p-3 max-w-xs">
-        <p className="font-medium mb-2">{`Time: ${label}`}</p>
-        {payload.map((entry, index: number) => (
-          <p key={index} style={{ color: entry.color }} className="text-base">
-            {`${entry.name?.replace('_inst_latch', '') || entry.dataKey}: ${typeof entry.value === 'number' ? Number(entry.value).toFixed(3) : entry.value}`}
-          </p>
-        ))}
-        {dataPoint?.status_bits && (
-          <div className="mt-2 pt-2 border-t border-border">
-            <p className="text-sm font-medium text-muted-foreground">Status Bits:</p>
-            <p className="text-sm font-mono">{dataPoint.status_bits}</p>
-          </div>
-        )}
-      </div>
-    )
+  return (params: unknown) => {
+    if (!enabled) return ""
+    if (!Array.isArray(params) || params.length === 0) return ""
+
+    const dataIndex = params[0].dataIndex
+    const dataPoint = chartData[dataIndex]?.originalDataPoint
+    const timestamp = params[0].name
+
+    let html = `<div style="font-weight: 600; margin-bottom: 8px; color: ${textColor};">Time: ${timestamp}</div>`
+
+    params.forEach((param: { color?: string; seriesName?: string; value?: number | number[]; dataIndex?: number }) => {
+      const name = param.seriesName?.replace('_inst_latch', '') || ''
+      // Handle both simple values and array values [x, y]
+      let displayValue: string
+      if (Array.isArray(param.value)) {
+        // If value is an array, use the last element (y-value)
+        displayValue = typeof param.value[param.value.length - 1] === 'number'
+          ? param.value[param.value.length - 1].toFixed(3)
+          : String(param.value[param.value.length - 1])
+      } else if (typeof param.value === 'number') {
+        displayValue = param.value.toFixed(3)
+      } else {
+        displayValue = String(param.value)
+      }
+      html += `<div style="margin: 4px 0; color: ${param.color}; font-size: 14px;">`
+      html += `${name}: ${displayValue}`
+      html += `</div>`
+    })
+
+    if (dataPoint?.status_bits) {
+      html += `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid ${borderColor};">`
+      html += `<div style="font-size: 12px; font-weight: 500; color: ${isDarkMode ? '#9ca3af' : '#6b7280'}; margin-bottom: 4px;">Status Bits:</div>`
+      html += `<div style="font-size: 12px; font-family: monospace; color: ${textColor};">${dataPoint.status_bits.split(';').filter(s => s.trim()).join('<br/>')}</div>`
+      html += `</div>`
+    }
+
+    return html
   }
-  return null
 }
 
 const DECIMATION_COOKIE_KEY = "burnin-chart-decimation-enabled"
@@ -349,16 +368,30 @@ function FullScreenChart({
   initialState: FullScreenState
   onClose: () => void
 }) {
-  const { formatTimeInTimezone } = useTimezone()
+  const { formatTimeWithSecondsInTimezone } = useTimezone()
+  const chartRef = useRef<ReactECharts>(null)
+  const [isDarkMode, setIsDarkMode] = useState(false)
+
+  // Dark mode detection
+  useEffect(() => {
+    const checkDarkMode = () => {
+      setIsDarkMode(document.documentElement.classList.contains("dark"))
+    }
+    checkDarkMode()
+    const observer = new MutationObserver(checkDarkMode)
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    })
+    return () => observer.disconnect()
+  }, [])
 
   // Initialize state from inherited values
   const [selectedColumns, setSelectedColumns] = useState<Set<string>>(
     new Set(initialState.selectedColumns)
   )
-  const [zoomStart, setZoomStart] = useState(initialState.zoomStart)
-  const [zoomEnd, setZoomEnd] = useState(initialState.zoomEnd)
-  const [zoomLevel, setZoomLevel] = useState(initialState.zoomLevel)
   const [decimationEnabled, setDecimationEnabled] = useState(initialState.decimationEnabled)
+  const [tooltipEnabled, setTooltipEnabled] = useState(true)
 
   // Reuse the same logic from ConfigurableChart
   const toggleColumn = useCallback((column: string) => {
@@ -417,74 +450,146 @@ function FullScreenChart({
     setSelectedColumns(new Set())
   }, [])
 
-  // Calculate zoom range and apply adaptive decimation
-  const { zoomedData, zoomedSliceLength } = useMemo(() => {
-    const totalPoints = data.length
-    const startIndex = Math.floor((zoomStart / 100) * totalPoints)
-    const endIndex = Math.ceil((zoomEnd / 100) * totalPoints)
-
-    const zoomedSlice = data.slice(startIndex, endIndex)
-    const zoomedData = decimationEnabled ? decimateData(zoomedSlice, 1000) : zoomedSlice
-
-    return { zoomedData, zoomedSliceLength: zoomedSlice.length }
-  }, [data, zoomStart, zoomEnd, decimationEnabled])
+  // Apply decimation if enabled
+  const processedData = useMemo(() => {
+    return decimationEnabled ? decimateData(data, 1000) : data
+  }, [data, decimationEnabled])
 
   // Memoize chart data transformation
   const chartData = useMemo(() => {
-    return zoomedData.map((point, index) => ({
-      timestamp: formatTimeInTimezone(point.timestamp),
-      originalIndex: Math.floor((zoomStart / 100) * data.length) + index,
+    return processedData.map((point) => ({
+      timestamp: formatTimeWithSecondsInTimezone(point.timestamp),
       originalDataPoint: point, // Preserve full original data point for tooltip access
       ...Object.fromEntries(
         Array.from(selectedColumns).map(col => [col, point[col as keyof DataPoint]])
       )
     }))
-  }, [zoomedData, selectedColumns, zoomStart, data.length, formatTimeInTimezone])
-
-  // Zoom functions (same as ConfigurableChart)
-  const zoomIn = useCallback(() => {
-    const currentRange = zoomEnd - zoomStart
-    const newRange = Math.max(currentRange * 0.5, 5)
-    const newEnd = Math.min(100, zoomStart + newRange)
-    setZoomEnd(newEnd)
-    setZoomLevel(zoomLevel * 2)
-  }, [zoomStart, zoomEnd, zoomLevel])
-
-  const zoomOut = useCallback(() => {
-    const currentRange = zoomEnd - zoomStart
-    const newRange = Math.min(currentRange * 2, 100)
-    const newEnd = Math.min(100, zoomStart + newRange)
-    setZoomEnd(newEnd)
-    setZoomLevel(Math.max(zoomLevel * 0.5, 1))
-  }, [zoomStart, zoomEnd, zoomLevel])
-
-  const resetZoom = useCallback(() => {
-    setZoomStart(0)
-    setZoomEnd(100)
-    setZoomLevel(1)
-  }, [])
-
-  const panLeft = useCallback(() => {
-    const currentRange = zoomEnd - zoomStart
-    const panAmount = currentRange * 0.1
-    if (zoomStart - panAmount >= 0) {
-      setZoomStart(zoomStart - panAmount)
-      setZoomEnd(zoomEnd - panAmount)
-    }
-  }, [zoomStart, zoomEnd])
-
-  const panRight = useCallback(() => {
-    const currentRange = zoomEnd - zoomStart
-    const panAmount = currentRange * 0.1
-    if (zoomEnd + panAmount <= 100) {
-      setZoomStart(zoomStart + panAmount)
-      setZoomEnd(zoomEnd + panAmount)
-    }
-  }, [zoomStart, zoomEnd])
+  }, [processedData, selectedColumns, formatTimeWithSecondsInTimezone])
 
   const getDisplayName = (column: string) => {
     return column.replace('_inst_latch', '')
   }
+
+  // ECharts configuration
+  const chartOption: EChartsOption = useMemo(() => {
+    const textColor = isDarkMode ? "#e5e7eb" : "#374151"
+    const gridColor = isDarkMode ? "#374151" : "#e5e7eb"
+
+    const series = Array.from(selectedColumns).map((column, index) => ({
+      name: getDisplayName(column),
+      type: "line" as const,
+      data: chartData.map((point) => (point as Record<string, unknown>)[column] as number | null),
+      smooth: false,
+      symbol: "none",
+      lineStyle: { width: 2, color: colors[index % colors.length] },
+      itemStyle: { color: colors[index % colors.length] },
+      connectNulls: false,
+    }))
+
+    return {
+      backgroundColor: "transparent",
+      textStyle: { color: textColor },
+      grid: {
+        left: 60,
+        right: 50,
+        bottom: 80,
+        top: 40,
+      },
+      xAxis: {
+        type: "category",
+        data: chartData.map((point) => point.timestamp),
+        axisLabel: {
+          color: textColor,
+          fontSize: 12,
+          rotate: -45,
+          interval: Math.max(0, Math.ceil(chartData.length / 12)),
+        },
+        axisTick: { show: true },
+        axisLine: { show: true, lineStyle: { color: gridColor } },
+      },
+      yAxis: {
+        type: "value",
+        scale: true, // Enable autoscaling to fit visible data range
+        axisLabel: { color: textColor },
+        axisLine: { show: true, lineStyle: { color: gridColor } },
+        splitLine: { lineStyle: { color: gridColor, type: "dashed" } },
+      },
+      series,
+      axisPointer: {
+        show: true,
+        triggerOn: "mousemove",
+        type: "cross",
+        snap: true,
+        label: {
+          show: true,
+          backgroundColor: isDarkMode ? "#1f2937" : "#374151",
+          color: "#ffffff",
+          borderColor: isDarkMode ? "#374151" : "#6b7280",
+          borderWidth: 1,
+          padding: [5, 8],
+          fontSize: 12,
+          fontWeight: "bold",
+        },
+        crossStyle: {
+          type: "dashed",
+          color: isDarkMode ? "#6b7280" : "#9ca3af",
+          width: 1,
+        },
+      },
+      tooltip: {
+        show: true,
+        trigger: "axis",
+        backgroundColor: tooltipEnabled
+          ? (isDarkMode ? "rgba(17, 24, 39, 0.85)" : "rgba(255, 255, 255, 0.85)")
+          : "rgba(0, 0, 0, 0)",
+        borderColor: tooltipEnabled
+          ? (isDarkMode ? "#374151" : "#e5e7eb")
+          : "rgba(0, 0, 0, 0)",
+        borderWidth: tooltipEnabled ? 1 : 0,
+        textStyle: {
+          color: tooltipEnabled ? "inherit" : "rgba(0, 0, 0, 0)",
+        },
+        formatter: createTooltipFormatter(chartData, isDarkMode, tooltipEnabled),
+        axisPointer: {
+          type: "cross",
+        },
+      },
+      legend: {
+        show: true,
+        textStyle: { color: textColor },
+        top: 5,
+        type: "scroll",
+      },
+      dataZoom: [
+        {
+          type: "inside",
+          start: 0,
+          end: 100,
+          zoomOnMouseWheel: true, // Enable scroll to zoom
+          moveOnMouseMove: true, // Enable click-drag to pan
+          moveOnMouseWheel: false, // Disable pan on scroll
+          zoomLock: false,
+          orient: "horizontal",
+          filterMode: "filter", // Enable y-axis autoscaling
+        },
+        {
+          type: "slider",
+          start: 0,
+          end: 100,
+          height: 25,
+          bottom: 10,
+          handleSize: "80%",
+          textStyle: { color: textColor },
+          borderColor: gridColor,
+          fillerColor: isDarkMode ? "rgba(59, 130, 246, 0.2)" : "rgba(59, 130, 246, 0.15)",
+          handleStyle: {
+            color: "#3b82f6",
+            borderColor: "#3b82f6",
+          },
+        },
+      ],
+    }
+  }, [chartData, selectedColumns, isDarkMode, tooltipEnabled])
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -495,29 +600,11 @@ function FullScreenChart({
             <h2 className="text-xl font-bold">Full Screen - {initialState.sourceChartTitle}</h2>
             <span className="text-sm text-muted-foreground">
               Showing {chartData.length} of {data.length} data points
-              {decimationEnabled && zoomedData.length < zoomedSliceLength && " (decimated for performance)"}
+              {decimationEnabled && processedData.length < data.length && " (decimated for performance)"}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={panLeft} disabled={zoomStart <= 0}>
-              ←
-            </Button>
-            <Button size="sm" variant="outline" onClick={zoomOut} disabled={zoomLevel <= 1}>
-              <ZoomOut className="h-4 w-4" />
-            </Button>
-            <span className="text-xs text-muted-foreground px-2">
-              {zoomLevel.toFixed(1)}x
-            </span>
-            <Button size="sm" variant="outline" onClick={zoomIn}>
-              <ZoomIn className="h-4 w-4" />
-            </Button>
-            <Button size="sm" variant="outline" onClick={panRight} disabled={zoomEnd >= 100}>
-              →
-            </Button>
-            <Button size="sm" variant="outline" onClick={resetZoom} disabled={zoomLevel <= 1}>
-              <RotateCcw className="h-4 w-4" />
-            </Button>
-            {zoomedSliceLength > 1000 && (
+            {data.length > 1000 && (
               <Button
                 size="sm"
                 variant={decimationEnabled ? "default" : "outline"}
@@ -527,6 +614,14 @@ function FullScreenChart({
                 {decimationEnabled ? "Decimated" : "Full Data"}
               </Button>
             )}
+            <Button
+              size="sm"
+              variant={tooltipEnabled ? "default" : "outline"}
+              onClick={() => setTooltipEnabled(!tooltipEnabled)}
+              title={tooltipEnabled ? "Disable tooltip" : "Enable tooltip"}
+            >
+              Tooltip
+            </Button>
             <Button size="sm" variant="outline" onClick={onClose}>
               <X className="h-4 w-4" />
             </Button>
@@ -535,38 +630,14 @@ function FullScreenChart({
 
         {/* Chart */}
         <div className="flex-1 min-h-0 max-h-[calc(100vh-400px)]">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={chartData}
-              margin={{ top: 5, right: 30, left: 20, bottom: 60 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis
-                dataKey="timestamp"
-                interval={Math.max(0, Math.ceil(chartData.length / 12))}
-                tick={{ fontSize: 12 }}
-                angle={-45}
-                textAnchor="end"
-                height={60}
-              />
-              <YAxis />
-              <Tooltip content={StatusBitsTooltip} animationDuration={0} />
-              <Legend />
-              {Array.from(selectedColumns).map((column, index) => (
-                <Line
-                  key={column}
-                  type="monotone"
-                  dataKey={column}
-                  name={getDisplayName(column)}
-                  stroke={colors[index % colors.length]}
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={false}
-                  connectNulls={false}
-                />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
+          <ReactECharts
+            ref={chartRef}
+            option={chartOption}
+            style={{ height: "100%", width: "100%" }}
+            opts={{ renderer: "canvas" }}
+            notMerge={true}
+            lazyUpdate={true}
+          />
         </div>
 
         {/* Enhanced Column Selection with Compact Grouping */}
@@ -689,7 +760,23 @@ function ConfigurableChart({
   availableColumns: string[]
   onFullScreen?: (state: FullScreenState) => void
 }) {
-  const { formatTimeInTimezone } = useTimezone()
+  const { formatTimeWithSecondsInTimezone } = useTimezone()
+  const chartRef = useRef<ReactECharts>(null)
+  const [isDarkMode, setIsDarkMode] = useState(false)
+
+  // Dark mode detection
+  useEffect(() => {
+    const checkDarkMode = () => {
+      setIsDarkMode(document.documentElement.classList.contains("dark"))
+    }
+    checkDarkMode()
+    const observer = new MutationObserver(checkDarkMode)
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    })
+    return () => observer.disconnect()
+  }, [])
 
   // Function to get display name for columns
   const getDisplayName = (column: string) => {
@@ -719,12 +806,9 @@ function ConfigurableChart({
   const [selectedColumns, setSelectedColumns] = useState<Set<string>>(
     new Set(getDefaultColumns())
   )
-  // Zoom controls
-  const [zoomStart, setZoomStart] = useState(0)
-  const [zoomEnd, setZoomEnd] = useState(100)
-  const [zoomLevel, setZoomLevel] = useState(1)
   // Decimation toggle
   const [decimationEnabled, setDecimationEnabled] = useState(() => loadDecimationFromCookie())
+  const [tooltipEnabled, setTooltipEnabled] = useState(true)
 
   const toggleColumn = useCallback((column: string) => {
     const newSelected = new Set(selectedColumns)
@@ -742,72 +826,142 @@ function ConfigurableChart({
     saveDecimationToCookie(newEnabled)
   }, [decimationEnabled])
 
-  // Calculate zoom range and apply adaptive decimation
-  const { totalPoints, zoomedData, zoomedSliceLength } = useMemo(() => {
-    const totalPoints = data.length
-    const startIndex = Math.floor((zoomStart / 100) * totalPoints)
-    const endIndex = Math.ceil((zoomEnd / 100) * totalPoints)
-
-    // First slice the data based on zoom
-    const zoomedSlice = data.slice(startIndex, endIndex)
-
-    // Then apply decimation to the zoomed slice if enabled
-    const zoomedData = decimationEnabled ? decimateData(zoomedSlice, 1000) : zoomedSlice
-
-    return { totalPoints, zoomedData, zoomedSliceLength: zoomedSlice.length }
-  }, [data, zoomStart, zoomEnd, decimationEnabled])
+  // Apply decimation if enabled
+  const processedData = useMemo(() => {
+    return decimationEnabled ? decimateData(data, 1000) : data
+  }, [data, decimationEnabled])
 
   // Memoize chart data transformation
   const chartData = useMemo(() => {
-    return zoomedData.map((point, index) => ({
-      timestamp: formatTimeInTimezone(point.timestamp),
-      originalIndex: Math.floor((zoomStart / 100) * data.length) + index,
+    return processedData.map((point) => ({
+      timestamp: formatTimeWithSecondsInTimezone(point.timestamp),
       originalDataPoint: point, // Preserve full original data point for tooltip access
       ...Object.fromEntries(
         Array.from(selectedColumns).map(col => [col, point[col as keyof DataPoint]])
       )
     }))
-  }, [zoomedData, selectedColumns, zoomStart, data.length, formatTimeInTimezone])
+  }, [processedData, selectedColumns, formatTimeWithSecondsInTimezone])
 
-  const zoomIn = useCallback(() => {
-    const currentRange = zoomEnd - zoomStart
-    const newRange = Math.max(currentRange * 0.5, 5) // Minimum 5% range
-    const newEnd = Math.min(100, zoomStart + newRange)
-    setZoomEnd(newEnd)
-    setZoomLevel(zoomLevel * 2)
-  }, [zoomStart, zoomEnd, zoomLevel])
+  // ECharts configuration
+  const chartOption: EChartsOption = useMemo(() => {
+    const textColor = isDarkMode ? "#e5e7eb" : "#374151"
+    const gridColor = isDarkMode ? "#374151" : "#e5e7eb"
 
-  const zoomOut = useCallback(() => {
-    const currentRange = zoomEnd - zoomStart
-    const newRange = Math.min(currentRange * 2, 100)
-    const newEnd = Math.min(100, zoomStart + newRange)
-    setZoomEnd(newEnd)
-    setZoomLevel(Math.max(zoomLevel * 0.5, 1))
-  }, [zoomStart, zoomEnd, zoomLevel])
+    const series = Array.from(selectedColumns).map((column, index) => ({
+      name: getDisplayName(column),
+      type: "line" as const,
+      data: chartData.map((point) => (point as Record<string, unknown>)[column] as number | null),
+      smooth: false,
+      symbol: "none",
+      lineStyle: { width: 2, color: colors[index % colors.length] },
+      itemStyle: { color: colors[index % colors.length] },
+      connectNulls: false,
+    }))
 
-  const resetZoom = useCallback(() => {
-    setZoomStart(0)
-    setZoomEnd(100)
-    setZoomLevel(1)
-  }, [])
-
-  const panLeft = useCallback(() => {
-    const currentRange = zoomEnd - zoomStart
-    const panAmount = currentRange * 0.1
-    if (zoomStart - panAmount >= 0) {
-      setZoomStart(zoomStart - panAmount)
-      setZoomEnd(zoomEnd - panAmount)
+    return {
+      backgroundColor: "transparent",
+      textStyle: { color: textColor },
+      grid: {
+        left: 60,
+        right: 50,
+        bottom: 80,
+        top: 40,
+      },
+      xAxis: {
+        type: "category",
+        data: chartData.map((point) => point.timestamp),
+        axisLabel: {
+          color: textColor,
+          fontSize: 12,
+          rotate: -45,
+          interval: Math.max(0, Math.ceil(chartData.length / 8)),
+        },
+        axisTick: { show: true },
+        axisLine: { show: true, lineStyle: { color: gridColor } },
+      },
+      yAxis: {
+        type: "value",
+        scale: true, // Enable autoscaling to fit visible data range
+        axisLabel: { color: textColor },
+        axisLine: { show: true, lineStyle: { color: gridColor } },
+        splitLine: { lineStyle: { color: gridColor, type: "dashed" } },
+      },
+      series,
+      axisPointer: {
+        show: true,
+        triggerOn: "mousemove",
+        type: "cross",
+        snap: true,
+        label: {
+          show: true,
+          backgroundColor: isDarkMode ? "#1f2937" : "#374151",
+          color: "#ffffff",
+          borderColor: isDarkMode ? "#374151" : "#6b7280",
+          borderWidth: 1,
+          padding: [5, 8],
+          fontSize: 12,
+          fontWeight: "bold",
+        },
+        crossStyle: {
+          type: "dashed",
+          color: isDarkMode ? "#6b7280" : "#9ca3af",
+          width: 1,
+        },
+      },
+      tooltip: {
+        show: true,
+        trigger: "axis",
+        backgroundColor: tooltipEnabled
+          ? (isDarkMode ? "rgba(17, 24, 39, 0.85)" : "rgba(255, 255, 255, 0.85)")
+          : "rgba(0, 0, 0, 0)",
+        borderColor: tooltipEnabled
+          ? (isDarkMode ? "#374151" : "#e5e7eb")
+          : "rgba(0, 0, 0, 0)",
+        borderWidth: tooltipEnabled ? 1 : 0,
+        textStyle: {
+          color: tooltipEnabled ? "inherit" : "rgba(0, 0, 0, 0)",
+        },
+        formatter: createTooltipFormatter(chartData, isDarkMode, tooltipEnabled),
+        axisPointer: {
+          type: "cross",
+        },
+      },
+      legend: {
+        show: true,
+        textStyle: { color: textColor },
+        top: 5,
+        type: "scroll",
+      },
+      dataZoom: [
+        {
+          type: "inside",
+          start: 0,
+          end: 100,
+          zoomOnMouseWheel: true, // Enable scroll to zoom
+          moveOnMouseMove: true, // Enable click-drag to pan
+          moveOnMouseWheel: false, // Disable pan on scroll
+          zoomLock: false,
+          orient: "horizontal",
+          filterMode: "filter", // Enable y-axis autoscaling
+        },
+        {
+          type: "slider",
+          start: 0,
+          end: 100,
+          height: 25,
+          bottom: 10,
+          handleSize: "80%",
+          textStyle: { color: textColor },
+          borderColor: gridColor,
+          fillerColor: isDarkMode ? "rgba(59, 130, 246, 0.2)" : "rgba(59, 130, 246, 0.15)",
+          handleStyle: {
+            color: "#3b82f6",
+            borderColor: "#3b82f6",
+          },
+        },
+      ],
     }
-  }, [zoomStart, zoomEnd])
-
-  const panRight = useCallback(() => {
-    const currentRange = zoomEnd - zoomStart
-    const panAmount = currentRange * 0.1
-    if (zoomEnd + panAmount <= 100) {
-      setZoomStart(zoomStart + panAmount)
-      setZoomEnd(zoomEnd + panAmount)
-    }
-  }, [zoomStart, zoomEnd])
+  }, [chartData, selectedColumns, isDarkMode, tooltipEnabled])
 
   return (
     <Card>
@@ -817,29 +971,11 @@ function ConfigurableChart({
             <CardTitle>{title}</CardTitle>
             <span className="text-xs text-muted-foreground">
               Showing {chartData.length} of {data.length} data points
-              {decimationEnabled && zoomedData.length < zoomedSliceLength && " (decimated for performance)"}
+              {decimationEnabled && processedData.length < data.length && " (decimated for performance)"}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={panLeft} disabled={zoomStart <= 0}>
-              ←
-            </Button>
-            <Button size="sm" variant="outline" onClick={zoomOut} disabled={zoomLevel <= 1}>
-              <ZoomOut className="h-4 w-4" />
-            </Button>
-            <span className="text-xs text-muted-foreground px-2">
-              {zoomLevel.toFixed(1)}x
-            </span>
-            <Button size="sm" variant="outline" onClick={zoomIn}>
-              <ZoomIn className="h-4 w-4" />
-            </Button>
-            <Button size="sm" variant="outline" onClick={panRight} disabled={zoomEnd >= 100}>
-              →
-            </Button>
-            <Button size="sm" variant="outline" onClick={resetZoom} disabled={zoomLevel <= 1}>
-              <RotateCcw className="h-4 w-4" />
-            </Button>
-            {zoomedSliceLength > 1000 && (
+            {data.length > 1000 && (
               <Button
                 size="sm"
                 variant={decimationEnabled ? "default" : "outline"}
@@ -849,15 +985,23 @@ function ConfigurableChart({
                 {decimationEnabled ? "Decimated" : "Full Data"}
               </Button>
             )}
+            <Button
+              size="sm"
+              variant={tooltipEnabled ? "default" : "outline"}
+              onClick={() => setTooltipEnabled(!tooltipEnabled)}
+              title={tooltipEnabled ? "Disable tooltip" : "Enable tooltip"}
+            >
+              Tooltip
+            </Button>
             {onFullScreen && (
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => onFullScreen({
                   selectedColumns: Array.from(selectedColumns),
-                  zoomStart,
-                  zoomEnd,
-                  zoomLevel,
+                  zoomStart: 0,
+                  zoomEnd: 100,
+                  zoomLevel: 1,
                   decimationEnabled,
                   sourceChartTitle: title
                 })}
@@ -868,30 +1012,6 @@ function ConfigurableChart({
             )}
           </div>
         </div>
-        {/* Range slider for zoom position */}
-        {zoomLevel > 1 && (
-          <div className="space-y-2">
-            <Label className="text-sm">Zoom Position</Label>
-            <div className="flex items-center gap-4">
-              <input
-                type="range"
-                min="0"
-                max={100 - (zoomEnd - zoomStart)}
-                value={zoomStart}
-                onChange={(e) => {
-                  const newStart = parseFloat(e.target.value)
-                  const range = zoomEnd - zoomStart
-                  setZoomStart(newStart)
-                  setZoomEnd(newStart + range)
-                }}
-                className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-              />
-              <span className="text-xs text-muted-foreground w-20">
-                {Math.round((zoomStart / 100) * totalPoints)} - {Math.round((zoomEnd / 100) * totalPoints)}
-              </span>
-            </div>
-          </div>
-        )}
         <div className="flex flex-wrap gap-2">
           {availableColumns.map(column => (
             <div key={column} className="flex items-center space-x-2">
@@ -987,38 +1107,14 @@ function ConfigurableChart({
       </CardHeader>
       <CardContent>
         <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={chartData}
-              margin={{ top: 5, right: 30, left: 20, bottom: 60 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis
-                dataKey="timestamp"
-                interval={Math.max(0, Math.ceil(chartData.length / 8))}
-                tick={{ fontSize: 12 }}
-                angle={-45}
-                textAnchor="end"
-                height={60}
-              />
-              <YAxis />
-              <Tooltip content={StatusBitsTooltip} animationDuration={0} />
-              <Legend />
-              {Array.from(selectedColumns).map((column, index) => (
-                <Line
-                  key={column}
-                  type="monotone"
-                  dataKey={column}
-                  name={getDisplayName(column)}
-                  stroke={colors[index % colors.length]}
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={false}
-                  connectNulls={false}
-                />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
+          <ReactECharts
+            ref={chartRef}
+            option={chartOption}
+            style={{ height: "100%", width: "100%" }}
+            opts={{ renderer: "canvas" }}
+            notMerge={true}
+            lazyUpdate={true}
+          />
         </div>
       </CardContent>
     </Card>

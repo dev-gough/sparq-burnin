@@ -269,14 +269,14 @@ export async function GET(request: NextRequest) {
       // Show daily statistics for all tests
       query = `
         SELECT
-          to_char(DATE(start_time_utc), 'YYYY-MM-DD') as test_date,
-          COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
-          COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
-        FROM Tests
+          to_char(DATE(t.start_time_utc), 'YYYY-MM-DD') as test_date,
+          COUNT(CASE WHEN t.overall_status = 'PASS' THEN 1 END) as passed,
+          COUNT(CASE WHEN t.overall_status = 'FAIL' THEN 1 END) as failed
+        FROM Tests t
         WHERE ${timeFilter}
-          overall_status != 'INVALID'
-        GROUP BY DATE(start_time_utc)
-        ORDER BY DATE(start_time_utc) ASC
+          t.overall_status != 'INVALID'
+        GROUP BY DATE(t.start_time_utc)
+        ORDER BY DATE(t.start_time_utc) ASC
       `;
     }
 

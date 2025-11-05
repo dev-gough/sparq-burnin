@@ -255,7 +255,6 @@ export function ChartAreaInteractive({
   const chartOption: EChartsOption = React.useMemo(() => {
     const textColor = isDarkMode ? "#e5e7eb" : "#374151";
     const gridColor = isDarkMode ? "#374151" : "#e5e7eb";
-    const backgroundColor = isDarkMode ? "rgba(17, 24, 39, 0.8)" : "rgba(255, 255, 255, 0.9)";
 
     return {
       backgroundColor: "transparent",
@@ -407,7 +406,7 @@ export function ChartAreaInteractive({
       ],
       tooltip: {
         trigger: "axis",
-        backgroundColor: backgroundColor,
+        backgroundColor: isDarkMode ? "rgba(17, 24, 39, 0.85)" : "rgba(255, 255, 255, 0.85)",
         borderColor: gridColor,
         borderWidth: 1,
         textStyle: { color: textColor },

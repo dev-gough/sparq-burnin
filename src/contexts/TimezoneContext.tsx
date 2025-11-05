@@ -10,6 +10,7 @@ interface TimezoneContextType {
   formatInTimezone: (utcDateString: string) => string
   formatDateInTimezone: (utcDateString: string) => string
   formatTimeInTimezone: (utcDateString: string) => string
+  formatTimeWithSecondsInTimezone: (utcDateString: string) => string
 }
 
 const TimezoneContext = createContext<TimezoneContextType | undefined>(undefined)
@@ -130,9 +131,9 @@ export function TimezoneProvider({ children }: { children: React.ReactNode }) {
     } else {
       date = new Date(utcDateString + (utcDateString.includes('T') ? 'Z' : 'T00:00:00Z'))
     }
-    
+
     const config = getTimezoneConfig(selectedTimezone)
-    
+
     return date.toLocaleTimeString('en-US', {
       ...config,
       hour: '2-digit',
@@ -141,13 +142,43 @@ export function TimezoneProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
+  const formatTimeWithSecondsInTimezone = (utcDateString: string): string => {
+    // Ensure we're working with a proper UTC date
+    let date: Date
+    if (utcDateString.endsWith('Z')) {
+      date = new Date(utcDateString)
+    } else {
+      date = new Date(utcDateString + (utcDateString.includes('T') ? 'Z' : 'T00:00:00Z'))
+    }
+
+    const config = getTimezoneConfig(selectedTimezone)
+
+    // Get the base time with seconds
+    const baseTime = date.toLocaleTimeString('en-US', {
+      ...config,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    })
+
+    // Extract milliseconds and append if non-zero
+    const milliseconds = date.getMilliseconds()
+    if (milliseconds > 0) {
+      return `${baseTime}.${milliseconds.toString().padStart(3, '0')}`
+    }
+
+    return baseTime
+  }
+
   return (
     <TimezoneContext.Provider value={{
       selectedTimezone,
       setTimezone,
       formatInTimezone,
       formatDateInTimezone,
-      formatTimeInTimezone
+      formatTimeInTimezone,
+      formatTimeWithSecondsInTimezone
     }}>
       {children}
     </TimezoneContext.Provider>
