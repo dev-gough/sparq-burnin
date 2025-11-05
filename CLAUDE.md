@@ -22,7 +22,7 @@ This is a Next.js 15 application using the App Router with a dashboard-style int
 - **UI Framework**: shadcn/ui components with Radix UI primitives
 - **Styling**: Tailwind CSS v4 with CSS variables
 - **Icons**: Tabler Icons and Lucide React
-- **Data Visualization**: Recharts for charts
+- **Data Visualization**: Apache ECharts (via echarts-for-react) for interactive charts
 - **Tables**: TanStack Table for data tables
 - **Theming**: next-themes for dark/light mode
 - **Drag & Drop**: @dnd-kit suite
@@ -44,7 +44,7 @@ This is a Next.js 15 application using the App Router with a dashboard-style int
 ### Data Patterns
 - JSON data files co-located with pages
 - Data table implementation uses TanStack Table
-- Chart components built with Recharts
+- Chart components built with Apache ECharts
 - Form validation with Zod schemas
 
 ### UI Patterns
@@ -135,6 +135,6 @@ const exportOptions = {
 - Data point selection and highlighting
 
 **Technical Details:**
-- Integrate with Recharts event handlers
+- Integrate with ECharts event handlers
 - Custom zoom/pan logic beyond current button controls
 - Overlay components for annotations
