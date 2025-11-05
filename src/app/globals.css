@@ -41,6 +41,23 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* Ultrawide monitor breakpoints */
+  --breakpoint-3xl: 1920px;
+  --breakpoint-4xl: 2560px;
+  --breakpoint-5xl: 3440px;
+
+  /* Container max-widths for ultrawide screens */
+  --container-3xl: 1792px;
+  --container-4xl: 2048px;
+  --container-5xl: 2560px;
+
+  /* Additional spacing for ultrawide layouts */
+  --spacing-128: 32rem;
+  --spacing-144: 36rem;
+  --spacing-160: 40rem;
+  --spacing-192: 48rem;
+  --spacing-256: 64rem;
 }
 
 :root {

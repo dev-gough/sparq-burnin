@@ -25,6 +25,7 @@ interface TestRecord {
   status: string;
   failure_reason: string | null;
   start_time: string;
+  annotations: string | null;
 }
 
 
@@ -151,11 +152,15 @@ export async function GET(request: NextRequest) {
             WHERE t.overall_status != 'INVALID'
           )
           SELECT
-            test_id, inv_id, serial_number, firmware_version, duration,
-            non_zero_status_flags, status, failure_reason, start_time
-          FROM latest_tests
-          WHERE rn = 1
-          ORDER BY start_time_utc DESC
+            lt.test_id, lt.inv_id, lt.serial_number, lt.firmware_version, lt.duration,
+            lt.non_zero_status_flags, lt.status, lt.failure_reason, lt.start_time,
+            STRING_AGG(DISTINCT ta.annotation_text, '; ' ORDER BY ta.annotation_text) as annotations
+          FROM latest_tests lt
+          LEFT JOIN TestAnnotations ta ON lt.test_id = ta.current_test_id
+          WHERE lt.rn = 1
+          GROUP BY lt.test_id, lt.inv_id, lt.serial_number, lt.firmware_version,
+                   lt.duration, lt.non_zero_status_flags, lt.status, lt.failure_reason, lt.start_time
+          ORDER BY lt.start_time DESC
           LIMIT 10000
         `;
       } else {
@@ -176,9 +181,14 @@ export async function GET(request: NextRequest) {
             ) as non_zero_status_flags,
             t.overall_status as status,
             t.failure_description as failure_reason,
-            t.start_time_utc as start_time
+            t.start_time_utc as start_time,
+            STRING_AGG(DISTINCT ta.annotation_text, '; ' ORDER BY ta.annotation_text) as annotations
           FROM Tests t
           JOIN Inverters i ON t.inv_id = i.inv_id
+          LEFT JOIN TestAnnotations ta ON t.test_id = ta.current_test_id
+          GROUP BY t.test_id, t.inv_id, i.serial_number, t.firmware_version,
+                   t.overall_status, t.failure_description, t.start_time_utc, t.end_time,
+                   t.ac_status, t.ch1_status, t.ch2_status, t.ch3_status, t.ch4_status
           ORDER BY t.start_time_utc DESC
           LIMIT 10000
         `;
@@ -196,6 +206,7 @@ export async function GET(request: NextRequest) {
         status: row.status || "UNKNOWN",
         failure_reason: row.failure_reason || null,
         start_time: row.start_time ? row.start_time.toISOString() : "",
+        annotations: row.annotations || null,
       }));
 
       return NextResponse.json(tests);

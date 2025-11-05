@@ -16,17 +16,15 @@ export default function Page() {
       <SiteHeader />
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
-          <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+          <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6 4xl:gap-8 5xl:gap-10 mx-auto w-full px-4 lg:px-6 4xl:px-8 5xl:px-12">
             <SectionCards chartMode={chartMode} timeRange={timeRange} />
-            <div className="px-4 lg:px-6">
-              <ChartAreaInteractive
-                onDateClick={setSelectedDate}
-                chartMode={chartMode}
-                onChartModeChange={setChartMode}
-                timeRange={timeRange}
-                onTimeRangeChange={setTimeRange}
-              />
-            </div>
+            <ChartAreaInteractive
+              onDateClick={setSelectedDate}
+              chartMode={chartMode}
+              onChartModeChange={setChartMode}
+              timeRange={timeRange}
+              onTimeRangeChange={setTimeRange}
+            />
             <DataTable
               selectedDate={selectedDate}
               onClearDateFilter={() => setSelectedDate("")}

@@ -89,8 +89,8 @@ interface DataPoint {
   status_bits?: string
 }
 
-const pvColumns = ["vpv1", "ppv1", "vpv2", "ppv2", "vpv3", "ppv3", "vpv4", "ppv4", "frequency", "temperature"]
-const gridColumns = ["vgrid", "pgrid", "qgrid", "vbus", "temperature"]
+const pvColumns = ["vpv1", "ppv1", "vpv2", "ppv2", "vpv3", "ppv3", "vpv4", "ppv4", "frequency", "vbus", "temperature"]
+const gridColumns = ["vgrid", "pgrid", "qgrid", "frequency", "temperature"]
 const latchColumns = [
   "vgrid_inst_latch", "vntrl_inst_latch", "igrid_inst_latch", "vbus_inst_latch",
   "vpv1_inst_latch", "ipv1_inst_latch", "vpv2_inst_latch", "ipv2_inst_latch",
@@ -785,7 +785,7 @@ function ConfigurableChart({
 
   // Set default columns based on chart type
   const getDefaultColumns = () => {
-    if (title === "PV Data & Frequency") {
+    if (title === "PV Data") {
       // Default to PPV columns for PV data, plus temperature
       const ppvColumns = availableColumns.filter(col => col.includes('ppv'))
       const defaultCols = ppvColumns.length > 0 ? ppvColumns : availableColumns.slice(0, 3)
@@ -1337,7 +1337,7 @@ export default function TestPage() {
   }
 
   return (
-    <div className="container p-6 mx-auto space-y-6">
+    <div className="container p-6 4xl:p-8 5xl:p-12 mx-auto space-y-6 4xl:space-y-8 5xl:space-y-10 max-w-5xl">
       <div className="flex items-center justify-between">
         <Link href="/">
           <Button variant="outline" size="sm">
@@ -1351,14 +1351,14 @@ export default function TestPage() {
         </Button>
       </div>
 
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-6">
+      <div className="space-y-4 4xl:space-y-6 5xl:space-y-8">
+        <div className="grid grid-cols-2 gap-6 4xl:gap-8 5xl:gap-12">
           {/* Test Information - Left Column */}
           <div>
-            <h1 className="text-3xl font-bold">Inverter S/N: {testData.serial_number}</h1>
-            <h2 className="text-xl text-muted-foreground">Test {testData.test_id}</h2>
-            <p className="text-lg text-muted-foreground">Started: {startDate}</p>
-            <p className="text-lg text-muted-foreground">Ended: {endDate}</p>
+            <h1 className="text-3xl 4xl:text-4xl 5xl:text-5xl font-bold">Inverter S/N: {testData.serial_number}</h1>
+            <h2 className="text-xl 4xl:text-2xl text-muted-foreground">Test {testData.test_id}</h2>
+            <p className="text-lg 4xl:text-xl text-muted-foreground">Started: {startDate}</p>
+            <p className="text-lg 4xl:text-xl text-muted-foreground">Ended: {endDate}</p>
             <div className="flex items-center gap-4 mt-2">
               <div className="flex items-center gap-2">
                 <Badge variant={
@@ -1398,11 +1398,11 @@ export default function TestPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-[1fr_320px] gap-6">
+        <div className="grid grid-cols-[1fr_320px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px] gap-6 4xl:gap-8 5xl:gap-12">
           {/* Charts Column */}
-          <div className="space-y-6">
+          <div className="space-y-6 4xl:space-y-8 5xl:space-y-10">
             <ConfigurableChart
-              title="PV Data & Frequency"
+              title="PV Data"
               data={testData.data_points}
               availableColumns={pvColumns}
               onFullScreen={openFullScreen}

@@ -96,6 +96,7 @@ export const testSchema = z.object({
   status: z.string(),
   failure_reason: z.string().nullable(),
   start_time: z.string(),
+  annotations: z.string().nullable(),
 });
 
 // Create columns dynamically to access timezone context
@@ -215,6 +216,21 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
         return status === "PASS" || status === "FAIL";
       }
       return status === value;
+    },
+  },
+  {
+    accessorKey: "annotations",
+    header: "Annotations",
+    cell: ({ row }) => {
+      const annotations = row.original.annotations;
+      if (!annotations) {
+        return <div className="text-muted-foreground text-sm">-</div>;
+      }
+      return (
+        <div className="text-sm max-w-xs truncate" title={annotations}>
+          {annotations}
+        </div>
+      );
     },
   },
 ];
@@ -422,7 +438,7 @@ export function DataTable({
     >
       <TabsContent
         value="outline"
-        className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6"
+        className="relative flex flex-col gap-4 overflow-auto"
       >
         {/* Filters Section */}
         <div className="flex flex-col gap-4 rounded-lg border p-4 bg-muted/50">
