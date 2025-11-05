@@ -122,19 +122,13 @@ export async function POST(
     
     const { serial_number, start_time } = testResult.rows[0];
     
-    // Insert annotation
+    // Insert annotation (no conflict handling - allow multiple annotations per type)
     const insertQuery = `
       INSERT INTO TestAnnotations (
-        serial_number, start_time, annotation_type, annotation_text, 
+        serial_number, start_time, annotation_type, annotation_text,
         created_by, current_test_id
       )
       VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (serial_number, start_time, annotation_type)
-      DO UPDATE SET
-        annotation_text = EXCLUDED.annotation_text,
-        created_by = EXCLUDED.created_by,
-        updated_at = CURRENT_TIMESTAMP,
-        current_test_id = EXCLUDED.current_test_id
       RETURNING *
     `;
     

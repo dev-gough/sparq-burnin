@@ -164,6 +164,29 @@ const migrations: Migration[] = [
       END
       $$;
     `
+  },
+  {
+    id: '006',
+    name: 'remove_annotation_unique_constraint',
+    sql: `
+      -- Remove unique constraint to allow multiple annotations of the same type per test
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'testannotations_serial_number_start_time_annotation_type_key'
+            AND conrelid = 'TestAnnotations'::regclass
+        ) THEN
+          ALTER TABLE TestAnnotations
+          DROP CONSTRAINT testannotations_serial_number_start_time_annotation_type_key;
+
+          RAISE NOTICE 'Removed unique constraint on TestAnnotations to allow multiple annotations per type';
+        ELSE
+          RAISE NOTICE 'Unique constraint does not exist, skipping removal';
+        END IF;
+      END
+      $$;
+    `
   }
 ];
 

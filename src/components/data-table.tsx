@@ -53,6 +53,7 @@ type FilterState = {
   serialSearch: string;
   statusFilter: string;
   firmwareFilter: string;
+  annotationFilter: string;
   dateFromFilter: string;
   dateToFilter: string;
   latestOnly: boolean;
@@ -271,6 +272,10 @@ export function DataTable({
     const savedFilters = loadFiltersFromCookie();
     return savedFilters.firmwareFilter || "all";
   });
+  const [annotationFilter, setAnnotationFilter] = React.useState(() => {
+    const savedFilters = loadFiltersFromCookie();
+    return savedFilters.annotationFilter || "all";
+  });
   const [dateFromFilter, setDateFromFilter] = React.useState(() => {
     const savedFilters = loadFiltersFromCookie();
     return savedFilters.dateFromFilter || "";
@@ -284,6 +289,7 @@ export function DataTable({
     return savedFilters.latestOnly || false;
   });
   const [firmwareVersions, setFirmwareVersions] = React.useState<string[]>([]);
+  const [annotations, setAnnotations] = React.useState<string[]>([]);
 
   // Create columns using timezone context
   const columns = React.useMemo(() =>
@@ -303,10 +309,14 @@ export function DataTable({
         if (latestOnly) {
           params.append("latestOnly", "true");
         }
+        if (annotationFilter && annotationFilter !== "all") {
+          params.append("annotation", annotationFilter);
+        }
 
-        const [testsResponse, firmwareResponse] = await Promise.all([
+        const [testsResponse, firmwareResponse, annotationsResponse] = await Promise.all([
           fetch(`/api/test-stats?${params}`),
           fetch("/api/test-stats?view=firmware-versions"),
+          fetch("/api/test-stats?view=annotations"),
         ]);
 
         if (testsResponse.ok) {
@@ -318,6 +328,11 @@ export function DataTable({
           const versions = await firmwareResponse.json();
           setFirmwareVersions(versions);
         }
+
+        if (annotationsResponse.ok) {
+          const annotationsList = await annotationsResponse.json();
+          setAnnotations(annotationsList);
+        }
       } catch (error) {
         console.error("Failed to fetch data:", error);
       } finally {
@@ -326,7 +341,7 @@ export function DataTable({
     };
 
     fetchData();
-  }, [latestOnly]);
+  }, [latestOnly, annotationFilter]);
 
   // Apply selectedDate from chart click to date filters
   React.useEffect(() => {
@@ -342,6 +357,7 @@ export function DataTable({
       serialSearch,
       statusFilter,
       firmwareFilter,
+      annotationFilter,
       dateFromFilter,
       dateToFilter,
       latestOnly,
@@ -351,6 +367,7 @@ export function DataTable({
     serialSearch,
     statusFilter,
     firmwareFilter,
+    annotationFilter,
     dateFromFilter,
     dateToFilter,
     latestOnly,
@@ -469,6 +486,26 @@ export function DataTable({
                     <SelectItem value="PASS">Pass</SelectItem>
                     <SelectItem value="FAIL">Fail</SelectItem>
                     <SelectItem value="INVALID">Invalid</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* Annotation Filter */}
+              <div className="space-y-2">
+                <Label>Annotation</Label>
+                <Select
+                  value={annotationFilter}
+                  onValueChange={setAnnotationFilter}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Annotations</SelectItem>
+                    {annotations.map((annotation) => (
+                      <SelectItem key={annotation} value={annotation}>
+                        {annotation}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

@@ -121,6 +121,7 @@ export async function GET(request: NextRequest) {
     if (view === "tests") {
       // Get detailed test records for the data table
       const latestOnly = searchParams.get("latestOnly") === "true";
+      const annotationFilter = searchParams.get("annotation");
 
       let testsQuery: string;
       if (latestOnly) {
@@ -158,6 +159,12 @@ export async function GET(request: NextRequest) {
           FROM latest_tests lt
           LEFT JOIN TestAnnotations ta ON lt.test_id = ta.current_test_id
           WHERE lt.rn = 1
+            ${annotationFilter && annotationFilter !== 'all' ? `
+            AND EXISTS (
+              SELECT 1 FROM TestAnnotations ta2
+              WHERE ta2.current_test_id = lt.test_id
+              AND ta2.annotation_text = $1
+            )` : ''}
           GROUP BY lt.test_id, lt.inv_id, lt.serial_number, lt.firmware_version,
                    lt.duration, lt.non_zero_status_flags, lt.status, lt.failure_reason, lt.start_time
           ORDER BY lt.start_time DESC
@@ -186,6 +193,12 @@ export async function GET(request: NextRequest) {
           FROM Tests t
           JOIN Inverters i ON t.inv_id = i.inv_id
           LEFT JOIN TestAnnotations ta ON t.test_id = ta.current_test_id
+          ${annotationFilter && annotationFilter !== 'all' ? `
+          WHERE EXISTS (
+            SELECT 1 FROM TestAnnotations ta2
+            WHERE ta2.current_test_id = t.test_id
+            AND ta2.annotation_text = $1
+          )` : ''}
           GROUP BY t.test_id, t.inv_id, i.serial_number, t.firmware_version,
                    t.overall_status, t.failure_description, t.start_time_utc, t.end_time,
                    t.ac_status, t.ch1_status, t.ch2_status, t.ch3_status, t.ch4_status
@@ -194,7 +207,9 @@ export async function GET(request: NextRequest) {
         `;
       }
 
-      const result = await client.query(testsQuery);
+      const result = annotationFilter && annotationFilter !== 'all'
+        ? await client.query(testsQuery, [annotationFilter])
+        : await client.query(testsQuery);
 
       const tests: TestRecord[] = result.rows.map((row) => ({
         test_id: row.test_id,
@@ -223,6 +238,19 @@ export async function GET(request: NextRequest) {
       const result = await client.query(firmwareQuery);
       const versions = result.rows.map((row) => row.firmware_version);
       return NextResponse.json(versions);
+    }
+
+    if (view === "annotations") {
+      // Get unique annotation texts
+      const annotationsQuery = `
+        SELECT DISTINCT annotation_text
+        FROM TestAnnotations
+        WHERE annotation_text IS NOT NULL AND annotation_text != ''
+        ORDER BY annotation_text ASC
+      `;
+      const result = await client.query(annotationsQuery);
+      const annotations = result.rows.map((row) => row.annotation_text);
+      return NextResponse.json(annotations);
     }
 
     // Default: return daily statistics
