@@ -290,6 +290,11 @@ export function DataTable({
   });
   const [firmwareVersions, setFirmwareVersions] = React.useState<string[]>([]);
   const [annotations, setAnnotations] = React.useState<string[]>([]);
+  const [annotationGroups, setAnnotationGroups] = React.useState<Array<{
+    group_name: string;
+    group_color: string;
+    options: string[];
+  }>>([]);
 
   // Create columns using timezone context
   const columns = React.useMemo(() =>
@@ -313,10 +318,12 @@ export function DataTable({
           params.append("annotation", annotationFilter);
         }
 
-        const [testsResponse, firmwareResponse, annotationsResponse] = await Promise.all([
+        const [testsResponse, firmwareResponse, annotationsResponse, groupsResponse, quickOptionsResponse] = await Promise.all([
           fetch(`/api/test-stats?${params}`),
           fetch("/api/test-stats?view=firmware-versions"),
           fetch("/api/test-stats?view=annotations"),
+          fetch("/api/annotation-groups"),
+          fetch("/api/annotation-quick-options"),
         ]);
 
         if (testsResponse.ok) {
@@ -332,6 +339,35 @@ export function DataTable({
         if (annotationsResponse.ok) {
           const annotationsList = await annotationsResponse.json();
           setAnnotations(annotationsList);
+        }
+
+        if (groupsResponse.ok && quickOptionsResponse.ok) {
+          const groups = await groupsResponse.json();
+          const options = await quickOptionsResponse.json();
+
+          // Group options by group_name
+          const grouped = groups.map((group: any) => ({
+            group_name: group.group_name,
+            group_color: group.group_color,
+            options: options
+              .filter((opt: any) => opt.group_name === group.group_name)
+              .map((opt: any) => opt.option_text)
+          }));
+
+          // Add ungrouped options
+          const ungroupedOptions = options
+            .filter((opt: any) => !opt.group_name)
+            .map((opt: any) => opt.option_text);
+
+          if (ungroupedOptions.length > 0) {
+            grouped.push({
+              group_name: 'Ungrouped',
+              group_color: '#6b7280',
+              options: ungroupedOptions
+            });
+          }
+
+          setAnnotationGroups(grouped);
         }
       } catch (error) {
         console.error("Failed to fetch data:", error);
@@ -496,15 +532,54 @@ export function DataTable({
                   value={annotationFilter}
                   onValueChange={setAnnotationFilter}
                 >
-                  <SelectTrigger className="w-48">
-                    <SelectValue />
+                  <SelectTrigger className="w-64">
+                    <SelectValue placeholder="All Annotations" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent
+                    className="max-h-[400px] overflow-y-auto [&>*[data-slot=select-scroll-up-button]]:hidden [&>*[data-slot=select-scroll-down-button]]:hidden"
+                    position="popper"
+                    sideOffset={4}
+                  >
                     <SelectItem value="all">All Annotations</SelectItem>
-                    {annotations.map((annotation) => (
-                      <SelectItem key={annotation} value={annotation}>
-                        {annotation}
-                      </SelectItem>
+                    {annotationGroups.map((group) => (
+                      <React.Fragment key={group.group_name}>
+                        {/* Group Header - Clickable */}
+                        <SelectItem
+                          value={`group:${group.group_name}`}
+                          className="font-semibold rounded-none border-y border-white/20 hover:brightness-90 transition-all"
+                          style={{
+                            backgroundColor: group.group_color,
+                            color: 'white'
+                          }}
+                        >
+                          {group.group_name} (All)
+                        </SelectItem>
+                        {/* Individual Options */}
+                        {group.options.map((option, idx) => {
+                          // Calculate lighter color
+                          const hex = group.group_color.replace('#', '')
+                          const r = parseInt(hex.substring(0, 2), 16)
+                          const g = parseInt(hex.substring(2, 4), 16)
+                          const b = parseInt(hex.substring(4, 6), 16)
+                          const newR = Math.round(r + (255 - r) * 0.7)
+                          const newG = Math.round(g + (255 - g) * 0.7)
+                          const newB = Math.round(b + (255 - b) * 0.7)
+                          const lightColor = `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`
+
+                          return (
+                            <SelectItem
+                              key={option}
+                              value={option}
+                              className="pl-6 rounded-none border-b border-white/10 hover:brightness-95 transition-all"
+                              style={{
+                                backgroundColor: lightColor
+                              }}
+                            >
+                              {option}
+                            </SelectItem>
+                          )
+                        })}
+                      </React.Fragment>
                     ))}
                   </SelectContent>
                 </Select>

@@ -518,7 +518,10 @@ export function ChartAreaInteractive({
               <ToggleGroup
                 type="single"
                 value={chartMode}
-                onValueChange={onChartModeChange}
+                onValueChange={(value) => {
+                  // Prevent deselecting - only allow switching between options
+                  if (value) onChartModeChange(value);
+                }}
                 variant="outline"
                 className="*:data-[slot=toggle-group-item]:!px-3"
               >
@@ -528,7 +531,10 @@ export function ChartAreaInteractive({
               <ToggleGroup
                 type="single"
                 value={timeRange}
-                onValueChange={onTimeRangeChange}
+                onValueChange={(value) => {
+                  // Prevent deselecting - only allow switching between options
+                  if (value) onTimeRangeChange(value);
+                }}
                 variant="outline"
                 className="hidden *:data-[slot=toggle-group-item]:!px-4 @[767px]/card:flex"
               >

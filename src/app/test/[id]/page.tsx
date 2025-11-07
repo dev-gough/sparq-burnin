@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, Download, Maximize2, X, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react"
+import { ArrowLeft, Download, Maximize2, X, ChevronLeft, ChevronRight, AlertTriangle, PanelRightClose, PanelRightOpen } from "lucide-react"
 import Link from "next/link"
 import ReactECharts from "echarts-for-react"
 import type { EChartsOption } from "echarts"
@@ -1130,6 +1130,7 @@ export default function TestPage() {
   const [error, setError] = useState<string | null>(null)
   const [updatingStatus, setUpdatingStatus] = useState(false)
   const [fullScreenState, setFullScreenState] = useState<FullScreenState | null>(null)
+  const [sidebarVisible, setSidebarVisible] = useState(true)
   const { formatInTimezone } = useTimezone()
 
   // Prefetch hook
@@ -1393,12 +1394,25 @@ export default function TestPage() {
           </div>
 
           {/* Failed Test Navigation - Right Column */}
-          <div className="flex items-start">
+          <div className="flex flex-col gap-2">
             <FailedTestNavigation testData={testData} onNavigate={navigateToTest} />
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSidebarVisible(!sidebarVisible)}
+                title={sidebarVisible ? "Hide annotations" : "Show annotations"}
+              >
+                {sidebarVisible ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+              </Button>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-[1fr_320px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px] gap-6 4xl:gap-8 5xl:gap-12">
+        <div
+          key={`layout-${sidebarVisible}`}
+          className={`grid gap-6 4xl:gap-8 5xl:gap-12 ${sidebarVisible ? 'grid-cols-[1fr_320px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px]' : 'grid-cols-1'}`}
+        >
           {/* Charts Column */}
           <div className="space-y-6 4xl:space-y-8 5xl:space-y-10">
             <ConfigurableChart
@@ -1424,13 +1438,15 @@ export default function TestPage() {
           </div>
 
           {/* Annotations Sidebar */}
-          <div className="sticky top-6 h-fit">
-            <TestAnnotations
-              testId={testData.test_id}
-              serialNumber={testData.serial_number}
-              startTime={testData.start_time}
-            />
-          </div>
+          {sidebarVisible && (
+            <div className="sticky top-6 h-fit">
+              <TestAnnotations
+                testId={testData.test_id}
+                serialNumber={testData.serial_number}
+                startTime={testData.start_time}
+              />
+            </div>
+          )}
         </div>
 
         {/* Full Screen Modal */}

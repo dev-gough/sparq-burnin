@@ -45,3 +45,6 @@ log
 
 # Local configuration (machine-specific)
 config.json
+
+# Annotation groups configuration
+ANNOTATIONGROUPS.md
