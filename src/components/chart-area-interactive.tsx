@@ -38,6 +38,9 @@ interface ChartAreaInteractiveProps {
   onChartModeChange: (mode: string) => void;
   timeRange: string;
   onTimeRangeChange: (range: string) => void;
+  annotationFilter: string;
+  dateFrom: string;
+  dateTo: string;
 }
 
 const chartColors = {
@@ -53,6 +56,9 @@ export function ChartAreaInteractive({
   onChartModeChange,
   timeRange,
   onTimeRangeChange,
+  annotationFilter,
+  dateFrom,
+  dateTo,
 }: ChartAreaInteractiveProps) {
   const isMobile = useIsMobile();
   const [chartData, setChartData] = React.useState<TestStats[]>([]);
@@ -90,7 +96,15 @@ export function ChartAreaInteractive({
     const fetchTestStats = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/api/test-stats?chartMode=${chartMode}&timeRange=${timeRange}`);
+        const params = new URLSearchParams({
+          chartMode,
+          timeRange,
+          annotation: annotationFilter,
+        });
+        if (dateFrom) params.append('dateFrom', dateFrom);
+        if (dateTo) params.append('dateTo', dateTo);
+
+        const response = await fetch(`/api/test-stats?${params}`);
         if (response.ok) {
           const data = await response.json();
           setChartData(data);
@@ -105,7 +119,7 @@ export function ChartAreaInteractive({
     };
 
     fetchTestStats();
-  }, [chartMode, timeRange]);
+  }, [chartMode, timeRange, annotationFilter, dateFrom, dateTo]);
 
   const getTimeRangeDescription = () => {
     switch (timeRange) {
@@ -256,6 +270,10 @@ export function ChartAreaInteractive({
     const textColor = isDarkMode ? "#e5e7eb" : "#374151";
     const gridColor = isDarkMode ? "#374151" : "#e5e7eb";
 
+    // Check if we have any passes or failures in the data
+    const hasPasses = chartData.some((item) => item.passed > 0);
+    const hasFailures = chartData.some((item) => item.failed > 0);
+
     return {
       backgroundColor: "transparent",
       textStyle: { color: textColor },
@@ -307,9 +325,10 @@ export function ChartAreaInteractive({
         },
       },
       series: [
-        {
+        // Only include Failed series if there are failures
+        ...(hasFailures ? [{
           name: "Failed",
-          type: "line",
+          type: "line" as const,
           stack: "total",
           data: chartData.map((item) => item.failed),
           smooth: true,
@@ -323,7 +342,7 @@ export function ChartAreaInteractive({
           },
           areaStyle: {
             color: {
-              type: "linear",
+              type: "linear" as const,
               x: 0,
               y: 0,
               x2: 0,
@@ -335,14 +354,14 @@ export function ChartAreaInteractive({
             },
           },
           emphasis: {
-            focus: "none",
+            focus: "none" as const,
             lineStyle: {
               width: 2,
               color: chartColors.failed,
             },
             areaStyle: {
               color: {
-                type: "linear",
+                type: "linear" as const,
                 x: 0,
                 y: 0,
                 x2: 0,
@@ -354,10 +373,11 @@ export function ChartAreaInteractive({
               },
             },
           },
-        },
-        {
+        }] : []),
+        // Only include Passed series if there are passes
+        ...(hasPasses ? [{
           name: "Passed",
-          type: "line",
+          type: "line" as const,
           stack: "total",
           data: chartData.map((item) => item.passed),
           smooth: true,
@@ -371,7 +391,7 @@ export function ChartAreaInteractive({
           },
           areaStyle: {
             color: {
-              type: "linear",
+              type: "linear" as const,
               x: 0,
               y: 0,
               x2: 0,
@@ -383,14 +403,14 @@ export function ChartAreaInteractive({
             },
           },
           emphasis: {
-            focus: "none",
+            focus: "none" as const,
             lineStyle: {
               width: 2,
               color: chartColors.passed,
             },
             areaStyle: {
               color: {
-                type: "linear",
+                type: "linear" as const,
                 x: 0,
                 y: 0,
                 x2: 0,
@@ -402,7 +422,7 @@ export function ChartAreaInteractive({
               },
             },
           },
-        },
+        }] : []),
       ],
       tooltip: {
         trigger: "axis",

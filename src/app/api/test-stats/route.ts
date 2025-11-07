@@ -44,12 +44,30 @@ export async function GET(request: NextRequest) {
       // Get summary statistics
       const summaryChartMode = searchParams.get("chartMode") || "recent"; // Default to 'recent' for summary
       const summaryTimeRange = searchParams.get("timeRange");
+      const summaryAnnotationFilter = searchParams.get("annotation");
+      const summaryDateFrom = searchParams.get("dateFrom");
+      const summaryDateTo = searchParams.get("dateTo");
+
+      // Check if filtering by group or individual annotation
+      const isSummaryGroupFilter = summaryAnnotationFilter?.startsWith("group:") ?? false;
+      const summaryFilterValue = isSummaryGroupFilter && summaryAnnotationFilter ? summaryAnnotationFilter.substring(6) : summaryAnnotationFilter;
 
       let summaryQuery: string;
       let timeFilter = "";
 
-      // Add time range filter if specified
-      if (summaryTimeRange && summaryTimeRange !== "all") {
+      // Build time filter based on custom dates or timeRange parameter
+      if (summaryDateFrom || summaryDateTo) {
+        // Custom date range takes precedence
+        const conditions = [];
+        if (summaryDateFrom) {
+          conditions.push(`t.start_time_utc >= '${summaryDateFrom}'::date`);
+        }
+        if (summaryDateTo) {
+          conditions.push(`t.start_time_utc <= '${summaryDateTo}'::date + INTERVAL '1 day' - INTERVAL '1 second'`);
+        }
+        timeFilter = 'AND ' + conditions.join(' AND ');
+      } else if (summaryTimeRange && summaryTimeRange !== "all") {
+        // Use predefined time range if no custom dates
         let days: number;
         switch (summaryTimeRange) {
           case "7d":
@@ -67,6 +85,27 @@ export async function GET(request: NextRequest) {
         timeFilter = `AND t.start_time_utc >= CURRENT_DATE - INTERVAL '${days} days'`;
       }
 
+      // Build annotation filter for summary
+      let summaryAnnotationFilterClause = "";
+      if (summaryAnnotationFilter && summaryAnnotationFilter !== 'all') {
+        if (isSummaryGroupFilter) {
+          summaryAnnotationFilterClause = `
+            AND EXISTS (
+              SELECT 1 FROM TestAnnotations ta
+              JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
+              WHERE ta.current_test_id = t.test_id
+              AND aqo.group_name = $1
+            )`;
+        } else {
+          summaryAnnotationFilterClause = `
+            AND EXISTS (
+              SELECT 1 FROM TestAnnotations ta
+              WHERE ta.current_test_id = t.test_id
+              AND ta.annotation_text = $1
+            )`;
+        }
+      }
+
       if (summaryChartMode === "recent") {
         // Count most recent valid test per serial number (excluding INVALID)
         summaryQuery = `
@@ -78,7 +117,7 @@ export async function GET(request: NextRequest) {
               ) as rn
             FROM Tests t
             JOIN Inverters i ON t.inv_id = i.inv_id
-            WHERE t.overall_status != 'INVALID' ${timeFilter}
+            WHERE t.overall_status != 'INVALID' ${timeFilter} ${summaryAnnotationFilterClause}
           )
           SELECT
             COUNT(*) as total,
@@ -96,11 +135,13 @@ export async function GET(request: NextRequest) {
             COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
           FROM Tests t
           JOIN Inverters i ON t.inv_id = i.inv_id
-          WHERE t.overall_status != 'INVALID' ${timeFilter}
+          WHERE t.overall_status != 'INVALID' ${timeFilter} ${summaryAnnotationFilterClause}
         `;
       }
 
-      const summaryResult = await client.query(summaryQuery);
+      const summaryResult = summaryAnnotationFilter && summaryAnnotationFilter !== 'all'
+        ? await client.query(summaryQuery, [summaryFilterValue])
+        : await client.query(summaryQuery);
       const row = summaryResult.rows[0];
 
       const total = parseInt(row.total) || 0;
@@ -276,10 +317,28 @@ export async function GET(request: NextRequest) {
     // Default: return daily statistics
     const chartMode = searchParams.get("chartMode") || "all"; // 'all' or 'recent'
     const timeRange = searchParams.get("timeRange");
+    const chartAnnotationFilter = searchParams.get("annotation");
+    const dateFrom = searchParams.get("dateFrom");
+    const dateTo = searchParams.get("dateTo");
 
-    // Build time filter based on timeRange parameter
+    // Check if filtering by group or individual annotation
+    const isGroupFilter = chartAnnotationFilter?.startsWith("group:") ?? false;
+    const filterValue = isGroupFilter && chartAnnotationFilter ? chartAnnotationFilter.substring(6) : chartAnnotationFilter;
+
+    // Build time filter based on custom dates or timeRange parameter
     let timeFilter = "";
-    if (timeRange && timeRange !== "all") {
+    if (dateFrom || dateTo) {
+      // Custom date range takes precedence
+      const conditions = [];
+      if (dateFrom) {
+        conditions.push(`t.start_time_utc >= '${dateFrom}'::date`);
+      }
+      if (dateTo) {
+        conditions.push(`t.start_time_utc <= '${dateTo}'::date + INTERVAL '1 day' - INTERVAL '1 second'`);
+      }
+      timeFilter = conditions.join(' AND ') + ' AND';
+    } else if (timeRange && timeRange !== "all") {
+      // Use predefined time range if no custom dates
       let days: number;
       switch (timeRange) {
         case "7d":
@@ -297,6 +356,27 @@ export async function GET(request: NextRequest) {
       timeFilter = `t.start_time_utc >= CURRENT_DATE - INTERVAL '${days} days' AND`;
     }
 
+    // Build annotation filter
+    let annotationFilter = "";
+    if (chartAnnotationFilter && chartAnnotationFilter !== 'all') {
+      if (isGroupFilter) {
+        annotationFilter = `
+          AND EXISTS (
+            SELECT 1 FROM TestAnnotations ta
+            JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
+            WHERE ta.current_test_id = t.test_id
+            AND aqo.group_name = $1
+          )`;
+      } else {
+        annotationFilter = `
+          AND EXISTS (
+            SELECT 1 FROM TestAnnotations ta
+            WHERE ta.current_test_id = t.test_id
+            AND ta.annotation_text = $1
+          )`;
+      }
+    }
+
     let query: string;
     if (chartMode === "recent") {
       // Show daily statistics for most recent valid test per serial number (excluding INVALID)
@@ -306,6 +386,7 @@ export async function GET(request: NextRequest) {
             DATE(t.start_time_utc) as test_date,
             t.overall_status,
             i.serial_number,
+            t.test_id,
             ROW_NUMBER() OVER (
               PARTITION BY i.serial_number, DATE(t.start_time_utc)
               ORDER BY t.start_time_utc DESC
@@ -314,6 +395,7 @@ export async function GET(request: NextRequest) {
           JOIN Inverters i ON t.inv_id = i.inv_id
           WHERE ${timeFilter}
             t.overall_status != 'INVALID'
+            ${annotationFilter}
         )
         SELECT
           to_char(test_date, 'YYYY-MM-DD') as test_date,
@@ -334,12 +416,15 @@ export async function GET(request: NextRequest) {
         FROM Tests t
         WHERE ${timeFilter}
           t.overall_status != 'INVALID'
+          ${annotationFilter}
         GROUP BY DATE(t.start_time_utc)
         ORDER BY DATE(t.start_time_utc) ASC
       `;
     }
 
-    const result = await client.query(query);
+    const result = chartAnnotationFilter && chartAnnotationFilter !== 'all'
+      ? await client.query(query, [filterValue])
+      : await client.query(query);
 
     const stats: TestStats[] = result.rows.map((row) => ({
       date: row.test_date,

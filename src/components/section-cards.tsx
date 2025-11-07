@@ -18,9 +18,12 @@ interface SummaryStats {
 interface SectionCardsProps {
   chartMode: string;
   timeRange: string;
+  annotationFilter: string;
+  dateFrom: string;
+  dateTo: string;
 }
 
-export function SectionCards({ chartMode, timeRange }: SectionCardsProps) {
+export function SectionCards({ chartMode, timeRange, annotationFilter, dateFrom, dateTo }: SectionCardsProps) {
   const [stats, setStats] = useState<SummaryStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -31,7 +34,11 @@ export function SectionCards({ chartMode, timeRange }: SectionCardsProps) {
           view: "summary",
           chartMode,
           timeRange,
+          annotation: annotationFilter,
         });
+        if (dateFrom) params.append('dateFrom', dateFrom);
+        if (dateTo) params.append('dateTo', dateTo);
+
         const response = await fetch(`/api/test-stats?${params}`);
         if (response.ok) {
           const data = await response.json();
@@ -45,7 +52,7 @@ export function SectionCards({ chartMode, timeRange }: SectionCardsProps) {
     }
 
     fetchStats();
-  }, [chartMode, timeRange]);
+  }, [chartMode, timeRange, annotationFilter, dateFrom, dateTo]);
 
   if (loading) {
     return (

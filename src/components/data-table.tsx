@@ -11,6 +11,7 @@ import {
   IconChevronsRight,
   IconCircleCheckFilled,
 } from "@tabler/icons-react";
+import { Link2, Unlink } from "lucide-react";
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -239,12 +240,28 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
 interface DataTableProps {
   selectedDate?: string;
   onClearDateFilter?: () => void;
+  annotationFilter: string;
+  onAnnotationFilterChange: (filter: string) => void;
+  filterLinked: boolean;
+  onFilterLinkedChange: (linked: boolean) => void;
+  dateFromFilter: string;
+  onDateFromFilterChange: (date: string) => void;
+  dateToFilter: string;
+  onDateToFilterChange: (date: string) => void;
 }
 
 export function DataTable({
   selectedDate,
   onClearDateFilter,
-}: DataTableProps = {}) {
+  annotationFilter,
+  onAnnotationFilterChange,
+  filterLinked,
+  onFilterLinkedChange,
+  dateFromFilter,
+  onDateFromFilterChange,
+  dateToFilter,
+  onDateToFilterChange,
+}: DataTableProps) {
   const router = useRouter();
   const { formatInTimezone, selectedTimezone } = useTimezone();
   const [data, setData] = React.useState([]);
@@ -272,24 +289,11 @@ export function DataTable({
     const savedFilters = loadFiltersFromCookie();
     return savedFilters.firmwareFilter || "all";
   });
-  const [annotationFilter, setAnnotationFilter] = React.useState(() => {
-    const savedFilters = loadFiltersFromCookie();
-    return savedFilters.annotationFilter || "all";
-  });
-  const [dateFromFilter, setDateFromFilter] = React.useState(() => {
-    const savedFilters = loadFiltersFromCookie();
-    return savedFilters.dateFromFilter || "";
-  });
-  const [dateToFilter, setDateToFilter] = React.useState(() => {
-    const savedFilters = loadFiltersFromCookie();
-    return savedFilters.dateToFilter || "";
-  });
   const [latestOnly, setLatestOnly] = React.useState(() => {
     const savedFilters = loadFiltersFromCookie();
     return savedFilters.latestOnly || false;
   });
   const [firmwareVersions, setFirmwareVersions] = React.useState<string[]>([]);
-  const [annotations, setAnnotations] = React.useState<string[]>([]);
   const [annotationGroups, setAnnotationGroups] = React.useState<Array<{
     group_name: string;
     group_color: string;
@@ -318,10 +322,9 @@ export function DataTable({
           params.append("annotation", annotationFilter);
         }
 
-        const [testsResponse, firmwareResponse, annotationsResponse, groupsResponse, quickOptionsResponse] = await Promise.all([
+        const [testsResponse, firmwareResponse, groupsResponse, quickOptionsResponse] = await Promise.all([
           fetch(`/api/test-stats?${params}`),
           fetch("/api/test-stats?view=firmware-versions"),
-          fetch("/api/test-stats?view=annotations"),
           fetch("/api/annotation-groups"),
           fetch("/api/annotation-quick-options"),
         ]);
@@ -336,28 +339,23 @@ export function DataTable({
           setFirmwareVersions(versions);
         }
 
-        if (annotationsResponse.ok) {
-          const annotationsList = await annotationsResponse.json();
-          setAnnotations(annotationsList);
-        }
-
         if (groupsResponse.ok && quickOptionsResponse.ok) {
-          const groups = await groupsResponse.json();
-          const options = await quickOptionsResponse.json();
+          const groups = await groupsResponse.json() as Array<{ group_name: string; group_color: string }>;
+          const options = await quickOptionsResponse.json() as Array<{ group_name: string | null; option_text: string }>;
 
           // Group options by group_name
-          const grouped = groups.map((group: any) => ({
+          const grouped = groups.map((group) => ({
             group_name: group.group_name,
             group_color: group.group_color,
             options: options
-              .filter((opt: any) => opt.group_name === group.group_name)
-              .map((opt: any) => opt.option_text)
+              .filter((opt) => opt.group_name === group.group_name)
+              .map((opt) => opt.option_text)
           }));
 
           // Add ungrouped options
           const ungroupedOptions = options
-            .filter((opt: any) => !opt.group_name)
-            .map((opt: any) => opt.option_text);
+            .filter((opt) => !opt.group_name)
+            .map((opt) => opt.option_text);
 
           if (ungroupedOptions.length > 0) {
             grouped.push({
@@ -530,7 +528,7 @@ export function DataTable({
                 <Label>Annotation</Label>
                 <Select
                   value={annotationFilter}
-                  onValueChange={setAnnotationFilter}
+                  onValueChange={onAnnotationFilterChange}
                 >
                   <SelectTrigger className="w-64">
                     <SelectValue placeholder="All Annotations" />
@@ -555,7 +553,7 @@ export function DataTable({
                           {group.group_name} (All)
                         </SelectItem>
                         {/* Individual Options */}
-                        {group.options.map((option, idx) => {
+                        {group.options.map((option) => {
                           // Calculate lighter color
                           const hex = group.group_color.replace('#', '')
                           const r = parseInt(hex.substring(0, 2), 16)
@@ -583,18 +581,6 @@ export function DataTable({
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              {/* Latest Only Filter */}
-              <div className="space-y-2">
-                <Label>Filter Mode</Label>
-                <Toggle
-                  pressed={latestOnly}
-                  onPressedChange={setLatestOnly}
-                  variant="outline"
-                  className="h-10 px-3"
-                >
-                  Latest Only
-                </Toggle>
               </div>
               {/* Firmware Version Filter */}
               <div className="space-y-2">
@@ -625,7 +611,7 @@ export function DataTable({
                   id="date-from"
                   type="date"
                   value={dateFromFilter}
-                  onChange={(e) => setDateFromFilter(e.target.value)}
+                  onChange={(e) => onDateFromFilterChange(e.target.value)}
                   className="w-40 sm:px-3 px-1"
                 />
               </div>
@@ -635,27 +621,46 @@ export function DataTable({
                   id="date-to"
                   type="date"
                   value={dateToFilter}
-                  onChange={(e) => setDateToFilter(e.target.value)}
+                  onChange={(e) => onDateToFilterChange(e.target.value)}
                   className="w-40 sm:px-3 px-1"
                 />
               </div>
             </div>
-            {/* Clear Filters Button */}
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSerialSearch("");
-                setStatusFilter("all");
-                setFirmwareFilter("all");
-                setDateFromFilter("");
-                setDateToFilter("");
-                setLatestOnly(false);
-                onClearDateFilter?.();
-              }}
-              className="h-10"
-            >
-              Clear Filters
-            </Button>
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2">
+              <Toggle
+                pressed={latestOnly}
+                onPressedChange={setLatestOnly}
+                variant="outline"
+                className="h-10 px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+              >
+                Latest Only
+              </Toggle>
+              <Button
+                size="sm"
+                variant={filterLinked ? "default" : "outline"}
+                onClick={() => onFilterLinkedChange(!filterLinked)}
+                title={filterLinked ? "Filter affects chart and table" : "Filter only affects table"}
+                className="h-10"
+              >
+                {filterLinked ? <Link2 className="h-4 w-4" /> : <Unlink className="h-4 w-4" />}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSerialSearch("");
+                  setStatusFilter("all");
+                  setFirmwareFilter("all");
+                  onDateFromFilterChange("");
+                  onDateToFilterChange("");
+                  setLatestOnly(false);
+                  onClearDateFilter?.();
+                }}
+                className="h-10"
+              >
+                Clear Filters
+              </Button>
+            </div>
           </div>
         </div>
         <div className="overflow-hidden rounded-lg border">
