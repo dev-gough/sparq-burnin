@@ -50,8 +50,12 @@ export default function Page() {
 
   // Determine which filters to use for chart/cards
   const chartAnnotationFilter = filterLinked ? annotationFilter : "all";
-  const chartDateFrom = filterLinked ? dateFromFilter : "";
-  const chartDateTo = filterLinked ? dateToFilter : "";
+
+  // Special handling: if date range is a single day, show full chart with highlight
+  const isSingleDayFilter = dateFromFilter && dateToFilter && dateFromFilter === dateToFilter;
+  const chartDateFrom = filterLinked && !isSingleDayFilter ? dateFromFilter : "";
+  const chartDateTo = filterLinked && !isSingleDayFilter ? dateToFilter : "";
+  const highlightDate = filterLinked && isSingleDayFilter ? dateFromFilter : "";
 
   return (
     <div>
@@ -75,6 +79,7 @@ export default function Page() {
               annotationFilter={chartAnnotationFilter}
               dateFrom={chartDateFrom}
               dateTo={chartDateTo}
+              highlightDate={highlightDate}
             />
             <DataTable
               selectedDate={selectedDate}

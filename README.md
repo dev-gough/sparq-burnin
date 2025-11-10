@@ -1,41 +1,172 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Burnin Test Dashboard
 
-## Getting Started
+A web-based dashboard for viewing and analyzing inverter burn-in test results. This dashboard provides real-time insights into test performance, failure tracking, and historical data analysis.
 
-First, run the development server:
+## What is this?
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+The Burnin Test Dashboard displays test results from inverter burn-in testing operations. It allows you to:
+- View daily test pass/fail statistics
+- Filter and search through test records
+- Track specific inverters by serial number
+- Analyze test trends over time
+- Download detailed reports
+- Add and manage test annotations
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## How to Use the Dashboard
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Dashboard Overview
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+When you first open the dashboard, you'll see three main sections:
 
-## Learn More
+1. **Summary Cards** - Quick statistics showing total tests, pass rates, and failure counts
+2. **Test Results Chart** - Visual graph showing daily pass/fail trends
+3. **Test Data Table** - Detailed list of all test records with filtering options
 
-To learn more about Next.js, take a look at the following resources:
+### Using the Test Results Chart
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The chart at the top displays daily test results over time:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Green area** = Passed tests
+- **Red area** = Failed tests
+- **Time range options**: Choose between "Last 7 days", "Last 30 days", "Last 3 months", or "All Time"
+- **View modes**:
+  - **All Tests** - Shows every test result
+  - **Latest per S/N** - Shows only the most recent test for each serial number
 
-## Deploy on Vercel
+**Clicking the chart**: Click on the chart line to filter the data table below to that specific date.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+**Download Options**:
+- **Generate Report** - Downloads a CSV file with daily test statistics
+- **Failed Test Data** - Downloads a ZIP file containing data for all failed tests
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Filtering Test Data
 
+The data table has several powerful filtering options:
 
-## Todo
+#### Search by Serial Number
+Type any part of an inverter serial number in the search box to find specific units.
 
-Plot a line showing the daily failure % on the main page.
+#### Status Filter
+- **Valid Only** (default) - Shows only PASS and FAIL tests
+- **All** - Shows all tests including invalid ones
+- **Pass** - Shows only passed tests
+- **Fail** - Shows only failed tests
+- **Invalid** - Shows only invalid tests
+
+#### Annotation Filter
+Filter tests by annotation tags. Annotations are custom labels that can be added to tests for categorization (e.g., "Channel Short", "Setup Issue - DC", etc.).
+
+#### Firmware Version Filter
+Filter tests by the firmware version that was running during the test.
+
+#### Date Range Filters
+- **From Date** - Show tests starting from this date
+- **To Date** - Show tests up to this date
+- Use both to create a custom date range
+
+#### Latest Only Toggle
+When enabled, shows only the most recent test for each inverter serial number. Useful for checking current status of all units.
+
+#### Filter Linking
+The link/unlink button controls whether filters affect both the chart and the table:
+- **Linked** (default) - Filters apply to both chart and data table
+- **Unlinked** - Filters only apply to the data table
+
+#### Clear Filters
+Resets all filters to their default values.
+
+### Viewing Test Details
+
+Click on any row in the data table to open the detailed test page. This shows:
+- Complete test information
+- Time-series charts of test parameters (voltage, power, temperature, etc.)
+- Failure reasons (if applicable)
+- Full test logs and data
+
+### Understanding the Data Table Columns
+
+- **Inverter Serial Number** - Unique identifier for each unit
+- **Firmware Version** - Software version running during the test
+- **Test Date** - When the test was started (displayed in your selected timezone)
+- **Test Duration** - How long the test ran
+- **Result** - PASS, FAIL, or INVALID status
+- **Annotations** - Custom notes or categories assigned to the test
+
+### Timezone Settings
+
+Use the timezone selector in the top-right corner to view dates and times in:
+- Your local timezone
+- UTC (Coordinated Universal Time)
+- Delhi/Kolkata time (IST)
+
+### Filter Persistence
+
+Your filter settings are automatically saved in your browser. When you navigate away and return to the dashboard, your filters will be restored exactly as you left them.
+
+## For Developers
+
+### Prerequisites
+
+- Node.js 18+ installed
+- PostgreSQL database
+- Access to test data CSV files
+
+### Quick Setup
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd burnin
+   ```
+
+   Please reach out to `dgough@sparqsys.com` for access to the repository.
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Configure the database**
+   - Create a PostgreSQL database
+   - Update database credentials in your environment configuration
+   - Run the schema setup:
+     ```bash
+     npm run setup-db
+     ```
+
+4. **Import test data**
+   - Place CSV files in `data/to_process/`
+   - Run the ingestion script:
+     ```bash
+     npm run ingest
+     ```
+
+5. **Start the development server**
+   ```bash
+   npm run dev
+   ```
+
+6. **Open the dashboard**
+   Navigate to [http://localhost:3000](http://localhost:3000)
+
+### Useful Commands
+
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run start` - Start production server
+- `npm run lint` - Check code quality
+- `npm run ingest` - Import new CSV files from data/to_process/
+- `npm run reprocess` - Clear database and re-import all processed files
+- `npm run db:schema` - Reset database schema
+
+### Technology Stack
+
+- **Framework**: Next.js 15 (React)
+- **Database**: PostgreSQL
+- **UI Components**: shadcn/ui with Radix UI
+- **Charts**: Apache ECharts
+- **Styling**: Tailwind CSS v4
+
+## Support
+
+For questions or issues, contact `dgough@sparqsys.com`

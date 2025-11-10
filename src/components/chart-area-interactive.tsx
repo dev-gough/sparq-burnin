@@ -41,6 +41,7 @@ interface ChartAreaInteractiveProps {
   annotationFilter: string;
   dateFrom: string;
   dateTo: string;
+  highlightDate?: string;
 }
 
 const chartColors = {
@@ -59,6 +60,7 @@ export function ChartAreaInteractive({
   annotationFilter,
   dateFrom,
   dateTo,
+  highlightDate,
 }: ChartAreaInteractiveProps) {
   const isMobile = useIsMobile();
   const [chartData, setChartData] = React.useState<TestStats[]>([]);
@@ -373,6 +375,19 @@ export function ChartAreaInteractive({
               },
             },
           },
+          markLine: highlightDate ? {
+            symbol: "none",
+            lineStyle: {
+              color: "hsl(217.2 91.2% 59.8%)",
+              width: 2,
+              type: "solid" as const,
+            },
+            label: {
+              show: false,
+            },
+            data: [{ xAxis: highlightDate }],
+            silent: true,
+          } : undefined,
         }] : []),
         // Only include Passed series if there are passes
         ...(hasPasses ? [{
@@ -459,7 +474,7 @@ export function ChartAreaInteractive({
         show: false,
       },
     };
-  }, [chartData, isDarkMode]);
+  }, [chartData, isDarkMode, highlightDate]);
 
   // Handle chart click for date selection
   const onEvents = React.useMemo(() => ({
