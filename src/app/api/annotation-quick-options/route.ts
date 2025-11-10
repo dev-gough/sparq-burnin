@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from 'pg';
 import { getDatabaseConfig } from '@/lib/config';
+import { requireAuth } from '@/lib/auth-check';
 
 interface QuickOption {
   option_id: number;
@@ -13,6 +14,9 @@ interface QuickOption {
 }
 
 export async function GET() {
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
+
   const client = new Client(getDatabaseConfig());
 
   try {
@@ -61,6 +65,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
+
   const client = new Client(getDatabaseConfig());
 
   try {

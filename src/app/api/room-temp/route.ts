@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { requireAuth } from '@/lib/auth-check';
 
 export async function POST(request: NextRequest) {
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
+
   try {
     const body = await request.json();
     

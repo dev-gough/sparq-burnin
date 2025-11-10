@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from 'pg';
 import { getDatabaseConfig } from '@/lib/config';
+import { requireAuth } from '@/lib/auth-check';
 
 export async function PATCH(request: NextRequest) {
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
+
   const client = new Client(getDatabaseConfig());
-  
+
   try {
     await client.connect();
     

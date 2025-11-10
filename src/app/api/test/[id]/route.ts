@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from 'pg';
 import { getDatabaseConfig } from '@/lib/config';
+import { requireAuth } from '@/lib/auth-check';
 
 interface DataPoint {
   timestamp: string;
@@ -72,6 +73,9 @@ export async function GET(
   props: { params: Promise<{ id: string }> }
 ) {
   const params = await props.params;
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
+
   const client = new Client(getDatabaseConfig());
   
   try {

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from 'pg';
 import { getDatabaseConfig } from '@/lib/config';
+import { requireAuth } from '@/lib/auth-check';
+import { validateTimeRange, getTimeRangeDays } from '@/lib/validation';
 
 interface DailyReportData {
   date: string;
@@ -30,26 +32,31 @@ interface ReportSummary {
 
 
 export async function GET(request: NextRequest) {
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
+
   const client = new Client(getDatabaseConfig());
-  
+
   try {
     await client.connect();
     // Set session timezone to UTC for consistent timestamp handling
     await client.query("SET timezone = 'UTC'");
     
     const { searchParams } = new URL(request.url);
-    const timeRange = searchParams.get('timeRange') || '90d';
-    
-    let daysToSubtract: number | null = 90;
-    if (timeRange === '30d') {
-      daysToSubtract = 30;
-    } else if (timeRange === '7d') {
-      daysToSubtract = 7;
-    } else if (timeRange === 'all') {
-      daysToSubtract = null;
+    const rawTimeRange = searchParams.get('timeRange') || '90d';
+
+    // Validate time range input
+    const validatedTimeRange = validateTimeRange(rawTimeRange);
+    if (!validatedTimeRange) {
+      return NextResponse.json(
+        { error: 'Invalid timeRange parameter. Must be one of: 7d, 30d, 90d, all' },
+        { status: 400 }
+      );
     }
-    
-    const whereClause = daysToSubtract 
+
+    const daysToSubtract = getTimeRangeDays(validatedTimeRange);
+
+    const whereClause = daysToSubtract
       ? `WHERE start_time_utc >= CURRENT_DATE - INTERVAL '${daysToSubtract} days'`
       : '';
     

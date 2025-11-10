@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Client } from "pg";
 import { getDatabaseConfig } from '@/lib/config';
+import { requireAuth } from '@/lib/auth-check';
+import { validateDateRange, validateTimeRange, getTimeRangeDays } from '@/lib/validation';
 
 interface TestStats {
   date: string;
@@ -30,6 +32,9 @@ interface TestRecord {
 
 
 export async function GET(request: NextRequest) {
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
+
   const client = new Client(getDatabaseConfig());
 
   try {
@@ -45,8 +50,20 @@ export async function GET(request: NextRequest) {
       const summaryChartMode = searchParams.get("chartMode") || "recent"; // Default to 'recent' for summary
       const summaryTimeRange = searchParams.get("timeRange");
       const summaryAnnotationFilter = searchParams.get("annotation");
-      const summaryDateFrom = searchParams.get("dateFrom");
-      const summaryDateTo = searchParams.get("dateTo");
+      const rawSummaryDateFrom = searchParams.get("dateFrom");
+      const rawSummaryDateTo = searchParams.get("dateTo");
+
+      // Validate date inputs
+      const { dateFrom: summaryDateFrom, dateTo: summaryDateTo, error: dateError } = validateDateRange(
+        rawSummaryDateFrom,
+        rawSummaryDateTo
+      );
+      if (dateError) {
+        return NextResponse.json({ error: dateError }, { status: 400 });
+      }
+
+      // Validate time range
+      const validatedTimeRange = validateTimeRange(summaryTimeRange);
 
       // Check if filtering by group or individual annotation
       const isSummaryGroupFilter = summaryAnnotationFilter?.startsWith("group:") ?? false;
@@ -54,54 +71,47 @@ export async function GET(request: NextRequest) {
 
       let summaryQuery: string;
       let timeFilter = "";
+      const timeParams: string[] = [];
 
       // Build time filter based on custom dates or timeRange parameter
       if (summaryDateFrom || summaryDateTo) {
         // Custom date range takes precedence
         const conditions = [];
         if (summaryDateFrom) {
-          conditions.push(`t.start_time_utc >= '${summaryDateFrom}'::date`);
+          timeParams.push(summaryDateFrom);
+          conditions.push(`t.start_time_utc >= $${timeParams.length}::date`);
         }
         if (summaryDateTo) {
-          conditions.push(`t.start_time_utc <= '${summaryDateTo}'::date + INTERVAL '1 day' - INTERVAL '1 second'`);
+          timeParams.push(summaryDateTo);
+          conditions.push(`t.start_time_utc <= $${timeParams.length}::date + INTERVAL '1 day' - INTERVAL '1 second'`);
         }
         timeFilter = 'AND ' + conditions.join(' AND ');
-      } else if (summaryTimeRange && summaryTimeRange !== "all") {
+      } else if (validatedTimeRange && validatedTimeRange !== "all") {
         // Use predefined time range if no custom dates
-        let days: number;
-        switch (summaryTimeRange) {
-          case "7d":
-            days = 7;
-            break;
-          case "30d":
-            days = 30;
-            break;
-          case "90d":
-            days = 90;
-            break;
-          default:
-            days = 90;
+        const days = getTimeRangeDays(validatedTimeRange);
+        if (days !== null) {
+          timeFilter = `AND t.start_time_utc >= CURRENT_DATE - INTERVAL '${days} days'`;
         }
-        timeFilter = `AND t.start_time_utc >= CURRENT_DATE - INTERVAL '${days} days'`;
       }
 
       // Build annotation filter for summary
       let summaryAnnotationFilterClause = "";
       if (summaryAnnotationFilter && summaryAnnotationFilter !== 'all') {
+        const annotationParamIndex = timeParams.length + 1;
         if (isSummaryGroupFilter) {
           summaryAnnotationFilterClause = `
             AND EXISTS (
               SELECT 1 FROM TestAnnotations ta
               JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
               WHERE ta.current_test_id = t.test_id
-              AND aqo.group_name = $1
+              AND aqo.group_name = $${annotationParamIndex}
             )`;
         } else {
           summaryAnnotationFilterClause = `
             AND EXISTS (
               SELECT 1 FROM TestAnnotations ta
               WHERE ta.current_test_id = t.test_id
-              AND ta.annotation_text = $1
+              AND ta.annotation_text = $${annotationParamIndex}
             )`;
         }
       }
@@ -139,8 +149,14 @@ export async function GET(request: NextRequest) {
         `;
       }
 
-      const summaryResult = summaryAnnotationFilter && summaryAnnotationFilter !== 'all'
-        ? await client.query(summaryQuery, [summaryFilterValue])
+      // Build final params array combining time and annotation filters
+      const summaryParams = [...timeParams];
+      if (summaryAnnotationFilter && summaryAnnotationFilter !== 'all') {
+        summaryParams.push(summaryFilterValue!);
+      }
+
+      const summaryResult = summaryParams.length > 0
+        ? await client.query(summaryQuery, summaryParams)
         : await client.query(summaryQuery);
       const row = summaryResult.rows[0];
 
@@ -316,10 +332,19 @@ export async function GET(request: NextRequest) {
 
     // Default: return daily statistics
     const chartMode = searchParams.get("chartMode") || "all"; // 'all' or 'recent'
-    const timeRange = searchParams.get("timeRange");
+    const rawTimeRange = searchParams.get("timeRange");
     const chartAnnotationFilter = searchParams.get("annotation");
-    const dateFrom = searchParams.get("dateFrom");
-    const dateTo = searchParams.get("dateTo");
+    const rawDateFrom = searchParams.get("dateFrom");
+    const rawDateTo = searchParams.get("dateTo");
+
+    // Validate date inputs
+    const { dateFrom, dateTo, error: chartDateError } = validateDateRange(rawDateFrom, rawDateTo);
+    if (chartDateError) {
+      return NextResponse.json({ error: chartDateError }, { status: 400 });
+    }
+
+    // Validate time range
+    const validatedChartTimeRange = validateTimeRange(rawTimeRange);
 
     // Check if filtering by group or individual annotation
     const isGroupFilter = chartAnnotationFilter?.startsWith("group:") ?? false;
@@ -327,52 +352,45 @@ export async function GET(request: NextRequest) {
 
     // Build time filter based on custom dates or timeRange parameter
     let timeFilter = "";
+    const chartTimeParams: string[] = [];
     if (dateFrom || dateTo) {
       // Custom date range takes precedence
       const conditions = [];
       if (dateFrom) {
-        conditions.push(`t.start_time_utc >= '${dateFrom}'::date`);
+        chartTimeParams.push(dateFrom);
+        conditions.push(`t.start_time_utc >= $${chartTimeParams.length}::date`);
       }
       if (dateTo) {
-        conditions.push(`t.start_time_utc <= '${dateTo}'::date + INTERVAL '1 day' - INTERVAL '1 second'`);
+        chartTimeParams.push(dateTo);
+        conditions.push(`t.start_time_utc <= $${chartTimeParams.length}::date + INTERVAL '1 day' - INTERVAL '1 second'`);
       }
       timeFilter = conditions.join(' AND ') + ' AND';
-    } else if (timeRange && timeRange !== "all") {
+    } else if (validatedChartTimeRange && validatedChartTimeRange !== "all") {
       // Use predefined time range if no custom dates
-      let days: number;
-      switch (timeRange) {
-        case "7d":
-          days = 7;
-          break;
-        case "30d":
-          days = 30;
-          break;
-        case "90d":
-          days = 90;
-          break;
-        default:
-          days = 90;
+      const days = getTimeRangeDays(validatedChartTimeRange);
+      if (days !== null) {
+        timeFilter = `t.start_time_utc >= CURRENT_DATE - INTERVAL '${days} days' AND`;
       }
-      timeFilter = `t.start_time_utc >= CURRENT_DATE - INTERVAL '${days} days' AND`;
     }
 
     // Build annotation filter
     let annotationFilter = "";
     if (chartAnnotationFilter && chartAnnotationFilter !== 'all') {
+      const chartAnnotationParamIndex = chartTimeParams.length + 1;
       if (isGroupFilter) {
         annotationFilter = `
           AND EXISTS (
             SELECT 1 FROM TestAnnotations ta
             JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
             WHERE ta.current_test_id = t.test_id
-            AND aqo.group_name = $1
+            AND aqo.group_name = $${chartAnnotationParamIndex}
           )`;
       } else {
         annotationFilter = `
           AND EXISTS (
             SELECT 1 FROM TestAnnotations ta
             WHERE ta.current_test_id = t.test_id
-            AND ta.annotation_text = $1
+            AND ta.annotation_text = $${chartAnnotationParamIndex}
           )`;
       }
     }
@@ -422,8 +440,14 @@ export async function GET(request: NextRequest) {
       `;
     }
 
-    const result = chartAnnotationFilter && chartAnnotationFilter !== 'all'
-      ? await client.query(query, [filterValue])
+    // Build final params array combining time and annotation filters
+    const chartParams = [...chartTimeParams];
+    if (chartAnnotationFilter && chartAnnotationFilter !== 'all') {
+      chartParams.push(filterValue!);
+    }
+
+    const result = chartParams.length > 0
+      ? await client.query(query, chartParams)
       : await client.query(query);
 
     const stats: TestStats[] = result.rows.map((row) => ({

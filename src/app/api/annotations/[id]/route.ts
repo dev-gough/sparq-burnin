@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from 'pg';
 import { getDatabaseConfig } from '@/lib/config';
+import { requireAuth } from '@/lib/auth-check';
 
 interface Annotation {
   annotation_id: number;
@@ -18,6 +19,9 @@ export async function PUT(
   request: NextRequest,
   props: { params: Promise<{ id: string }> }
 ) {
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
+
   const params = await props.params;
   const client = new Client(getDatabaseConfig());
   
@@ -94,6 +98,9 @@ export async function DELETE(
   request: NextRequest,
   props: { params: Promise<{ id: string }> }
 ) {
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
+
   const params = await props.params;
   const client = new Client(getDatabaseConfig());
   
