@@ -6,14 +6,47 @@ import { DataTable } from "@/components/data-table";
 import { SectionCards } from "@/components/section-cards";
 import { SiteHeader } from "@/components/site-header";
 
+const FILTER_COOKIE_KEY = "burnin-data-table-filters";
+
+const loadFiltersFromCookie = () => {
+  try {
+    if (typeof document === "undefined") return {};
+
+    const cookies = document.cookie.split(";");
+    const filterCookie = cookies.find((cookie) =>
+      cookie.trim().startsWith(`${FILTER_COOKIE_KEY}=`),
+    );
+
+    if (!filterCookie) return {};
+
+    const cookieValue = filterCookie.split("=")[1];
+    const decodedValue = decodeURIComponent(cookieValue);
+    return JSON.parse(decodedValue);
+  } catch (error) {
+    console.warn("Failed to load filters from cookie:", error);
+    return {};
+  }
+};
+
 export default function Page() {
   const [selectedDate, setSelectedDate] = React.useState<string>("");
   const [chartMode, setChartMode] = React.useState("recent"); // 'all' or 'recent'
   const [timeRange, setTimeRange] = React.useState("90d");
-  const [annotationFilter, setAnnotationFilter] = React.useState<string>("all");
+
+  // Initialize filters from cookies
+  const [annotationFilter, setAnnotationFilter] = React.useState<string>(() => {
+    const savedFilters = loadFiltersFromCookie();
+    return savedFilters.annotationFilter || "all";
+  });
   const [filterLinked, setFilterLinked] = React.useState(true);
-  const [dateFromFilter, setDateFromFilter] = React.useState<string>("");
-  const [dateToFilter, setDateToFilter] = React.useState<string>("");
+  const [dateFromFilter, setDateFromFilter] = React.useState<string>(() => {
+    const savedFilters = loadFiltersFromCookie();
+    return savedFilters.dateFromFilter || "";
+  });
+  const [dateToFilter, setDateToFilter] = React.useState<string>(() => {
+    const savedFilters = loadFiltersFromCookie();
+    return savedFilters.dateToFilter || "";
+  });
 
   // Determine which filters to use for chart/cards
   const chartAnnotationFilter = filterLinked ? annotationFilter : "all";

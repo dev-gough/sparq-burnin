@@ -380,10 +380,10 @@ export function DataTable({
   // Apply selectedDate from chart click to date filters
   React.useEffect(() => {
     if (selectedDate) {
-      setDateFromFilter(selectedDate);
-      setDateToFilter(selectedDate);
+      onDateFromFilterChange(selectedDate);
+      onDateToFilterChange(selectedDate);
     }
-  }, [selectedDate]);
+  }, [selectedDate, onDateFromFilterChange, onDateToFilterChange]);
 
   // Save filters to cookies when they change
   React.useEffect(() => {
@@ -651,6 +651,7 @@ export function DataTable({
                   setSerialSearch("");
                   setStatusFilter("all");
                   setFirmwareFilter("all");
+                  onAnnotationFilterChange("all");
                   onDateFromFilterChange("");
                   onDateToFilterChange("");
                   setLatestOnly(false);

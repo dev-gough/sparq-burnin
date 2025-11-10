@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
 
     // Get next display order within the group or globally
     let maxOrderQuery: string;
-    let orderParams: any[] = [];
+    let orderParams: string[] = [];
 
     if (group_name) {
       maxOrderQuery = `

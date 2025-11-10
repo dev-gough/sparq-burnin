@@ -461,14 +461,42 @@ export function ChartAreaInteractive({
     };
   }, [chartData, isDarkMode]);
 
-  // Handle chart click for date selection
-  const onEvents = React.useMemo(() => ({
-    click: (params: { componentType?: string; name?: string }) => {
-      if (params.componentType === "series" && params.name && onDateClick) {
-        onDateClick(params.name);
+  // Handle chart click for date selection anywhere in the chart area
+  const onChartClick = React.useCallback((params: { componentType?: string; name?: string; event?: { offsetX?: number; offsetY?: number } }) => {
+    if (!onDateClick) return;
+
+    const chartInstance = chartRef.current?.getEchartsInstance();
+    if (!chartInstance) return;
+
+    // If clicked directly on series or axis, use the name
+    if ((params.componentType === "series" || params.componentType === "xAxis") && params.name) {
+      onDateClick(params.name);
+      return;
+    }
+
+    // For clicks anywhere else in the chart area, convert pixel coordinates to data coordinates
+    // Get the pixel position of the click
+    const pointInPixel = [params.event?.offsetX, params.event?.offsetY];
+
+    if (pointInPixel[0] !== undefined && pointInPixel[1] !== undefined) {
+      // Convert pixel coordinates to data coordinates
+      const pointInGrid = chartInstance.convertFromPixel({ seriesIndex: 0 }, pointInPixel);
+
+      if (pointInGrid && pointInGrid[0] !== undefined) {
+        // pointInGrid[0] is the x-axis index
+        const xAxisIndex = Math.round(pointInGrid[0]);
+
+        // Get the date from chartData using the index
+        if (xAxisIndex >= 0 && xAxisIndex < chartData.length) {
+          onDateClick(chartData[xAxisIndex].date);
+        }
       }
-    },
-  }), [onDateClick]);
+    }
+  }, [onDateClick, chartData]);
+
+  const onEvents = React.useMemo(() => ({
+    click: onChartClick,
+  }), [onChartClick]);
 
   return (
     <Card className="@container/card">

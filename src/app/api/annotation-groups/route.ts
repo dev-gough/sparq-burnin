@@ -81,10 +81,10 @@ export async function POST(request: NextRequest) {
     };
 
     return NextResponse.json(group, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Database error:', error);
 
-    if (error.code === '23505') { // Unique constraint violation
+    if (error && typeof error === 'object' && 'code' in error && error.code === '23505') { // Unique constraint violation
       return NextResponse.json(
         { error: 'A group with this name already exists' },
         { status: 409 }
