@@ -6,6 +6,8 @@ import * as path from 'path';
 import csvParser from 'csv-parser';
 import { createReadStream } from 'fs';
 import { toZonedTime } from 'date-fns-tz';
+import { Readable } from 'stream';
+import copyFrom from 'pg-copy-streams';
 
 import { loadConfig, type Config } from '../src/lib/config';
 import { runMigrations } from './migrate-db';
@@ -170,69 +172,70 @@ class CSVIngester {
     if (rows.length === 0) return;
 
     return await profiler.time('db_insert_test_data_batch', async () => {
-      const values: (number | string | null)[] = [];
-      const placeholders: string[] = [];
-      let paramIndex = 1;
+      // Use PostgreSQL COPY for much faster bulk inserts
+      // COPY is 5-10x faster than INSERT for bulk data
+
+      // Format: Convert rows to TSV format for COPY
+      const copyData: string[] = [];
 
       for (const row of rows) {
         const timestampUtc = this.parseTimestampFromDelhi(row['Timestamp']).toISOString();
-        const rowValues = [
+
+        // Build TSV row (tab-separated values)
+        // Use \N for NULL values (PostgreSQL COPY convention)
+        const rowData = [
           testId,
           timestampUtc,
           timestampUtc, // populate both timestamp and timestamp_utc with the same UTC value
-          this.parseFloat(row['Vgrid']),
-          this.parseFloat(row['Pgrid']),
-          this.parseFloat(row['Qgrid']),
-          this.parseFloat(row['Vpv1']),
-          this.parseFloat(row['Ppv1']),
-          this.parseFloat(row['Vpv2']),
-          this.parseFloat(row['Ppv2']),
-          this.parseFloat(row['Vpv3']),
-          this.parseFloat(row['Ppv3']),
-          this.parseFloat(row['Vpv4']),
-          this.parseFloat(row['Ppv4']),
-          this.parseFloat(row['Frequency']),
-          this.parseFloat(row['Vbus']),
-          this.parseInt(row['extstatus']),
-          this.parseInt(row['status']),
-          this.parseFloat(row['Temperature']),
-          this.parseFloat(row['EPV1']),
-          this.parseFloat(row['EPV2']),
-          this.parseFloat(row['EPV3']),
-          this.parseFloat(row['EPV4']),
-          this.parseFloat(row['ActiveEnergy']),
-          this.parseFloat(row['ReactiveEnergy']),
-          this.parseInt(row['extstatus_latch']),
-          this.parseInt(row['status_latch']),
-          this.parseFloat(row['Vgrid_inst_latch']),
-          this.parseFloat(row['Vntrl_inst_latch']),
-          this.parseFloat(row['Igrid_inst_latch']),
-          this.parseFloat(row['Vbus_inst_latch']),
-          this.parseFloat(row['Vpv1_inst_latch']),
-          this.parseFloat(row['Ipv1_inst_latch']),
-          this.parseFloat(row['Vpv2_inst_latch']),
-          this.parseFloat(row['Ipv2_inst_latch']),
-          this.parseFloat(row['Vpv3_inst_latch']),
-          this.parseFloat(row['Ipv3_inst_latch']),
-          this.parseFloat(row['Vpv4_inst_latch']),
-          this.parseFloat(row['Ipv4_inst_latch']),
-          row['status_bits'] || null,
+          this.parseFloat(row['Vgrid']) ?? '\\N',
+          this.parseFloat(row['Pgrid']) ?? '\\N',
+          this.parseFloat(row['Qgrid']) ?? '\\N',
+          this.parseFloat(row['Vpv1']) ?? '\\N',
+          this.parseFloat(row['Ppv1']) ?? '\\N',
+          this.parseFloat(row['Vpv2']) ?? '\\N',
+          this.parseFloat(row['Ppv2']) ?? '\\N',
+          this.parseFloat(row['Vpv3']) ?? '\\N',
+          this.parseFloat(row['Ppv3']) ?? '\\N',
+          this.parseFloat(row['Vpv4']) ?? '\\N',
+          this.parseFloat(row['Ppv4']) ?? '\\N',
+          this.parseFloat(row['Frequency']) ?? '\\N',
+          this.parseFloat(row['Vbus']) ?? '\\N',
+          this.parseInt(row['extstatus']) ?? '\\N',
+          this.parseInt(row['status']) ?? '\\N',
+          this.parseFloat(row['Temperature']) ?? '\\N',
+          this.parseFloat(row['EPV1']) ?? '\\N',
+          this.parseFloat(row['EPV2']) ?? '\\N',
+          this.parseFloat(row['EPV3']) ?? '\\N',
+          this.parseFloat(row['EPV4']) ?? '\\N',
+          this.parseFloat(row['ActiveEnergy']) ?? '\\N',
+          this.parseFloat(row['ReactiveEnergy']) ?? '\\N',
+          this.parseInt(row['extstatus_latch']) ?? '\\N',
+          this.parseInt(row['status_latch']) ?? '\\N',
+          this.parseFloat(row['Vgrid_inst_latch']) ?? '\\N',
+          this.parseFloat(row['Vntrl_inst_latch']) ?? '\\N',
+          this.parseFloat(row['Igrid_inst_latch']) ?? '\\N',
+          this.parseFloat(row['Vbus_inst_latch']) ?? '\\N',
+          this.parseFloat(row['Vpv1_inst_latch']) ?? '\\N',
+          this.parseFloat(row['Ipv1_inst_latch']) ?? '\\N',
+          this.parseFloat(row['Vpv2_inst_latch']) ?? '\\N',
+          this.parseFloat(row['Ipv2_inst_latch']) ?? '\\N',
+          this.parseFloat(row['Vpv3_inst_latch']) ?? '\\N',
+          this.parseFloat(row['Ipv3_inst_latch']) ?? '\\N',
+          this.parseFloat(row['Vpv4_inst_latch']) ?? '\\N',
+          this.parseFloat(row['Ipv4_inst_latch']) ?? '\\N',
+          row['status_bits'] || '\\N',
           sourceFile
         ];
 
-        values.push(...rowValues);
-
-        const paramPlaceholders = Array.from(
-          { length: rowValues.length },
-          (_, i) => `$${paramIndex + i}`
-        ).join(',');
-
-        placeholders.push(`(${paramPlaceholders})`);
-        paramIndex += rowValues.length;
+        copyData.push(rowData.join('\t'));
       }
 
-      const query = `
-        INSERT INTO TestData (
+      // Create readable stream from TSV data
+      const dataStream = Readable.from(copyData.join('\n') + '\n');
+
+      // Use COPY command
+      const copyQuery = `
+        COPY TestData (
           test_id, timestamp, timestamp_utc, vgrid, pgrid, qgrid, vpv1, ppv1, vpv2, ppv2,
           vpv3, ppv3, vpv4, ppv4, frequency, vbus, extstatus, status,
           temperature, epv1, epv2, epv3, epv4, active_energy, reactive_energy,
@@ -240,10 +243,17 @@ class CSVIngester {
           igrid_inst_latch, vbus_inst_latch, vpv1_inst_latch, ipv1_inst_latch,
           vpv2_inst_latch, ipv2_inst_latch, vpv3_inst_latch, ipv3_inst_latch,
           vpv4_inst_latch, ipv4_inst_latch, status_bits, source_file
-        ) VALUES ${placeholders.join(',')}
+        ) FROM STDIN WITH (FORMAT text, NULL '\\N', DELIMITER E'\\t')
       `;
 
-      await this.client.query(query, values);
+      const stream = this.client.query(copyFrom.from(copyQuery));
+      dataStream.pipe(stream);
+
+      await new Promise<void>((resolve, reject) => {
+        stream.on('finish', resolve);
+        stream.on('error', reject);
+        dataStream.on('error', reject);
+      });
 
       // Add to used files cache after successful insert
       this.usedFilesCache.add(sourceFile);
