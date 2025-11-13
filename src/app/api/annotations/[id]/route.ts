@@ -10,6 +10,7 @@ interface Annotation {
   annotation_type: string;
   annotation_text: string;
   created_by?: string;
+  author_email?: string;
   created_at: string;
   updated_at: string;
   current_test_id?: number;
@@ -37,29 +38,27 @@ export async function PUT(
     }
     
     const body = await request.json();
-    const { annotation_text, created_by } = body;
-    
+    const { annotation_text } = body;
+
     if (!annotation_text) {
       return NextResponse.json(
         { error: 'annotation_text is required' },
         { status: 400 }
       );
     }
-    
-    // Update annotation
+
+    // Update annotation (preserve original author information)
     const updateQuery = `
-      UPDATE TestAnnotations 
-      SET 
+      UPDATE TestAnnotations
+      SET
         annotation_text = $1,
-        created_by = COALESCE($2, created_by),
         updated_at = CURRENT_TIMESTAMP
-      WHERE annotation_id = $3
+      WHERE annotation_id = $2
       RETURNING *
     `;
-    
+
     const result = await client.query(updateQuery, [
       annotation_text,
-      created_by,
       annotationId
     ]);
     
@@ -77,6 +76,7 @@ export async function PUT(
       annotation_type: result.rows[0].annotation_type,
       annotation_text: result.rows[0].annotation_text,
       created_by: result.rows[0].created_by,
+      author_email: result.rows[0].author_email,
       created_at: result.rows[0].created_at.toISOString(),
       updated_at: result.rows[0].updated_at.toISOString(),
       current_test_id: result.rows[0].current_test_id

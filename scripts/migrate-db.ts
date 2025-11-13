@@ -279,6 +279,27 @@ const migrations: Migration[] = [
       END
       $$;
     `
+  },
+  {
+    id: '008',
+    name: 'add_author_email_to_annotations',
+    sql: `
+      -- Add author_email column to TestAnnotations for tracking who created/modified annotations
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'testannotations' AND column_name = 'author_email'
+        ) THEN
+          ALTER TABLE TestAnnotations ADD COLUMN author_email VARCHAR(255);
+
+          RAISE NOTICE 'Added author_email column to TestAnnotations';
+        ELSE
+          RAISE NOTICE 'author_email column already exists in TestAnnotations, skipping';
+        END IF;
+      END
+      $$;
+    `
   }
 ];
 

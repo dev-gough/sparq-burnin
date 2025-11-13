@@ -291,7 +291,8 @@ def main():
                             for test_file in os.listdir(data_dir):
                                 test_info = parse_test_file(test_file)
                                 if (not test_info):
-                                    logger.info(f'parse_test_file failed for file: {test_file}')
+                                    if "conflicted" not in test_file and "Copy" not in test_file:
+                                        logger.info(f'parse_test_file failed for file: {test_file}')
                                     continue
                                 if test_info and test_info[0] == sn and test_info[1] <= T:
                                     test_candidates.append((test_file, test_info[1]))

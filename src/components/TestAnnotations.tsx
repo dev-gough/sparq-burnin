@@ -17,6 +17,7 @@ interface Annotation {
   group_name: string | null
   group_color: string | null
   created_by?: string
+  author_email?: string
   created_at: string
   updated_at: string
   current_test_id?: number
@@ -114,8 +115,7 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           annotation_type: 'failure_cause',
-          annotation_text: optionText,
-          created_by: 'User'
+          annotation_text: optionText
         })
       })
 
@@ -138,8 +138,7 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           annotation_type: 'custom_note',
-          annotation_text: customText.trim(),
-          created_by: 'User'
+          annotation_text: customText.trim()
         })
       })
 
@@ -161,8 +160,7 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          annotation_text: newText.trim(),
-          created_by: 'User'
+          annotation_text: newText.trim()
         })
       })
 
@@ -609,7 +607,14 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
                       <div>
                         <p className="text-xs">{annotation.annotation_text}</p>
                         <div className="text-xs text-muted-foreground mt-1">
-                          {annotation.created_by} • {formatInTimezone(annotation.created_at)}
+                          <span title={annotation.author_email || undefined}>
+                            {annotation.created_by}
+                          </span>
+                          {annotation.author_email && (
+                            <span className="opacity-70"> ({annotation.author_email})</span>
+                          )}
+                          {' • '}
+                          {formatInTimezone(annotation.created_at)}
                         </div>
                       </div>
                     )}
