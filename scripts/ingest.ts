@@ -9,6 +9,7 @@ import { toZonedTime } from 'date-fns-tz';
 
 import { loadConfig, type Config } from '../src/lib/config';
 import { runMigrations } from './migrate-db';
+import { profiler } from './profiler';
 
 // CSV data interfaces for raw parsed data
 interface TestDataCsvRow {
@@ -91,6 +92,7 @@ class CSVIngester {
   private readonly config: Config;
   private readonly toProcessPath: string;
   private readonly processedPath: string;
+  private usedFilesCache: Set<string> = new Set();
 
   constructor() {
     this.config = loadConfig();
@@ -109,12 +111,32 @@ class CSVIngester {
 
   async connect(): Promise<void> {
     try {
-      await this.client.connect();
+      await profiler.time('db_connect', async () => {
+        await this.client.connect();
+      });
       console.log('Connected to PostgreSQL database');
     } catch (error) {
       console.error('Failed to connect to database:', error);
       throw error;
     }
+  }
+
+  async loadUsedFilesCache(): Promise<void> {
+    await profiler.time('load_used_files_cache', async () => {
+      console.log('📦 Loading used files cache from database...');
+
+      const query = `
+        SELECT DISTINCT source_file
+        FROM TestData
+        WHERE source_file IS NOT NULL
+      `;
+
+      const result = await this.client.query(query);
+
+      this.usedFilesCache = new Set(result.rows.map(row => row.source_file));
+
+      console.log(`✅ Loaded ${this.usedFilesCache.size} used files into cache`);
+    });
   }
 
   async disconnect(): Promise<void> {
@@ -123,102 +145,109 @@ class CSVIngester {
   }
 
   async ensureInverter(serialNumber: string): Promise<number> {
-    const query = `
-      INSERT INTO Inverters (serial_number) 
-      VALUES ($1) 
-      ON CONFLICT (serial_number) DO NOTHING 
-      RETURNING inv_id
-    `;
+    return await profiler.time('db_ensure_inverter', async () => {
+      const query = `
+        INSERT INTO Inverters (serial_number)
+        VALUES ($1)
+        ON CONFLICT (serial_number) DO NOTHING
+        RETURNING inv_id
+      `;
 
-    const result = await this.client.query(query, [serialNumber]);
+      const result = await this.client.query(query, [serialNumber]);
 
-    if (result.rows.length > 0) {
-      return result.rows[0].inv_id;
-    }
+      if (result.rows.length > 0) {
+        return result.rows[0].inv_id;
+      }
 
-    // If no row was inserted (conflict), get the existing inv_id
-    const selectQuery = 'SELECT inv_id FROM Inverters WHERE serial_number = $1';
-    const selectResult = await this.client.query(selectQuery, [serialNumber]);
-    return selectResult.rows[0].inv_id;
+      // If no row was inserted (conflict), get the existing inv_id
+      const selectQuery = 'SELECT inv_id FROM Inverters WHERE serial_number = $1';
+      const selectResult = await this.client.query(selectQuery, [serialNumber]);
+      return selectResult.rows[0].inv_id;
+    }, { serialNumber });
   }
 
   async insertTestDataBatch(rows: TestDataCsvRow[], testId: number, sourceFile: string): Promise<void> {
     if (rows.length === 0) return;
 
-    const values: (number | string | null)[] = [];
-    const placeholders: string[] = [];
-    let paramIndex = 1;
+    return await profiler.time('db_insert_test_data_batch', async () => {
+      const values: (number | string | null)[] = [];
+      const placeholders: string[] = [];
+      let paramIndex = 1;
 
-    for (const row of rows) {
-      const timestampUtc = this.parseTimestampFromDelhi(row['Timestamp']).toISOString();
-      const rowValues = [
-        testId,
-        timestampUtc,
-        timestampUtc, // populate both timestamp and timestamp_utc with the same UTC value
-        this.parseFloat(row['Vgrid']),
-        this.parseFloat(row['Pgrid']),
-        this.parseFloat(row['Qgrid']),
-        this.parseFloat(row['Vpv1']),
-        this.parseFloat(row['Ppv1']),
-        this.parseFloat(row['Vpv2']),
-        this.parseFloat(row['Ppv2']),
-        this.parseFloat(row['Vpv3']),
-        this.parseFloat(row['Ppv3']),
-        this.parseFloat(row['Vpv4']),
-        this.parseFloat(row['Ppv4']),
-        this.parseFloat(row['Frequency']),
-        this.parseFloat(row['Vbus']),
-        this.parseInt(row['extstatus']),
-        this.parseInt(row['status']),
-        this.parseFloat(row['Temperature']),
-        this.parseFloat(row['EPV1']),
-        this.parseFloat(row['EPV2']),
-        this.parseFloat(row['EPV3']),
-        this.parseFloat(row['EPV4']),
-        this.parseFloat(row['ActiveEnergy']),
-        this.parseFloat(row['ReactiveEnergy']),
-        this.parseInt(row['extstatus_latch']),
-        this.parseInt(row['status_latch']),
-        this.parseFloat(row['Vgrid_inst_latch']),
-        this.parseFloat(row['Vntrl_inst_latch']),
-        this.parseFloat(row['Igrid_inst_latch']),
-        this.parseFloat(row['Vbus_inst_latch']),
-        this.parseFloat(row['Vpv1_inst_latch']),
-        this.parseFloat(row['Ipv1_inst_latch']),
-        this.parseFloat(row['Vpv2_inst_latch']),
-        this.parseFloat(row['Ipv2_inst_latch']),
-        this.parseFloat(row['Vpv3_inst_latch']),
-        this.parseFloat(row['Ipv3_inst_latch']),
-        this.parseFloat(row['Vpv4_inst_latch']),
-        this.parseFloat(row['Ipv4_inst_latch']),
-        row['status_bits'] || null,
-        sourceFile
-      ];
+      for (const row of rows) {
+        const timestampUtc = this.parseTimestampFromDelhi(row['Timestamp']).toISOString();
+        const rowValues = [
+          testId,
+          timestampUtc,
+          timestampUtc, // populate both timestamp and timestamp_utc with the same UTC value
+          this.parseFloat(row['Vgrid']),
+          this.parseFloat(row['Pgrid']),
+          this.parseFloat(row['Qgrid']),
+          this.parseFloat(row['Vpv1']),
+          this.parseFloat(row['Ppv1']),
+          this.parseFloat(row['Vpv2']),
+          this.parseFloat(row['Ppv2']),
+          this.parseFloat(row['Vpv3']),
+          this.parseFloat(row['Ppv3']),
+          this.parseFloat(row['Vpv4']),
+          this.parseFloat(row['Ppv4']),
+          this.parseFloat(row['Frequency']),
+          this.parseFloat(row['Vbus']),
+          this.parseInt(row['extstatus']),
+          this.parseInt(row['status']),
+          this.parseFloat(row['Temperature']),
+          this.parseFloat(row['EPV1']),
+          this.parseFloat(row['EPV2']),
+          this.parseFloat(row['EPV3']),
+          this.parseFloat(row['EPV4']),
+          this.parseFloat(row['ActiveEnergy']),
+          this.parseFloat(row['ReactiveEnergy']),
+          this.parseInt(row['extstatus_latch']),
+          this.parseInt(row['status_latch']),
+          this.parseFloat(row['Vgrid_inst_latch']),
+          this.parseFloat(row['Vntrl_inst_latch']),
+          this.parseFloat(row['Igrid_inst_latch']),
+          this.parseFloat(row['Vbus_inst_latch']),
+          this.parseFloat(row['Vpv1_inst_latch']),
+          this.parseFloat(row['Ipv1_inst_latch']),
+          this.parseFloat(row['Vpv2_inst_latch']),
+          this.parseFloat(row['Ipv2_inst_latch']),
+          this.parseFloat(row['Vpv3_inst_latch']),
+          this.parseFloat(row['Ipv3_inst_latch']),
+          this.parseFloat(row['Vpv4_inst_latch']),
+          this.parseFloat(row['Ipv4_inst_latch']),
+          row['status_bits'] || null,
+          sourceFile
+        ];
 
-      values.push(...rowValues);
+        values.push(...rowValues);
 
-      const paramPlaceholders = Array.from(
-        { length: rowValues.length },
-        (_, i) => `$${paramIndex + i}`
-      ).join(',');
+        const paramPlaceholders = Array.from(
+          { length: rowValues.length },
+          (_, i) => `$${paramIndex + i}`
+        ).join(',');
 
-      placeholders.push(`(${paramPlaceholders})`);
-      paramIndex += rowValues.length;
-    }
+        placeholders.push(`(${paramPlaceholders})`);
+        paramIndex += rowValues.length;
+      }
 
-    const query = `
-      INSERT INTO TestData (
-        test_id, timestamp, timestamp_utc, vgrid, pgrid, qgrid, vpv1, ppv1, vpv2, ppv2,
-        vpv3, ppv3, vpv4, ppv4, frequency, vbus, extstatus, status,
-        temperature, epv1, epv2, epv3, epv4, active_energy, reactive_energy,
-        extstatus_latch, status_latch, vgrid_inst_latch, vntrl_inst_latch,
-        igrid_inst_latch, vbus_inst_latch, vpv1_inst_latch, ipv1_inst_latch,
-        vpv2_inst_latch, ipv2_inst_latch, vpv3_inst_latch, ipv3_inst_latch,
-        vpv4_inst_latch, ipv4_inst_latch, status_bits, source_file
-      ) VALUES ${placeholders.join(',')}
-    `;
+      const query = `
+        INSERT INTO TestData (
+          test_id, timestamp, timestamp_utc, vgrid, pgrid, qgrid, vpv1, ppv1, vpv2, ppv2,
+          vpv3, ppv3, vpv4, ppv4, frequency, vbus, extstatus, status,
+          temperature, epv1, epv2, epv3, epv4, active_energy, reactive_energy,
+          extstatus_latch, status_latch, vgrid_inst_latch, vntrl_inst_latch,
+          igrid_inst_latch, vbus_inst_latch, vpv1_inst_latch, ipv1_inst_latch,
+          vpv2_inst_latch, ipv2_inst_latch, vpv3_inst_latch, ipv3_inst_latch,
+          vpv4_inst_latch, ipv4_inst_latch, status_bits, source_file
+        ) VALUES ${placeholders.join(',')}
+      `;
 
-    await this.client.query(query, values);
+      await this.client.query(query, values);
+
+      // Add to used files cache after successful insert
+      this.usedFilesCache.add(sourceFile);
+    }, { rowCount: rows.length, testId });
   }
 
   private parseFloat(value: string | undefined): number | null {
@@ -333,33 +362,28 @@ class CSVIngester {
   }
 
   async isTestDataFileAlreadyUsed(fileName: string): Promise<boolean> {
-    const query = `
-      SELECT COUNT(*) as count
-      FROM TestData
-      WHERE source_file = $1
-      LIMIT 1
-    `;
-
-    const result = await this.client.query(query, [fileName]);
-    return result.rows[0].count > 0;
+    // Use in-memory cache instead of querying database
+    return this.usedFilesCache.has(fileName);
   }
 
   async moveFile(sourcePath: string, destinationDir: string): Promise<void> {
-    const fileName = path.basename(sourcePath);
-    const destinationPath = path.join(destinationDir, fileName);
+    await profiler.time('file_move', async () => {
+      const fileName = path.basename(sourcePath);
+      const destinationPath = path.join(destinationDir, fileName);
 
-    // Ensure destination directory exists
-    await fs.mkdir(destinationDir, { recursive: true });
+      // Ensure destination directory exists
+      await fs.mkdir(destinationDir, { recursive: true });
 
-    await fs.rename(sourcePath, destinationPath);
-    console.log(`Moved ${sourcePath} to ${destinationPath}`);
+      await fs.rename(sourcePath, destinationPath);
+      console.log(`Moved ${sourcePath} to ${destinationPath}`);
+    });
   }
 
   async processResultsCSV(filePath: string): Promise<number[]> {
     console.log(`Processing results CSV: ${filePath}`);
     const testIds: number[] = [];
 
-    return new Promise((resolve, reject) => {
+    return profiler.time('process_results_csv', () => new Promise<number[]>((resolve, reject) => {
       const tests: TestResultsCsvRow[] = [];
 
       createReadStream(filePath)
@@ -522,13 +546,13 @@ class CSVIngester {
           }
         })
         .on('error', reject);
-    });
+    }), { file: path.basename(filePath) });
   }
 
   async processTestDataCSV(filePath: string, testId: number): Promise<void> {
     console.log(`Processing test data CSV: ${filePath} for test_id: ${testId}`);
 
-    return new Promise((resolve, reject) => {
+    return profiler.time('process_test_data_csv', () => new Promise<void>((resolve, reject) => {
       const dataRows: TestDataCsvRow[] = [];
       let rowCount = 0;
 
@@ -543,6 +567,7 @@ class CSVIngester {
             console.log(`Processing ${rowCount} data rows...`);
 
             // Process in batches to avoid memory issues
+            // Tested: 1000 rows is optimal (1500 was 36s slower due to query planning overhead)
             const batchSize = 1000;
             for (let i = 0; i < dataRows.length; i += batchSize) {
               const batch = dataRows.slice(i, i + batchSize);
@@ -557,7 +582,7 @@ class CSVIngester {
           }
         })
         .on('error', reject);
-    });
+    }), { file: path.basename(filePath), testId });
   }
 
   private async findAllResultsFiles(): Promise<string[]> {
@@ -636,43 +661,45 @@ class CSVIngester {
   }
 
   private async findExactTestFileMatch(filenameWithSeconds: string, filenameWithoutSeconds: string): Promise<string | null> {
-    const testsDir = path.join(this.toProcessPath, 'tests');
+    return await profiler.time('find_exact_match', async () => {
+      const testsDir = path.join(this.toProcessPath, 'tests');
 
-    // First try: exact match with seconds
-    const pathWithSeconds = path.join(testsDir, filenameWithSeconds);
-    try {
-      await fs.access(pathWithSeconds);
+      // First try: exact match with seconds
+      const pathWithSeconds = path.join(testsDir, filenameWithSeconds);
+      try {
+        await fs.access(pathWithSeconds);
 
-      // Check if file is already used
-      const isUsed = await this.isTestDataFileAlreadyUsed(filenameWithSeconds);
-      if (isUsed) {
-        console.log(`File ${filenameWithSeconds} already used, skipping`);
-      } else {
-        console.log(`✅ Found exact match with seconds: ${filenameWithSeconds}`);
-        return pathWithSeconds;
+        // Check if file is already used
+        const isUsed = await this.isTestDataFileAlreadyUsed(filenameWithSeconds);
+        if (isUsed) {
+          console.log(`File ${filenameWithSeconds} already used, skipping`);
+        } else {
+          console.log(`✅ Found exact match with seconds: ${filenameWithSeconds}`);
+          return pathWithSeconds;
+        }
+      } catch {
+        // File doesn't exist, continue to next attempt
       }
-    } catch {
-      // File doesn't exist, continue to next attempt
-    }
 
-    // Second try: exact match without seconds (rounded to nearest minute)
-    const pathWithoutSeconds = path.join(testsDir, filenameWithoutSeconds);
-    try {
-      await fs.access(pathWithoutSeconds);
+      // Second try: exact match without seconds (rounded to nearest minute)
+      const pathWithoutSeconds = path.join(testsDir, filenameWithoutSeconds);
+      try {
+        await fs.access(pathWithoutSeconds);
 
-      // Check if file is already used
-      const isUsed = await this.isTestDataFileAlreadyUsed(filenameWithoutSeconds);
-      if (isUsed) {
-        console.log(`File ${filenameWithoutSeconds} already used, skipping`);
+        // Check if file is already used
+        const isUsed = await this.isTestDataFileAlreadyUsed(filenameWithoutSeconds);
+        if (isUsed) {
+          console.log(`File ${filenameWithoutSeconds} already used, skipping`);
+          return null;
+        }
+
+        console.log(`✅ Found exact match without seconds: ${filenameWithoutSeconds}`);
+        return pathWithoutSeconds;
+      } catch {
+        // File doesn't exist
         return null;
       }
-
-      console.log(`✅ Found exact match without seconds: ${filenameWithoutSeconds}`);
-      return pathWithoutSeconds;
-    } catch {
-      // File doesn't exist
-      return null;
-    }
+    });
   }
 
   private parseTimestampFromFilename(filename: string): Date | null {
@@ -717,77 +744,87 @@ class CSVIngester {
   }
 
   private async findClosestTestFile(serialNumber: string, targetTime: Date): Promise<{ filePath: string | null; timeDelta: number | null }> {
-    const testFiles = await this.findTestFilesForSerial(serialNumber);
+    return await profiler.time('find_closest_match', async () => {
+      const testFiles = await this.findTestFilesForSerial(serialNumber);
 
-    if (testFiles.length === 0) {
-      console.log(`No test files found for serial: ${serialNumber}`);
-      return { filePath: null, timeDelta: null };
-    }
-
-    const candidates: Array<{ filename: string; timeDiff: number }> = [];
-
-    for (const filename of testFiles) {
-      // Check if file is already used
-      const isUsed = await this.isTestDataFileAlreadyUsed(filename);
-      if (isUsed) {
-        console.log(`File ${filename} already used, skipping from closest match`);
-        continue;
+      if (testFiles.length === 0) {
+        console.log(`No test files found for serial: ${serialNumber}`);
+        return { filePath: null, timeDelta: null };
       }
 
-      const fileTimestamp = this.parseTimestampFromFilename(filename);
-      if (!fileTimestamp) {
-        console.warn(`Could not parse timestamp from filename: ${filename}`);
-        continue;
+      const candidates: Array<{ filename: string; timeDiff: number }> = [];
+
+      for (const filename of testFiles) {
+        // Check if file is already used
+        const isUsed = await this.isTestDataFileAlreadyUsed(filename);
+        if (isUsed) {
+          console.log(`File ${filename} already used, skipping from closest match`);
+          continue;
+        }
+
+        const fileTimestamp = this.parseTimestampFromFilename(filename);
+        if (!fileTimestamp) {
+          console.warn(`Could not parse timestamp from filename: ${filename}`);
+          continue;
+        }
+
+        const timeDiff = Math.abs(targetTime.getTime() - fileTimestamp.getTime());
+        candidates.push({ filename, timeDiff });
       }
 
-      const timeDiff = Math.abs(targetTime.getTime() - fileTimestamp.getTime());
-      candidates.push({ filename, timeDiff });
-    }
+      if (candidates.length === 0) {
+        console.log(`No unused test files found for serial: ${serialNumber}`);
+        return { filePath: null, timeDelta: null };
+      }
 
-    if (candidates.length === 0) {
-      console.log(`No unused test files found for serial: ${serialNumber}`);
-      return { filePath: null, timeDelta: null };
-    }
+      // Sort by time difference (closest first)
+      candidates.sort((a, b) => a.timeDiff - b.timeDiff);
 
-    // Sort by time difference (closest first)
-    candidates.sort((a, b) => a.timeDiff - b.timeDiff);
+      const closest = candidates[0];
+      const timeDiffMinutes = closest.timeDiff / (1000 * 60);
 
-    const closest = candidates[0];
-    const timeDiffMinutes = closest.timeDiff / (1000 * 60);
+      console.log(`🔍 Found closest match: ${closest.filename} (${timeDiffMinutes.toFixed(2)} minutes difference)`);
 
-    console.log(`🔍 Found closest match: ${closest.filename} (${timeDiffMinutes.toFixed(2)} minutes difference)`);
-
-    return {
-      filePath: path.join(this.toProcessPath, 'tests', closest.filename),
-      timeDelta: closest.timeDiff
-    };
+      return {
+        filePath: path.join(this.toProcessPath, 'tests', closest.filename),
+        timeDelta: closest.timeDiff
+      };
+    }, { serialNumber });
   }
 
   async relinkAnnotations(): Promise<void> {
     console.log('🔗 Re-linking annotations to new test IDs...');
 
-    const query = `
-      UPDATE TestAnnotations
-      SET
-        current_test_id = t.test_id,
-        updated_at = CURRENT_TIMESTAMP
-      FROM Tests t
-      INNER JOIN Inverters i ON t.inv_id = i.inv_id
-      WHERE
-        TestAnnotations.serial_number = i.serial_number
-        AND TestAnnotations.start_time = t.start_time_utc
-        AND TestAnnotations.current_test_id IS NULL
-    `;
+    await profiler.time('db_relink_annotations', async () => {
+      const query = `
+        UPDATE TestAnnotations
+        SET
+          current_test_id = t.test_id,
+          updated_at = CURRENT_TIMESTAMP
+        FROM Tests t
+        INNER JOIN Inverters i ON t.inv_id = i.inv_id
+        WHERE
+          TestAnnotations.serial_number = i.serial_number
+          AND TestAnnotations.start_time = t.start_time_utc
+          AND TestAnnotations.current_test_id IS NULL
+      `;
 
-    const result = await this.client.query(query);
-    console.log(`✅ Re-linked ${result.rowCount} annotations to new test IDs`);
+      const result = await this.client.query(query);
+      console.log(`✅ Re-linked ${result.rowCount} annotations to new test IDs`);
+    });
   }
 
   async processAllFiles(): Promise<void> {
     console.log('Starting new ingestion process...');
 
+    // Load used files cache once at startup
+    await this.loadUsedFilesCache();
+
     // Find all results files
-    const resultsFiles = await this.findAllResultsFiles();
+    profiler.start('overall_ingestion');
+    const resultsFiles = await profiler.time('find_all_results_files', async () => {
+      return await this.findAllResultsFiles();
+    });
     console.log(`Found ${resultsFiles.length} results files to process`);
 
     const exactMatches: Array<{ resultsFile: string; testFile: string; testId: number }> = [];
@@ -920,6 +957,9 @@ class CSVIngester {
 
     // Re-link annotations after processing all files
     await this.relinkAnnotations();
+
+    profiler.stop('overall_ingestion');
+    profiler.printSummary();
   }
 }
 
