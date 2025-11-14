@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Client } from 'pg';
 import { getDatabaseConfig } from '@/lib/config';
 import { requireAuth } from '@/lib/auth-check';
+import { Profiler } from '../../../../../scripts/profiler';
 
 interface DataPoint {
   timestamp: string;
@@ -73,14 +74,25 @@ export async function GET(
   props: { params: Promise<{ id: string }> }
 ) {
   const params = await props.params;
+  const profiler = new Profiler();
+
+  profiler.start('total_request');
+
   const { error: authError } = await requireAuth();
   if (authError) return authError;
 
+  // Parse query parameters
+  const { searchParams } = new URL(request.url);
+  const mode = searchParams.get('mode') || 'quick'; // 'quick' or 'full'
+  const targetPoints = 1000; // Target number of points for decimated data
+
   const client = new Client(getDatabaseConfig());
-  
+
   try {
-    await client.connect();
-    
+    await profiler.time('db_connect', async () => {
+      await client.connect();
+    });
+
     const testId = parseInt(params.id);
     if (isNaN(testId)) {
       return NextResponse.json(
@@ -94,7 +106,7 @@ export async function GET(
     
     // Get test metadata
     const testQuery = `
-      SELECT 
+      SELECT
         t.test_id,
         t.inv_id,
         i.serial_number,
@@ -107,8 +119,10 @@ export async function GET(
       JOIN Inverters i ON t.inv_id = i.inv_id
       WHERE t.test_id = $1 AND (t.firmware_version != '1.11.11' OR t.firmware_version IS NULL)
     `;
-    
-    const testResult = await client.query(testQuery, [testId]);
+
+    const testResult = await profiler.time('query_test_metadata', async () => {
+      return await client.query(testQuery, [testId]);
+    });
     
     if (testResult.rows.length === 0) {
       return NextResponse.json(
@@ -118,26 +132,72 @@ export async function GET(
     }
     
     const testInfo = testResult.rows[0];
-    
-    // Get test data points - use timestamp_utc if available, fallback to timestamp with UTC cast
-    const dataQuery = `
-      SELECT 
-        data_id, test_id,
-        -- Use timestamp_utc if available, otherwise cast timestamp as UTC
-        COALESCE(timestamp_utc, timestamp AT TIME ZONE 'UTC') as timestamp,
-        vgrid, pgrid, qgrid, vpv1, ppv1, vpv2, ppv2, vpv3, ppv3, vpv4, ppv4,
-        frequency, vbus, extstatus, status, temperature, epv1, epv2, epv3, epv4,
-        active_energy, reactive_energy, extstatus_latch, status_latch,
-        vgrid_inst_latch, vntrl_inst_latch, igrid_inst_latch, vbus_inst_latch,
-        vpv1_inst_latch, ipv1_inst_latch, vpv2_inst_latch, ipv2_inst_latch,
-        vpv3_inst_latch, ipv3_inst_latch, vpv4_inst_latch, ipv4_inst_latch,
-        status_bits, source_file, created_at
-      FROM TestData 
-      WHERE test_id = $1 
-      ORDER BY COALESCE(timestamp_utc, timestamp) ASC
-    `;
-    
-    const dataResult = await client.query(dataQuery, [testId]);
+
+    // First, get total point count for metadata
+    const countQuery = `SELECT COUNT(*) as total FROM TestData WHERE test_id = $1`;
+    const countResult = await profiler.time('query_count', async () => {
+      return await client.query(countQuery, [testId]);
+    });
+    const totalPoints = parseInt(countResult.rows[0].total);
+
+    // Build data query based on mode
+    let dataQuery: string;
+
+    if (mode === 'quick' && totalPoints > targetPoints) {
+      // Decimated query: Sample evenly across time range using row_number
+      // This ensures we get evenly distributed points across the entire test duration
+      const decimationFactor = Math.ceil(totalPoints / targetPoints);
+
+      dataQuery = `
+        WITH numbered_rows AS (
+          SELECT
+            data_id, test_id,
+            COALESCE(timestamp_utc, timestamp AT TIME ZONE 'UTC') as timestamp,
+            vgrid, pgrid, qgrid, vpv1, ppv1, vpv2, ppv2, vpv3, ppv3, vpv4, ppv4,
+            frequency, vbus, extstatus, status, temperature, epv1, epv2, epv3, epv4,
+            active_energy, reactive_energy, extstatus_latch, status_latch,
+            vgrid_inst_latch, vntrl_inst_latch, igrid_inst_latch, vbus_inst_latch,
+            vpv1_inst_latch, ipv1_inst_latch, vpv2_inst_latch, ipv2_inst_latch,
+            vpv3_inst_latch, ipv3_inst_latch, vpv4_inst_latch, ipv4_inst_latch,
+            status_bits, source_file, created_at,
+            ROW_NUMBER() OVER (ORDER BY COALESCE(timestamp_utc, timestamp)) as rn
+          FROM TestData
+          WHERE test_id = $1
+        )
+        SELECT
+          data_id, test_id, timestamp, vgrid, pgrid, qgrid, vpv1, ppv1, vpv2, ppv2,
+          vpv3, ppv3, vpv4, ppv4, frequency, vbus, extstatus, status, temperature,
+          epv1, epv2, epv3, epv4, active_energy, reactive_energy, extstatus_latch,
+          status_latch, vgrid_inst_latch, vntrl_inst_latch, igrid_inst_latch,
+          vbus_inst_latch, vpv1_inst_latch, ipv1_inst_latch, vpv2_inst_latch,
+          ipv2_inst_latch, vpv3_inst_latch, ipv3_inst_latch, vpv4_inst_latch,
+          ipv4_inst_latch, status_bits, source_file, created_at
+        FROM numbered_rows
+        WHERE MOD(rn, ${decimationFactor}) = 0
+        ORDER BY timestamp ASC
+      `;
+    } else {
+      // Full query: Return all data points
+      dataQuery = `
+        SELECT
+          data_id, test_id,
+          COALESCE(timestamp_utc, timestamp AT TIME ZONE 'UTC') as timestamp,
+          vgrid, pgrid, qgrid, vpv1, ppv1, vpv2, ppv2, vpv3, ppv3, vpv4, ppv4,
+          frequency, vbus, extstatus, status, temperature, epv1, epv2, epv3, epv4,
+          active_energy, reactive_energy, extstatus_latch, status_latch,
+          vgrid_inst_latch, vntrl_inst_latch, igrid_inst_latch, vbus_inst_latch,
+          vpv1_inst_latch, ipv1_inst_latch, vpv2_inst_latch, ipv2_inst_latch,
+          vpv3_inst_latch, ipv3_inst_latch, vpv4_inst_latch, ipv4_inst_latch,
+          status_bits, source_file, created_at
+        FROM TestData
+        WHERE test_id = $1
+        ORDER BY COALESCE(timestamp_utc, timestamp) ASC
+      `;
+    }
+
+    const dataResult = await profiler.time('query_test_data', async () => {
+      return await client.query(dataQuery, [testId]);
+    }, { test_id: testId, mode, total_points: totalPoints, returned_points: 0 });
     
     // Get navigation information for failed tests
     const serialNumber = testInfo.serial_number;
@@ -193,12 +253,14 @@ export async function GET(
     `;
     
     // Execute navigation queries in parallel
-    const [previousFailResult, nextFailResult, totalFailuresResult, currentIndexResult] = await Promise.all([
-      client.query(previousFailQuery, [serialNumber, testId, currentStartTime]),
-      client.query(nextFailQuery, [serialNumber, testId, currentStartTime]),
-      client.query(totalFailuresQuery, [serialNumber]),
-      testInfo.overall_status === 'FAIL' ? client.query(currentIndexQuery, [serialNumber, currentStartTime]) : null
-    ]);
+    const [previousFailResult, nextFailResult, totalFailuresResult, currentIndexResult] = await profiler.time('query_navigation', async () => {
+      return await Promise.all([
+        client.query(previousFailQuery, [serialNumber, testId, currentStartTime]),
+        client.query(nextFailQuery, [serialNumber, testId, currentStartTime]),
+        client.query(totalFailuresQuery, [serialNumber]),
+        testInfo.overall_status === 'FAIL' ? client.query(currentIndexQuery, [serialNumber, currentStartTime]) : null
+      ]);
+    });
     
     const navigation = {
       previous_failed_test: previousFailResult.rows.length > 0 ? {
@@ -215,27 +277,49 @@ export async function GET(
       total_failed_tests: parseInt(totalFailuresResult.rows[0].total_count)
     };
     
-    const testData: TestData = {
-      test_id: testInfo.test_id,
-      inv_id: testInfo.inv_id,
-      serial_number: testInfo.serial_number || 'Unknown',
-      firmware_version: testInfo.firmware_version || 'Unknown',
-      start_time: testInfo.start_time.toISOString(),
-      end_time: testInfo.end_time?.toISOString() || new Date().toISOString(),
-      overall_status: testInfo.overall_status,
-      failure_description: testInfo.failure_description,
-      navigation,
-      data_points: dataResult.rows.map(row => {
-        // Convert timestamp to ISO string, keep all other fields as-is
-        const point = { ...row };
-        if (point.timestamp) {
-          point.timestamp = point.timestamp.toISOString();
-        }
-        return point;
-      })
+    const testData: TestData = await profiler.time('build_response', async () => {
+      return {
+        test_id: testInfo.test_id,
+        inv_id: testInfo.inv_id,
+        serial_number: testInfo.serial_number || 'Unknown',
+        firmware_version: testInfo.firmware_version || 'Unknown',
+        start_time: testInfo.start_time.toISOString(),
+        end_time: testInfo.end_time?.toISOString() || new Date().toISOString(),
+        overall_status: testInfo.overall_status,
+        failure_description: testInfo.failure_description,
+        navigation,
+        data_points: dataResult.rows.map(row => {
+          // Convert timestamp to ISO string, keep all other fields as-is
+          const point = { ...row };
+          if (point.timestamp) {
+            point.timestamp = point.timestamp.toISOString();
+          }
+          return point;
+        })
+      };
+    }, { data_points_count: dataResult.rows.length });
+
+    profiler.stop('total_request');
+
+    // Log profiling results to server console
+    console.log(`\n[API /api/test/${testId}] Performance Profile (mode: ${mode}):`);
+    profiler.printSummary();
+
+    // Add metadata about decimation to response
+    const responseWithMetadata = {
+      ...testData,
+      _metadata: {
+        mode,
+        total_points: totalPoints,
+        returned_points: dataResult.rows.length,
+        decimated: mode === 'quick' && totalPoints > targetPoints,
+        decimation_factor: mode === 'quick' && totalPoints > targetPoints
+          ? Math.ceil(totalPoints / targetPoints)
+          : 1
+      }
     };
-    
-    return NextResponse.json(testData);
+
+    return NextResponse.json(responseWithMetadata);
   } catch (error) {
     console.error('Database error:', error);
     return NextResponse.json(

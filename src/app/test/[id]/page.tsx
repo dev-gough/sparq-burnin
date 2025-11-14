@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useState, useMemo, useCallback, useRef } from "react"
-import { usePrefetchedTests } from "@/hooks/usePrefetchedTests"
+import { useTestDataCache } from "@/contexts/TestDataCacheContext"
 import { useTimezone } from "@/contexts/TimezoneContext"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -31,11 +31,18 @@ interface TestData {
   overall_status: string
   failure_description?: string
   data_points: DataPoint[]
-  navigation: {
+  navigation?: {
     previous_failed_test?: FailureInfo
     next_failed_test?: FailureInfo
     current_failure_index?: number
     total_failed_tests: number
+  }
+  _metadata?: {
+    mode: string
+    total_points: number
+    returned_points: number
+    decimated: boolean
+    decimation_factor: number
   }
 }
 
@@ -157,6 +164,11 @@ function FailedTestNavigation({
 }) {
   const { navigation } = testData
   const { formatDateInTimezone, formatInTimezone } = useTimezone()
+
+  // Don't show if navigation info is missing (from cached batch data)
+  if (!navigation) {
+    return null
+  }
 
   // Only show if there are other failed tests for this serial number
   if (navigation.total_failed_tests <= 1) {
@@ -1133,8 +1145,8 @@ export default function TestPage() {
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const { formatInTimezone } = useTimezone()
 
-  // Prefetch hook
-  const { prefetchAdjacentTests, getCachedTest, clearCache } = usePrefetchedTests()
+  // Cache hook
+  const { getTest, setTest } = useTestDataCache()
 
   const openFullScreen = useCallback((state: FullScreenState) => {
     setFullScreenState(state)
@@ -1146,24 +1158,23 @@ export default function TestPage() {
 
   const navigateToTest = useCallback((newTestId: number) => {
     // Check if we have cached data for instant navigation
-    const cachedData = getCachedTest(newTestId)
+    const cachedData = getTest(newTestId)
 
     if (cachedData) {
+      console.log(`✅ Cache HIT for test ${newTestId} - instant navigation!`)
       // Instant navigation with cached data
-      setTestData(cachedData)
+      setTestData(cachedData as unknown as TestData)
       setLoading(false)
       setError(null)
 
       // Update URL without triggering Next.js routing
       window.history.replaceState(null, '', `/test/${newTestId}`)
-
-      // Prefetch new adjacent tests for the cached data
-      prefetchAdjacentTests(cachedData.navigation)
     } else {
+      console.log(`❌ Cache MISS for test ${newTestId} - normal navigation`)
       // Fallback to normal navigation
       router.push(`/test/${newTestId}`)
     }
-  }, [router, getCachedTest, prefetchAdjacentTests])
+  }, [router, getTest])
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -1175,7 +1186,7 @@ export default function TestPage() {
       }
 
       // Arrow key navigation (only when not in fullscreen and no input focused)
-      if (!fullScreenState && testData && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+      if (!fullScreenState && testData && testData.navigation && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
         const { navigation } = testData
 
         if (event.key === 'ArrowLeft' && navigation.previous_failed_test) {
@@ -1194,21 +1205,66 @@ export default function TestPage() {
 
   useEffect(() => {
     const fetchTestData = async () => {
+      const numericTestId = parseInt(testId)
+
+      // Check cache first
+      const cachedData = getTest(numericTestId)
+
+      if (cachedData) {
+        console.log(`✅ Cache HIT for test ${testId} - instant load!`)
+        setTestData(cachedData as unknown as TestData)
+        setLoading(false)
+
+        // Only fetch full data if we don't have navigation yet (means it's decimated batch data)
+        const needsFullData = !cachedData.navigation || cachedData._metadata?.decimated
+
+        if (needsFullData) {
+          console.log('Loading full data with navigation in background...')
+          try {
+            const fullResponse = await fetch(`/api/test/${testId}?mode=full`)
+            if (fullResponse.ok) {
+              const fullData = await fullResponse.json()
+              setTestData(fullData)
+              setTest(numericTestId, fullData)
+              console.log(`Full data loaded: ${fullData.data_points?.length || 0} points, navigation available`)
+            }
+          } catch (err) {
+            console.error('Failed to load full data in background:', err)
+          }
+        } else {
+          console.log('Already have full data with navigation, skipping fetch')
+        }
+        return
+      }
+
+      console.log(`❌ Cache MISS for test ${testId} - fetching...`)
+
       try {
-        const response = await fetch(`/api/test/${testId}`)
+        // Fetch with quick mode first for faster initial load
+        const response = await fetch(`/api/test/${testId}?mode=quick`)
         if (!response.ok) {
           throw new Error('Failed to fetch test data')
         }
         const data = await response.json()
         setTestData(data)
+        setLoading(false)
 
-        // Trigger prefetch of adjacent tests after initial load
-        if (data.navigation) {
-          prefetchAdjacentTests(data.navigation)
+        // Add to cache
+        setTest(numericTestId, data)
+
+        // Fetch full data in background if decimated
+        if (data._metadata?.decimated) {
+          console.log('Loading full data in background...')
+          const fullResponse = await fetch(`/api/test/${testId}?mode=full`)
+          if (fullResponse.ok) {
+            const fullData = await fullResponse.json()
+            setTestData(fullData)
+            setTest(numericTestId, fullData)
+            console.log(`Full data loaded: ${fullData.data_points?.length || 0} points`)
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred')
-      } finally {
         setLoading(false)
       }
     }
@@ -1216,14 +1272,7 @@ export default function TestPage() {
     if (testId) {
       fetchTestData()
     }
-  }, [testId, prefetchAdjacentTests])
-
-  // Clear cache when component unmounts or testId changes
-  useEffect(() => {
-    return () => {
-      clearCache()
-    }
-  }, [testId, clearCache])
+  }, [testId, getTest, setTest])
 
   const updateTestStatus = async (newStatus: string) => {
     if (!testData) return

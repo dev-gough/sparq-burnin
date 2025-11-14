@@ -238,5 +238,6 @@ export class Profiler {
   }
 }
 
-// Export a singleton instance for global use
+// Export class and singleton instance
+export { Profiler };
 export const profiler = new Profiler();

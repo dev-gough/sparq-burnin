@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTimezone } from "@/contexts/TimezoneContext";
+import { useTestDataCache } from "@/contexts/TestDataCacheContext";
 
 import {
   IconChevronLeft,
@@ -264,6 +265,7 @@ export function DataTable({
 }: DataTableProps) {
   const router = useRouter();
   const { formatInTimezone, selectedTimezone } = useTimezone();
+  const { prefetchTests } = useTestDataCache();
   const [data, setData] = React.useState([]);
   const [loading, setLoading] = React.useState(false);
   const [rowSelection, setRowSelection] = React.useState({});
@@ -473,6 +475,23 @@ export function DataTable({
     getFacetedRowModel: getFacetedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
   });
+
+  // Prefetch failed tests when filters change
+  React.useEffect(() => {
+    const filteredRows = table.getFilteredRowModel().rows;
+
+    // Get test IDs of failed tests (status 'FAIL')
+    const failedTestIds = filteredRows
+      .map(row => row.original)
+      .filter(test => test.status === 'FAIL')
+      .map(test => test.test_id)
+      .slice(0, 30); // Limit to first 30 failed tests
+
+    if (failedTestIds.length > 0) {
+      console.log(`Prefetching ${failedTestIds.length} failed tests:`, failedTestIds);
+      prefetchTests(failedTestIds);
+    }
+  }, [columnFilters, data, prefetchTests, table]);
 
   if (loading) {
     return (
