@@ -13,6 +13,7 @@ interface SummaryStats {
   passed: number;
   failed: number;
   failureRate: number;
+  failurePercentageOfTotal?: number;
 }
 
 interface SectionCardsProps {
@@ -108,6 +109,11 @@ export function SectionCards({ chartMode, timeRange, annotationFilter, dateFrom,
           <CardDescription>Failure Rate</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
             {stats?.failureRate ?? 0}%
+            {stats?.failurePercentageOfTotal !== undefined && (
+              <span className="text-lg text-muted-foreground ml-1">
+                ({stats.failurePercentageOfTotal}% of all failures)
+              </span>
+            )}
           </CardTitle>
         </CardHeader>
       </Card>

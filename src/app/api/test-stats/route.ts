@@ -15,6 +15,7 @@ interface SummaryStats {
   passed: number;
   failed: number;
   failureRate: number;
+  failurePercentageOfTotal?: number; // Only present when annotation filter is active - % of total failures
 }
 
 interface TestRecord {
@@ -116,53 +117,136 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      if (summaryChartMode === "recent") {
-        // Count most recent valid test per serial number (excluding INVALID)
-        summaryQuery = `
-          WITH latest_tests AS (
-            SELECT t.*, i.serial_number,
-              ROW_NUMBER() OVER (
-                PARTITION BY i.serial_number
-                ORDER BY t.start_time_utc DESC
-              ) as rn
+      // When annotation filter is applied, we need different logic:
+      // - total and passed should count ALL tests (ignore annotation filter)
+      // - failed should count ONLY failures with that annotation
+      // - failureRate = (filtered failures) / (all tests)
+      // - failurePercentageOfTotal = (filtered failures) / (all failures) - shown in brackets
+
+      let total: number, passed: number, failed: number, totalFailed: number | undefined;
+
+      if (summaryAnnotationFilter && summaryAnnotationFilter !== 'all') {
+        // Annotation filter is active - use split query approach
+
+        // Query 1: Get total, passed, and ALL failed counts WITHOUT annotation filter
+        let totalPassedQuery: string;
+        if (summaryChartMode === "recent") {
+          totalPassedQuery = `
+            WITH latest_tests AS (
+              SELECT t.*, i.serial_number,
+                ROW_NUMBER() OVER (
+                  PARTITION BY i.serial_number
+                  ORDER BY t.start_time_utc DESC
+                ) as rn
+              FROM Tests t
+              JOIN Inverters i ON t.inv_id = i.inv_id
+              WHERE t.overall_status != 'INVALID' ${timeFilter}
+            )
+            SELECT
+              COUNT(*) as total,
+              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
+              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as total_failed
+            FROM latest_tests
+            WHERE rn = 1
+          `;
+        } else {
+          totalPassedQuery = `
+            SELECT
+              COUNT(*) as total,
+              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
+              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as total_failed
+            FROM Tests t
+            JOIN Inverters i ON t.inv_id = i.inv_id
+            WHERE t.overall_status != 'INVALID' ${timeFilter}
+          `;
+        }
+
+        const totalPassedResult = timeParams.length > 0
+          ? await client.query(totalPassedQuery, timeParams)
+          : await client.query(totalPassedQuery);
+
+        total = parseInt(totalPassedResult.rows[0].total) || 0;
+        passed = parseInt(totalPassedResult.rows[0].passed) || 0;
+        totalFailed = parseInt(totalPassedResult.rows[0].total_failed) || 0;
+
+        // Query 2: Get failed count WITH annotation filter
+        let failedQuery: string;
+        if (summaryChartMode === "recent") {
+          // For "Most Recent" mode: First get most recent tests, THEN filter by annotation
+          failedQuery = `
+            WITH latest_tests AS (
+              SELECT t.test_id, t.overall_status, i.serial_number,
+                ROW_NUMBER() OVER (
+                  PARTITION BY i.serial_number
+                  ORDER BY t.start_time_utc DESC
+                ) as rn
+              FROM Tests t
+              JOIN Inverters i ON t.inv_id = i.inv_id
+              WHERE t.overall_status != 'INVALID' ${timeFilter}
+            )
+            SELECT
+              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
+            FROM latest_tests
+            WHERE rn = 1
+              ${summaryAnnotationFilterClause.replace('t.test_id', 'latest_tests.test_id')}
+          `;
+        } else {
+          failedQuery = `
+            SELECT
+              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
             FROM Tests t
             JOIN Inverters i ON t.inv_id = i.inv_id
             WHERE t.overall_status != 'INVALID' ${timeFilter} ${summaryAnnotationFilterClause}
-          )
-          SELECT
-            COUNT(*) as total,
-            COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
-            COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
-          FROM latest_tests
-          WHERE rn = 1
-        `;
+          `;
+        }
+
+        const failedParams = [...timeParams, summaryFilterValue!];
+        const failedResult = await client.query(failedQuery, failedParams);
+        failed = parseInt(failedResult.rows[0].failed) || 0;
+
       } else {
-        // Count all tests
-        summaryQuery = `
-          SELECT
-            COUNT(*) as total,
-            COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
-            COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
-          FROM Tests t
-          JOIN Inverters i ON t.inv_id = i.inv_id
-          WHERE t.overall_status != 'INVALID' ${timeFilter} ${summaryAnnotationFilterClause}
-        `;
+        // No annotation filter - use original single query approach
+        if (summaryChartMode === "recent") {
+          summaryQuery = `
+            WITH latest_tests AS (
+              SELECT t.*, i.serial_number,
+                ROW_NUMBER() OVER (
+                  PARTITION BY i.serial_number
+                  ORDER BY t.start_time_utc DESC
+                ) as rn
+              FROM Tests t
+              JOIN Inverters i ON t.inv_id = i.inv_id
+              WHERE t.overall_status != 'INVALID' ${timeFilter}
+            )
+            SELECT
+              COUNT(*) as total,
+              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
+              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
+            FROM latest_tests
+            WHERE rn = 1
+          `;
+        } else {
+          summaryQuery = `
+            SELECT
+              COUNT(*) as total,
+              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
+              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
+            FROM Tests t
+            JOIN Inverters i ON t.inv_id = i.inv_id
+            WHERE t.overall_status != 'INVALID' ${timeFilter}
+          `;
+        }
+
+        const summaryResult = timeParams.length > 0
+          ? await client.query(summaryQuery, timeParams)
+          : await client.query(summaryQuery);
+        const row = summaryResult.rows[0];
+
+        total = parseInt(row.total) || 0;
+        passed = parseInt(row.passed) || 0;
+        failed = parseInt(row.failed) || 0;
       }
 
-      // Build final params array combining time and annotation filters
-      const summaryParams = [...timeParams];
-      if (summaryAnnotationFilter && summaryAnnotationFilter !== 'all') {
-        summaryParams.push(summaryFilterValue!);
-      }
-
-      const summaryResult = summaryParams.length > 0
-        ? await client.query(summaryQuery, summaryParams)
-        : await client.query(summaryQuery);
-      const row = summaryResult.rows[0];
-
-      const total = parseInt(row.total) || 0;
-      const passed = parseInt(row.passed) || 0;
-      const failed = parseInt(row.failed) || 0;
       const failureRate = total > 0 ? (failed / total) * 100 : 0;
 
       const summaryStats: SummaryStats = {
@@ -171,6 +255,12 @@ export async function GET(request: NextRequest) {
         failed,
         failureRate: Math.round(failureRate * 100) / 100,
       };
+
+      // Add percentage of total failures if annotation filter is active
+      if (totalFailed !== undefined && totalFailed > 0) {
+        const failurePercentageOfTotal = (failed / totalFailed) * 100;
+        summaryStats.failurePercentageOfTotal = Math.round(failurePercentageOfTotal * 100) / 100;
+      }
 
       return NextResponse.json(summaryStats);
     }

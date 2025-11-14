@@ -22,7 +22,7 @@ export function SiteHeader() {
           <TimezoneSelector />
           <Button variant="ghost" asChild size="sm" className="hidden sm:flex">
             <a
-              href="http://git.labserver.local/devy/burnin-dashboard"
+              href="https://github.com/dev-gough/sparq-burnin"
               rel="noopener noreferrer"
               target="_blank"
               className="dark:text-foreground"
