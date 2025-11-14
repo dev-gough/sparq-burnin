@@ -496,6 +496,12 @@ function FullScreenChart({
       lineStyle: { width: 2, color: colors[index % colors.length] },
       itemStyle: { color: colors[index % colors.length] },
       connectNulls: false,
+      // Progressive rendering for large datasets
+      progressive: 1000,
+      progressiveThreshold: 3000,
+      progressiveChunkMode: 'sequential' as const,
+      // Data sampling for better performance when zoomed out
+      sampling: 'lttb' as const,
     }))
 
     return {
@@ -868,6 +874,12 @@ function ConfigurableChart({
       lineStyle: { width: 2, color: colors[index % colors.length] },
       itemStyle: { color: colors[index % colors.length] },
       connectNulls: false,
+      // Progressive rendering for large datasets
+      progressive: 1000,
+      progressiveThreshold: 3000,
+      progressiveChunkMode: 'sequential' as const,
+      // Data sampling for better performance when zoomed out
+      sampling: 'lttb' as const,
     }))
 
     return {

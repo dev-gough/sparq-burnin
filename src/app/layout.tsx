@@ -4,6 +4,7 @@ import "./globals.css";
 import { TimezoneProvider } from "@/contexts/TimezoneContext";
 import { SessionProvider } from "@/components/providers/session-provider";
 import { TestDataCacheProvider } from "@/contexts/TestDataCacheContext";
+import { AnnotationCacheProvider } from "@/contexts/AnnotationCacheContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -34,7 +35,9 @@ export default function RootLayout({
         <SessionProvider>
           <TimezoneProvider>
             <TestDataCacheProvider>
-              {children}
+              <AnnotationCacheProvider>
+                {children}
+              </AnnotationCacheProvider>
             </TestDataCacheProvider>
           </TimezoneProvider>
         </SessionProvider>

@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Plus, MessageSquare, Edit2, Trash2, Check, X } from 'lucide-react'
 import { useTimezone } from '@/contexts/TimezoneContext'
+import { useAnnotationCache, type AnnotationQuickOption } from '@/contexts/AnnotationCacheContext'
 
 interface Annotation {
   annotation_id: number
@@ -23,24 +24,6 @@ interface Annotation {
   current_test_id?: number
 }
 
-interface QuickOption {
-  option_id: number
-  option_text: string
-  group_name: string | null
-  group_color: string | null
-  display_order: number
-  is_active: boolean
-  created_at: string
-}
-
-interface AnnotationGroup {
-  group_id: number
-  group_name: string
-  group_color: string
-  display_order: number
-  created_at: string
-}
-
 interface TestAnnotationsProps {
   testId: number
   serialNumber: string
@@ -49,10 +32,8 @@ interface TestAnnotationsProps {
 
 export default function TestAnnotations({ testId, serialNumber }: TestAnnotationsProps) {
   const [annotations, setAnnotations] = useState<Annotation[]>([])
-  const [quickOptions, setQuickOptions] = useState<QuickOption[]>([])
-  const [groups, setGroups] = useState<AnnotationGroup[]>([])
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
-  const [loading, setLoading] = useState(true)
+  const [annotationsLoading, setAnnotationsLoading] = useState(true)
   const [showCustomForm, setShowCustomForm] = useState(false)
   const [customText, setCustomText] = useState('')
   const [newOptionText, setNewOptionText] = useState('')
@@ -62,6 +43,7 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editText, setEditText] = useState('')
   const { formatInTimezone } = useTimezone()
+  const { quickOptions, groups, refetchOptions, refetchGroups } = useAnnotationCache()
 
   const fetchAnnotations = useCallback(async () => {
     try {
@@ -75,38 +57,14 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
     }
   }, [testId])
 
-  const fetchQuickOptions = useCallback(async () => {
-    try {
-      const response = await fetch('/api/annotation-quick-options')
-      if (response.ok) {
-        const data = await response.json()
-        setQuickOptions(data)
-      }
-    } catch (error) {
-      console.error('Failed to fetch quick options:', error)
-    }
-  }, [])
-
-  const fetchGroups = useCallback(async () => {
-    try {
-      const response = await fetch('/api/annotation-groups')
-      if (response.ok) {
-        const data = await response.json()
-        setGroups(data)
-      }
-    } catch (error) {
-      console.error('Failed to fetch groups:', error)
-    }
-  }, [])
-
   useEffect(() => {
     const loadData = async () => {
-      setLoading(true)
-      await Promise.all([fetchAnnotations(), fetchQuickOptions(), fetchGroups()])
-      setLoading(false)
+      setAnnotationsLoading(true)
+      await fetchAnnotations()
+      setAnnotationsLoading(false)
     }
     loadData()
-  }, [fetchAnnotations, fetchQuickOptions, fetchGroups])
+  }, [fetchAnnotations])
 
   const addQuickAnnotation = async (optionText: string) => {
     try {
@@ -210,7 +168,7 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
       if (response.ok) {
         setNewOptionText('')
         setNewOptionGroup('')
-        await fetchQuickOptions()
+        await refetchOptions()
       } else {
         const errorData = await response.json()
         if (response.status === 409) {
@@ -239,7 +197,7 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
       if (response.ok) {
         setNewGroupName('')
         setShowNewGroupForm(false)
-        await fetchGroups()
+        await refetchGroups()
       } else {
         const errorData = await response.json()
         if (response.status === 409) {
@@ -286,7 +244,7 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
     }
     acc[key].push(option)
     return acc
-  }, {} as Record<string, QuickOption[]>)
+  }, {} as Record<string, AnnotationQuickOption[]>)
 
   const startEdit = (annotation: Annotation) => {
     setEditingId(annotation.annotation_id)
@@ -296,24 +254,6 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
   const cancelEdit = () => {
     setEditingId(null)
     setEditText('')
-  }
-
-  if (loading) {
-    return (
-      <Card className="w-80 h-full">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <MessageSquare className="h-5 w-5" />
-            Test Annotations
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center text-sm text-muted-foreground py-8">
-            Loading annotations...
-          </div>
-        </CardContent>
-      </Card>
-    )
   }
 
   return (
@@ -530,7 +470,11 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
 
         {/* Existing Annotations */}
         <div className="space-y-3">
-          {annotations.length === 0 ? (
+          {annotationsLoading ? (
+            <div className="text-center text-sm text-muted-foreground py-4">
+              Loading annotations...
+            </div>
+          ) : annotations.length === 0 ? (
             <div className="text-center text-sm text-muted-foreground py-4">
               No annotations yet
             </div>

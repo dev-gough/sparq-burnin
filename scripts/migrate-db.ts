@@ -300,6 +300,27 @@ const migrations: Migration[] = [
       END
       $$;
     `
+  },
+  {
+    id: '009',
+    name: 'add_testdata_test_id_index',
+    sql: `
+      -- Add index on TestData.test_id for faster lookups
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_indexes
+          WHERE tablename = 'testdata' AND indexname = 'idx_testdata_test_id'
+        ) THEN
+          CREATE INDEX idx_testdata_test_id ON TestData(test_id);
+
+          RAISE NOTICE 'Created index idx_testdata_test_id on TestData(test_id)';
+        ELSE
+          RAISE NOTICE 'Index idx_testdata_test_id already exists, skipping';
+        END IF;
+      END
+      $$;
+    `
   }
 ];
 

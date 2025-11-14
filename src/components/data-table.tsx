@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTimezone } from "@/contexts/TimezoneContext";
 import { useTestDataCache } from "@/contexts/TestDataCacheContext";
+import { useAnnotationCache } from "@/contexts/AnnotationCacheContext";
 
 import {
   IconChevronLeft,
@@ -266,6 +267,7 @@ export function DataTable({
   const router = useRouter();
   const { formatInTimezone, selectedTimezone } = useTimezone();
   const { prefetchTests } = useTestDataCache();
+  const { quickOptions: cachedQuickOptions, groups: cachedGroups } = useAnnotationCache();
   const [data, setData] = React.useState([]);
   const [loading, setLoading] = React.useState(false);
   const [rowSelection, setRowSelection] = React.useState({});
@@ -324,11 +326,9 @@ export function DataTable({
           params.append("annotation", annotationFilter);
         }
 
-        const [testsResponse, firmwareResponse, groupsResponse, quickOptionsResponse] = await Promise.all([
+        const [testsResponse, firmwareResponse] = await Promise.all([
           fetch(`/api/test-stats?${params}`),
           fetch("/api/test-stats?view=firmware-versions"),
-          fetch("/api/annotation-groups"),
-          fetch("/api/annotation-quick-options"),
         ]);
 
         if (testsResponse.ok) {
@@ -340,35 +340,6 @@ export function DataTable({
           const versions = await firmwareResponse.json();
           setFirmwareVersions(versions);
         }
-
-        if (groupsResponse.ok && quickOptionsResponse.ok) {
-          const groups = await groupsResponse.json() as Array<{ group_name: string; group_color: string }>;
-          const options = await quickOptionsResponse.json() as Array<{ group_name: string | null; option_text: string }>;
-
-          // Group options by group_name
-          const grouped = groups.map((group) => ({
-            group_name: group.group_name,
-            group_color: group.group_color,
-            options: options
-              .filter((opt) => opt.group_name === group.group_name)
-              .map((opt) => opt.option_text)
-          }));
-
-          // Add ungrouped options
-          const ungroupedOptions = options
-            .filter((opt) => !opt.group_name)
-            .map((opt) => opt.option_text);
-
-          if (ungroupedOptions.length > 0) {
-            grouped.push({
-              group_name: 'Ungrouped',
-              group_color: '#6b7280',
-              options: ungroupedOptions
-            });
-          }
-
-          setAnnotationGroups(grouped);
-        }
       } catch (error) {
         console.error("Failed to fetch data:", error);
       } finally {
@@ -378,6 +349,35 @@ export function DataTable({
 
     fetchData();
   }, [latestOnly, annotationFilter]);
+
+  // Build annotation groups from cached data
+  React.useEffect(() => {
+    if (cachedGroups.length > 0 && cachedQuickOptions.length > 0) {
+      // Group options by group_name
+      const grouped = cachedGroups.map((group) => ({
+        group_name: group.group_name,
+        group_color: group.group_color,
+        options: cachedQuickOptions
+          .filter((opt) => opt.group_name === group.group_name)
+          .map((opt) => opt.option_text)
+      }));
+
+      // Add ungrouped options
+      const ungroupedOptions = cachedQuickOptions
+        .filter((opt) => !opt.group_name)
+        .map((opt) => opt.option_text);
+
+      if (ungroupedOptions.length > 0) {
+        grouped.push({
+          group_name: 'Ungrouped',
+          group_color: '#6b7280',
+          options: ungroupedOptions
+        });
+      }
+
+      setAnnotationGroups(grouped);
+    }
+  }, [cachedGroups, cachedQuickOptions]);
 
   // Apply selectedDate from chart click to date filters
   React.useEffect(() => {
