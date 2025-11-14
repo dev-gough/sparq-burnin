@@ -43,6 +43,12 @@ interface DataPoint {
   status_bits?: string;
 }
 
+interface FailureInfo {
+  test_id: number;
+  serial_number: string;
+  start_time: string;
+}
+
 interface TestData {
   test_id: number;
   inv_id: number;
@@ -53,6 +59,12 @@ interface TestData {
   overall_status: string;
   failure_description?: string;
   data_points: DataPoint[];
+  navigation?: {
+    previous_failed_test?: FailureInfo;
+    next_failed_test?: FailureInfo;
+    current_failure_index?: number;
+    total_failed_tests: number;
+  };
   _metadata?: {
     mode: string;
     total_points: number;

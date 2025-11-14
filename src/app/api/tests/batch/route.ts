@@ -246,14 +246,18 @@ export async function GET(request: NextRequest) {
           overall_status: metadata.overall_status,
           failure_description: metadata.failure_description,
           data_points: dataPoints.map(row => {
-            const point = { ...row };
+            const point = { ...row } as Record<string, unknown>;
             if (point.timestamp) {
-              point.timestamp = point.timestamp.toISOString();
+              // Handle both Date objects and strings
+              const timestamp = point.timestamp;
+              point.timestamp = timestamp instanceof Date
+                ? timestamp.toISOString()
+                : String(timestamp);
             }
             // Remove internal fields
             delete point.total_rows;
             delete point.rn;
-            return point;
+            return point as unknown as DataPoint;
           }),
           _metadata: {
             mode,

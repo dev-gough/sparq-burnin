@@ -499,7 +499,7 @@ function FullScreenChart({
       // Progressive rendering for large datasets
       progressive: 1000,
       progressiveThreshold: 3000,
-      progressiveChunkMode: 'sequential' as const,
+      progressiveChunkMode: 'mod' as const,
       // Data sampling for better performance when zoomed out
       sampling: 'lttb' as const,
     }))
@@ -877,7 +877,7 @@ function ConfigurableChart({
       // Progressive rendering for large datasets
       progressive: 1000,
       progressiveThreshold: 3000,
-      progressiveChunkMode: 'sequential' as const,
+      progressiveChunkMode: 'mod' as const,
       // Data sampling for better performance when zoomed out
       sampling: 'lttb' as const,
     }))
