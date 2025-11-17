@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from 'pg';
-import { getDatabaseConfig } from '@/lib/config';
+import { getDatabaseConfig, isProfilingEnabled } from '@/lib/config';
 import { requireAuth } from '@/lib/auth-check';
 import { Profiler } from '../../../../../scripts/profiler';
 
@@ -65,7 +65,7 @@ interface TestDataBatch {
 }
 
 export async function GET(request: NextRequest) {
-  const profiler = new Profiler();
+  const profiler = new Profiler(isProfilingEnabled());
   profiler.start('batch_request');
 
   const { error: authError } = await requireAuth();
@@ -274,8 +274,11 @@ export async function GET(request: NextRequest) {
 
     profiler.stop('batch_request');
 
-    console.log(`\n[API /api/tests/batch] Performance Profile (${testIds.length} tests, mode: ${mode}):`);
-    profiler.printSummary();
+    // Log profiling results to server console (only if profiling is enabled)
+    if (isProfilingEnabled()) {
+      console.log(`\n[API /api/tests/batch] Performance Profile (${testIds.length} tests, mode: ${mode}):`);
+      profiler.printSummary();
+    }
 
     return NextResponse.json(result);
   } catch (error) {

@@ -21,6 +21,7 @@ export interface Config {
     max_log_size_mb: number;
     log_backup_count: number;
     debug_firmware_version: string;
+    enable_profiling: boolean;
     timeout: {
       cleanup: number;
       ingestion: number;
@@ -87,4 +88,14 @@ export function getDatabaseConfig() {
     user: config.database.user,
     password: config.database.password,
   };
+}
+
+export function isProfilingEnabled(): boolean {
+  try {
+    const config = loadConfig();
+    return config.settings.enable_profiling ?? false;
+  } catch {
+    // If config fails to load, default to disabled
+    return false;
+  }
 }

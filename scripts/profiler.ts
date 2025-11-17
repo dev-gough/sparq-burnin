@@ -14,15 +14,19 @@ export class Profiler {
   private entries: Map<string, ProfileEntry[]> = new Map();
   private activeTimers: Map<string, number> = new Map();
   private globalStart: number;
+  private enabled: boolean;
 
-  constructor() {
+  constructor(enabled: boolean = true) {
     this.globalStart = Date.now();
+    this.enabled = enabled;
   }
 
   /**
    * Start timing an operation
    */
   start(name: string, metadata?: Record<string, any>): void {
+    if (!this.enabled) return;
+
     const startTime = Date.now();
     this.activeTimers.set(name, startTime);
 
@@ -41,6 +45,8 @@ export class Profiler {
    * Stop timing an operation
    */
   stop(name: string): number | null {
+    if (!this.enabled) return null;
+
     const endTime = Date.now();
     const startTime = this.activeTimers.get(name);
 
@@ -67,6 +73,10 @@ export class Profiler {
    * Time an async operation
    */
   async time<T>(name: string, fn: () => Promise<T>, metadata?: Record<string, any>): Promise<T> {
+    if (!this.enabled) {
+      return await fn();
+    }
+
     this.start(name, metadata);
     try {
       const result = await fn();
@@ -82,6 +92,10 @@ export class Profiler {
    * Time a synchronous operation
    */
   timeSync<T>(name: string, fn: () => T, metadata?: Record<string, any>): T {
+    if (!this.enabled) {
+      return fn();
+    }
+
     this.start(name, metadata);
     try {
       const result = fn();
@@ -157,6 +171,8 @@ export class Profiler {
    * Print a summary report
    */
   printSummary(): void {
+    if (!this.enabled) return;
+
     const totalTime = Date.now() - this.globalStart;
 
     console.log('\n' + '='.repeat(80));
@@ -239,4 +255,6 @@ export class Profiler {
 }
 
 // Export singleton instance
+// Note: This singleton is created with profiling enabled by default
+// Scripts should check isProfilingEnabled() from config and create their own instance if needed
 export const profiler = new Profiler();

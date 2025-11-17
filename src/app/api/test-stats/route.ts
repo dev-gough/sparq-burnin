@@ -306,9 +306,22 @@ export async function GET(request: NextRequest) {
           SELECT
             lt.test_id, lt.inv_id, lt.serial_number, lt.firmware_version, lt.duration,
             lt.non_zero_status_flags, lt.status, lt.failure_reason, lt.start_time,
-            STRING_AGG(DISTINCT ta.annotation_text, '; ' ORDER BY ta.annotation_text) as annotations
+            STRING_AGG(
+              DISTINCT
+              CASE
+                WHEN aqo.group_name = 'Setup Issue' THEN 'Setup Issue - ' || ta.annotation_text
+                ELSE ta.annotation_text
+              END,
+              '; '
+              ORDER BY
+                CASE
+                  WHEN aqo.group_name = 'Setup Issue' THEN 'Setup Issue - ' || ta.annotation_text
+                  ELSE ta.annotation_text
+                END
+            ) as annotations
           FROM latest_tests lt
           LEFT JOIN TestAnnotations ta ON lt.test_id = ta.current_test_id
+          LEFT JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
           WHERE lt.rn = 1
             ${annotationFilter && annotationFilter !== 'all' ? (
               isGroupFilter ? `
@@ -348,10 +361,23 @@ export async function GET(request: NextRequest) {
             t.overall_status as status,
             t.failure_description as failure_reason,
             t.start_time_utc as start_time,
-            STRING_AGG(DISTINCT ta.annotation_text, '; ' ORDER BY ta.annotation_text) as annotations
+            STRING_AGG(
+              DISTINCT
+              CASE
+                WHEN aqo.group_name = 'Setup Issue' THEN 'Setup Issue - ' || ta.annotation_text
+                ELSE ta.annotation_text
+              END,
+              '; '
+              ORDER BY
+                CASE
+                  WHEN aqo.group_name = 'Setup Issue' THEN 'Setup Issue - ' || ta.annotation_text
+                  ELSE ta.annotation_text
+                END
+            ) as annotations
           FROM Tests t
           JOIN Inverters i ON t.inv_id = i.inv_id
           LEFT JOIN TestAnnotations ta ON t.test_id = ta.current_test_id
+          LEFT JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
           ${annotationFilter && annotationFilter !== 'all' ? (
             isGroupFilter ? `
           WHERE EXISTS (

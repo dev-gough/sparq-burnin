@@ -9,9 +9,9 @@ import { toZonedTime } from 'date-fns-tz';
 import { Readable } from 'stream';
 import copyFrom from 'pg-copy-streams';
 
-import { loadConfig, type Config } from '../src/lib/config';
+import { loadConfig, type Config, isProfilingEnabled } from '../src/lib/config';
 import { runMigrations } from './migrate-db';
-import { profiler } from './profiler';
+import { Profiler } from './profiler';
 
 // CSV data interfaces for raw parsed data
 interface TestDataCsvRow {
@@ -95,9 +95,11 @@ class CSVIngester {
   private readonly toProcessPath: string;
   private readonly processedPath: string;
   private usedFilesCache: Set<string> = new Set();
+  private profiler: Profiler;
 
   constructor() {
     this.config = loadConfig();
+    this.profiler = new Profiler(isProfilingEnabled());
 
     this.client = new Client({
       host: this.config.database.host,
@@ -113,7 +115,7 @@ class CSVIngester {
 
   async connect(): Promise<void> {
     try {
-      await profiler.time('db_connect', async () => {
+      await this.profiler.time('db_connect', async () => {
         await this.client.connect();
       });
       console.log('Connected to PostgreSQL database');
@@ -124,7 +126,7 @@ class CSVIngester {
   }
 
   async loadUsedFilesCache(): Promise<void> {
-    await profiler.time('load_used_files_cache', async () => {
+    await this.profiler.time('load_used_files_cache', async () => {
       console.log('📦 Loading used files cache from database...');
 
       const query = `
@@ -147,7 +149,7 @@ class CSVIngester {
   }
 
   async ensureInverter(serialNumber: string): Promise<number> {
-    return await profiler.time('db_ensure_inverter', async () => {
+    return await this.profiler.time('db_ensure_inverter', async () => {
       const query = `
         INSERT INTO Inverters (serial_number)
         VALUES ($1)
@@ -171,7 +173,7 @@ class CSVIngester {
   async insertTestDataBatch(rows: TestDataCsvRow[], testId: number, sourceFile: string): Promise<void> {
     if (rows.length === 0) return;
 
-    return await profiler.time('db_insert_test_data_batch', async () => {
+    return await this.profiler.time('db_insert_test_data_batch', async () => {
       // Use PostgreSQL COPY for much faster bulk inserts
       // COPY is 5-10x faster than INSERT for bulk data
 
@@ -377,7 +379,7 @@ class CSVIngester {
   }
 
   async moveFile(sourcePath: string, destinationDir: string): Promise<void> {
-    await profiler.time('file_move', async () => {
+    await this.profiler.time('file_move', async () => {
       const fileName = path.basename(sourcePath);
       const destinationPath = path.join(destinationDir, fileName);
 
@@ -393,7 +395,7 @@ class CSVIngester {
     console.log(`Processing results CSV: ${filePath}`);
     const testIds: number[] = [];
 
-    return profiler.time('process_results_csv', () => new Promise<number[]>((resolve, reject) => {
+    return this.profiler.time('process_results_csv', () => new Promise<number[]>((resolve, reject) => {
       const tests: TestResultsCsvRow[] = [];
 
       createReadStream(filePath)
@@ -562,7 +564,7 @@ class CSVIngester {
   async processTestDataCSV(filePath: string, testId: number): Promise<void> {
     console.log(`Processing test data CSV: ${filePath} for test_id: ${testId}`);
 
-    return profiler.time('process_test_data_csv', () => new Promise<void>((resolve, reject) => {
+    return this.profiler.time('process_test_data_csv', () => new Promise<void>((resolve, reject) => {
       const dataRows: TestDataCsvRow[] = [];
       let rowCount = 0;
 
@@ -671,7 +673,7 @@ class CSVIngester {
   }
 
   private async findExactTestFileMatch(filenameWithSeconds: string, filenameWithoutSeconds: string): Promise<string | null> {
-    return await profiler.time('find_exact_match', async () => {
+    return await this.profiler.time('find_exact_match', async () => {
       const testsDir = path.join(this.toProcessPath, 'tests');
 
       // First try: exact match with seconds
@@ -754,7 +756,7 @@ class CSVIngester {
   }
 
   private async findClosestTestFile(serialNumber: string, targetTime: Date): Promise<{ filePath: string | null; timeDelta: number | null }> {
-    return await profiler.time('find_closest_match', async () => {
+    return await this.profiler.time('find_closest_match', async () => {
       const testFiles = await this.findTestFilesForSerial(serialNumber);
 
       if (testFiles.length === 0) {
@@ -805,7 +807,7 @@ class CSVIngester {
   async relinkAnnotations(): Promise<void> {
     console.log('🔗 Re-linking annotations to new test IDs...');
 
-    await profiler.time('db_relink_annotations', async () => {
+    await this.profiler.time('db_relink_annotations', async () => {
       const query = `
         UPDATE TestAnnotations
         SET
@@ -831,8 +833,8 @@ class CSVIngester {
     await this.loadUsedFilesCache();
 
     // Find all results files
-    profiler.start('overall_ingestion');
-    const resultsFiles = await profiler.time('find_all_results_files', async () => {
+    this.profiler.start('overall_ingestion');
+    const resultsFiles = await this.profiler.time('find_all_results_files', async () => {
       return await this.findAllResultsFiles();
     });
     console.log(`Found ${resultsFiles.length} results files to process`);
@@ -968,8 +970,8 @@ class CSVIngester {
     // Re-link annotations after processing all files
     await this.relinkAnnotations();
 
-    profiler.stop('overall_ingestion');
-    profiler.printSummary();
+    this.profiler.stop('overall_ingestion');
+    this.profiler.printSummary();
   }
 }
 

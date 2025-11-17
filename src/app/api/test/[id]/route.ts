@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from 'pg';
-import { getDatabaseConfig } from '@/lib/config';
+import { getDatabaseConfig, isProfilingEnabled } from '@/lib/config';
 import { requireAuth } from '@/lib/auth-check';
 import { Profiler } from '../../../../../scripts/profiler';
 
@@ -74,7 +74,7 @@ export async function GET(
   props: { params: Promise<{ id: string }> }
 ) {
   const params = await props.params;
-  const profiler = new Profiler();
+  const profiler = new Profiler(isProfilingEnabled());
 
   profiler.start('total_request');
 
@@ -301,9 +301,11 @@ export async function GET(
 
     profiler.stop('total_request');
 
-    // Log profiling results to server console
-    console.log(`\n[API /api/test/${testId}] Performance Profile (mode: ${mode}):`);
-    profiler.printSummary();
+    // Log profiling results to server console (only if profiling is enabled)
+    if (isProfilingEnabled()) {
+      console.log(`\n[API /api/test/${testId}] Performance Profile (mode: ${mode}):`);
+      profiler.printSummary();
+    }
 
     // Add metadata about decimation to response
     const responseWithMetadata = {

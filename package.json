@@ -9,6 +9,7 @@
     "lint": "next lint",
     "ingest": "tsx scripts/ingest.ts",
     "ingest-excel": "tsx scripts/ingest-excel-annotations.ts",
+    "ingest-csv-annotations": "tsx scripts/ingest-csv-annotations.ts",
     "reprocess": "tsx scripts/reprocess.ts",
     "clean": "tsx scripts/cleanup-debug-firmware.ts",
     "migrate": "tsx scripts/migrate-db.ts",
