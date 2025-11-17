@@ -1,29 +1,11 @@
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-export default auth((req) => {
-  const isAuthenticated = !!req.auth;
-  const { pathname } = req.nextUrl;
+// Check if authentication should be skipped (for local development)
+const shouldSkipAuth = process.env.SKIP_AUTH === 'true';
 
-  // Allow access to auth pages and API routes
-  if (
-    pathname.startsWith("/api/auth") ||
-    pathname.startsWith("/auth/")
-  ) {
-    return NextResponse.next();
-  }
-
-  // Redirect unauthenticated users to sign-in page
-  if (!isAuthenticated) {
-    const signInUrl = new URL("/auth/signin", req.url);
-    signInUrl.searchParams.set("callbackUrl", pathname);
-    return NextResponse.redirect(signInUrl);
-  }
-
-  // Allow authenticated users to proceed with security headers
-  const response = NextResponse.next();
-
-  // Add security headers
+function addSecurityHeaders(response: NextResponse) {
   const headers = response.headers;
 
   // HSTS - only in production (requires HTTPS)
@@ -47,7 +29,42 @@ export default auth((req) => {
   headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
 
   return response;
-});
+}
+
+// Middleware handler that conditionally applies authentication
+export default function middleware(req: NextRequest) {
+  // If auth is disabled (local dev), just add security headers and continue
+  if (shouldSkipAuth) {
+    console.log('[Middleware] SKIP_AUTH enabled - bypassing authentication');
+    const response = NextResponse.next();
+    return addSecurityHeaders(response);
+  }
+
+  // Otherwise, use NextAuth authentication
+  return auth((req) => {
+    const isAuthenticated = !!req.auth;
+    const { pathname } = req.nextUrl;
+
+    // Allow access to auth pages and API routes
+    if (
+      pathname.startsWith("/api/auth") ||
+      pathname.startsWith("/auth/")
+    ) {
+      return NextResponse.next();
+    }
+
+    // Redirect unauthenticated users to sign-in page
+    if (!isAuthenticated) {
+      const signInUrl = new URL("/auth/signin", req.url);
+      signInUrl.searchParams.set("callbackUrl", pathname);
+      return NextResponse.redirect(signInUrl);
+    }
+
+    // Allow authenticated users to proceed with security headers
+    const response = NextResponse.next();
+    return addSecurityHeaders(response);
+  })(req);
+}
 
 export const config = {
   matcher: [
