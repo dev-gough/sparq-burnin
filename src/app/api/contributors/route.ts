@@ -91,18 +91,54 @@ export async function GET() {
       SELECT
         COALESCE(ta.created_by, 'Anonymous') as contributor_name,
         COALESCE(aqo.group_name, 'Other') as group_name,
+        ag.group_color,
         COUNT(*) as count
       FROM TestAnnotations ta
       LEFT JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
+      LEFT JOIN AnnotationGroups ag ON aqo.group_name = ag.group_name
       WHERE ta.current_test_id IS NOT NULL
-      GROUP BY ta.created_by, aqo.group_name
+      GROUP BY ta.created_by, aqo.group_name, ag.group_color
       ORDER BY contributor_name, count DESC
     `;
 
     const groupsResult = await client.query(groupsQuery);
 
+    // Get detailed annotation categories for each contributor and group
+    const categoriesQuery = `
+      SELECT
+        COALESCE(ta.created_by, 'Anonymous') as contributor_name,
+        COALESCE(aqo.group_name, 'Other') as group_name,
+        ta.annotation_text as category_name,
+        COUNT(*) as count
+      FROM TestAnnotations ta
+      LEFT JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
+      WHERE ta.current_test_id IS NOT NULL
+      GROUP BY ta.created_by, aqo.group_name, ta.annotation_text
+      ORDER BY contributor_name, group_name, count DESC
+    `;
+
+    const categoriesResult = await client.query(categoriesQuery);
+
+    // Organize categories by contributor and group
+    const categoriesByContributorGroup: Record<string, Record<string, { category_name: string; count: number }[]>> = {};
+    categoriesResult.rows.forEach((row) => {
+      const key = row.contributor_name;
+      const groupKey = row.group_name;
+
+      if (!categoriesByContributorGroup[key]) {
+        categoriesByContributorGroup[key] = {};
+      }
+      if (!categoriesByContributorGroup[key][groupKey]) {
+        categoriesByContributorGroup[key][groupKey] = [];
+      }
+      categoriesByContributorGroup[key][groupKey].push({
+        category_name: row.category_name,
+        count: parseInt(row.count),
+      });
+    });
+
     // Organize groups by contributor
-    const groupsByContributor: Record<string, { group_name: string; count: number }[]> = {};
+    const groupsByContributor: Record<string, { group_name: string; count: number; group_color: string | null; categories: { category_name: string; count: number }[] }[]> = {};
     groupsResult.rows.forEach((row) => {
       if (!groupsByContributor[row.contributor_name]) {
         groupsByContributor[row.contributor_name] = [];
@@ -110,6 +146,8 @@ export async function GET() {
       groupsByContributor[row.contributor_name].push({
         group_name: row.group_name,
         count: parseInt(row.count),
+        group_color: row.group_color,
+        categories: categoriesByContributorGroup[row.contributor_name]?.[row.group_name] || [],
       });
     });
 

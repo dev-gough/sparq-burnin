@@ -1318,7 +1318,7 @@ export default function TestPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="ml-10 px-6 py-6 pr-6">
         <div className="flex items-center justify-center h-64">
           <div className="text-muted-foreground">Loading test data...</div>
         </div>
@@ -1328,7 +1328,7 @@ export default function TestPage() {
 
   if (error) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="ml-10 px-6 py-6 pr-6">
         <div className="flex items-center justify-center h-64">
           <div className="text-red-500">Error: {error}</div>
         </div>
@@ -1338,7 +1338,7 @@ export default function TestPage() {
 
   if (!testData) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="ml-10 px-6 py-6 pr-6">
         <div className="flex items-center justify-center h-64">
           <div className="text-muted-foreground">No test data found</div>
         </div>
@@ -1399,7 +1399,7 @@ export default function TestPage() {
   }
 
   return (
-    <div className="container p-6 4xl:p-8 5xl:p-12 mx-auto space-y-6 4xl:space-y-8 5xl:space-y-10 max-w-5xl">
+    <div className="ml-10 px-6 py-6 4xl:px-8 4xl:py-8 5xl:px-12 5xl:py-12 space-y-6 4xl:space-y-8 5xl:space-y-10">
       <div className="flex items-center justify-between">
         <Link href="/">
           <Button variant="outline" size="sm">

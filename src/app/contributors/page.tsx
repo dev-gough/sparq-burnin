@@ -14,7 +14,12 @@ interface ContributorStats {
   percentage_of_tests: number;
   last_activity: string;
   most_used_group: string;
-  annotation_groups: { group_name: string; count: number }[];
+  annotation_groups: {
+    group_name: string;
+    count: number;
+    group_color: string | null;
+    categories: { category_name: string; count: number }[];
+  }[];
 }
 
 interface TeamStats {
@@ -43,6 +48,7 @@ export default function ContributorsPage() {
   const [loading, setLoading] = React.useState(true);
   const [sortField, setSortField] = React.useState<keyof ContributorStats>("total_annotations");
   const [sortDirection, setSortDirection] = React.useState<"asc" | "desc">("desc");
+  const [expandedCharts, setExpandedCharts] = React.useState<Record<string, string | null>>({});
 
   React.useEffect(() => {
     const fetchData = async () => {
@@ -400,9 +406,36 @@ export default function ContributorsPage() {
             {/* Annotation Groups Breakdown */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {sortedContributors.slice(0, 4).map((contributor) => {
+                const expandedGroup = expandedCharts[contributor.contributor_name];
+
+                // Determine what data to show
+                let chartData;
+                let chartTitle;
+                let showBackButton = false;
+
+                if (expandedGroup) {
+                  // Show categories within the expanded group
+                  const group = contributor.annotation_groups.find(g => g.group_name === expandedGroup);
+                  chartData = group?.categories.map(c => ({
+                    name: c.category_name,
+                    value: c.count,
+                  })) || [];
+                  chartTitle = `${expandedGroup} - Categories`;
+                  showBackButton = true;
+                } else {
+                  // Show top-level groups with colors
+                  chartData = contributor.annotation_groups.map((g) => ({
+                    name: g.group_name,
+                    value: g.count,
+                    itemStyle: g.group_color ? { color: g.group_color } : undefined,
+                  }));
+                  chartTitle = contributor.contributor_name;
+                  showBackButton = false;
+                }
+
                 const chartOption = {
                   title: {
-                    text: contributor.contributor_name,
+                    text: expandedGroup ? expandedGroup : "Annotation Groups",
                     left: "center",
                     textStyle: {
                       fontSize: 14,
@@ -416,10 +449,7 @@ export default function ContributorsPage() {
                     {
                       type: "pie",
                       radius: "60%",
-                      data: contributor.annotation_groups.map((g) => ({
-                        name: g.group_name,
-                        value: g.count,
-                      })),
+                      data: chartData,
                       emphasis: {
                         itemStyle: {
                           shadowBlur: 10,
@@ -431,16 +461,58 @@ export default function ContributorsPage() {
                   ],
                 };
 
+                const handleChartClick = (params: any) => {
+                  if (!expandedGroup && params.componentType === 'series') {
+                    // User clicked on a group slice - expand it
+                    setExpandedCharts(prev => ({
+                      ...prev,
+                      [contributor.contributor_name]: params.name,
+                    }));
+                  }
+                };
+
+                const handleBackClick = () => {
+                  setExpandedCharts(prev => ({
+                    ...prev,
+                    [contributor.contributor_name]: null,
+                  }));
+                };
+
                 return (
                   <Card key={contributor.contributor_name}>
                     <CardHeader>
-                      <CardTitle className="text-base">Annotation Groups</CardTitle>
-                      <CardDescription>
-                        {contributor.total_annotations} total annotations
-                      </CardDescription>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-base">
+                            {contributor.contributor_name}'s Annotations
+                          </CardTitle>
+                          <CardDescription>
+                            {contributor.total_annotations} total annotations
+                          </CardDescription>
+                        </div>
+                        {showBackButton && (
+                          <button
+                            onClick={handleBackClick}
+                            className="text-sm text-primary hover:underline"
+                          >
+                            ← Back to Groups
+                          </button>
+                        )}
+                      </div>
                     </CardHeader>
                     <CardContent>
-                      <ReactECharts option={chartOption} style={{ height: "250px" }} />
+                      <ReactECharts
+                        option={chartOption}
+                        style={{ height: "250px" }}
+                        onEvents={{
+                          click: handleChartClick,
+                        }}
+                      />
+                      {!expandedGroup && (
+                        <p className="text-xs text-muted-foreground text-center mt-2">
+                          Click a slice to view categories
+                        </p>
+                      )}
                     </CardContent>
                   </Card>
                 );

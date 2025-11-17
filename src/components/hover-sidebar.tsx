@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession, signOut, signIn } from "next-auth/react";
-import { User, LogOut, Users, LayoutDashboard, ListTodo, LogIn } from "lucide-react";
+import { User, LogOut, Users, LayoutDashboard, ListTodo, LogIn, BarChart3 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -23,6 +23,7 @@ export function HoverSidebar() {
   const navItems = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/contributors", label: "Contributors", icon: Users },
+    { href: "/failure-analytics", label: "Failure Analytics", icon: BarChart3 },
     { href: "/todo", label: "Todo", icon: ListTodo, badge: todoCount },
   ];
 
