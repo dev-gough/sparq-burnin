@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import type { NextRequest, NextFetchEvent } from "next/server";
 
 // Check if authentication should be skipped (for local development)
 const shouldSkipAuth = process.env.SKIP_AUTH === 'true';
@@ -41,7 +41,14 @@ export default function middleware(req: NextRequest) {
   }
 
   // Otherwise, use NextAuth authentication
-  return auth((req) => {
+  // Create a minimal NextFetchEvent for the auth wrapper
+  const event: NextFetchEvent = {
+    passThroughOnException: () => {},
+    waitUntil: () => {},
+  } as NextFetchEvent;
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  return auth((req, _ctx) => {
     const isAuthenticated = !!req.auth;
     const { pathname } = req.nextUrl;
 
@@ -63,7 +70,7 @@ export default function middleware(req: NextRequest) {
     // Allow authenticated users to proceed with security headers
     const response = NextResponse.next();
     return addSecurityHeaders(response);
-  })(req);
+  })(req, event);
 }
 
 export const config = {
