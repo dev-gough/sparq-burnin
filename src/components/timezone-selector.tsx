@@ -9,7 +9,7 @@ export function TimezoneSelector() {
 
   return (
     <Select value={selectedTimezone} onValueChange={setTimezone}>
-      <SelectTrigger className="w-48">
+      <SelectTrigger className="w-48 [&>svg]:hidden">
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4" />
           <SelectValue />

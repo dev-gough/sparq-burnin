@@ -113,9 +113,13 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
     ),
     enableHiding: false,
     filterFn: (row, id, value) => {
-      return (row.getValue(id) as string)
+      // Support wildcard pattern with *
+      const pattern = value
         .toLowerCase()
-        .includes(value.toLowerCase());
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // Escape special regex chars
+        .replace(/\*/g, '.*'); // Replace * with .*
+      const regex = new RegExp(pattern);
+      return regex.test((row.getValue(id) as string).toLowerCase());
     },
   },
   {
@@ -518,11 +522,12 @@ export function DataTable({
               <Label htmlFor="serial-search">Search Serial Number</Label>
               <Input
                 id="serial-search"
-                placeholder="Enter inverter serial number..."
+                placeholder="e.g. 19*265 or 1908254*"
                 value={serialSearch}
                 onChange={(e) => setSerialSearch(e.target.value)}
                 className="max-w-sm"
               />
+              <p className="text-xs text-muted-foreground">Use * as wildcard</p>
             </div>
 
             {/* Status Filter */}

@@ -58,7 +58,7 @@ export default function Page() {
   const highlightDate = filterLinked && isSingleDayFilter ? dateFromFilter : "";
 
   return (
-    <div>
+    <div className="ml-10">
       <SiteHeader />
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
