@@ -1,7 +1,7 @@
 "use client";
 
-import { useSession, signOut } from "next-auth/react";
-import { User, LogOut, Users, LayoutDashboard, ListTodo } from "lucide-react";
+import { useSession, signOut, signIn } from "next-auth/react";
+import { User, LogOut, Users, LayoutDashboard, ListTodo, LogIn } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -159,7 +159,7 @@ export function HoverSidebar() {
               })}
             </div>
 
-            {/* Bottom section - Timezone & Sign Out */}
+            {/* Bottom section - Timezone & Auth */}
             <div
               className="space-y-2 pt-4 border-t"
               onMouseEnter={handleInteractionStart}
@@ -167,7 +167,7 @@ export function HoverSidebar() {
               onClick={handleInteractionStart}
             >
               <TimezoneSelector />
-              {session?.user && (
+              {session?.user ? (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -176,6 +176,16 @@ export function HoverSidebar() {
                 >
                   <LogOut className="h-4 w-4" />
                   <span>Sign Out</span>
+                </Button>
+              ) : (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => signIn("azure-ad")}
+                  className="w-full justify-start gap-2"
+                >
+                  <LogIn className="h-4 w-4" />
+                  <span>Sign In</span>
                 </Button>
               )}
             </div>

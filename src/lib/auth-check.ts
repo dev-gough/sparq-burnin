@@ -8,39 +8,34 @@ const shouldSkipAuth = process.env.SKIP_AUTH === 'true';
  * Checks if the user is authenticated via NextAuth session
  * Returns the session if authenticated, or a 401 response if not
  *
- * If SKIP_AUTH=true, authentication is bypassed and a mock session is returned
+ * If SKIP_AUTH=true, authentication is optional - returns actual session if signed in,
+ * or allows access without session (returns null session)
  */
 export async function requireAuth() {
-  // If auth is disabled (local dev), return a mock successful session
-  if (shouldSkipAuth) {
+  const session = await auth();
+
+  // If user has a valid session, always use it (regardless of SKIP_AUTH)
+  if (session && session.user) {
     return {
       error: null,
-      session: {
-        user: {
-          id: 'local-dev-user',
-          name: 'Local Developer',
-          email: 'dev@local.dev',
-        },
-        expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      },
+      session,
     };
   }
 
-  // Otherwise, perform normal authentication check
-  const session = await auth();
-
-  if (!session || !session.user) {
+  // If no session but SKIP_AUTH is enabled, allow access without authentication
+  if (shouldSkipAuth) {
     return {
-      error: NextResponse.json(
-        { error: "Unauthorized. Please sign in." },
-        { status: 401 }
-      ),
+      error: null,
       session: null,
     };
   }
 
+  // Otherwise, require authentication
   return {
-    error: null,
-    session,
+    error: NextResponse.json(
+      { error: "Unauthorized. Please sign in." },
+      { status: 401 }
+    ),
+    session: null,
   };
 }
