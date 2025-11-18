@@ -69,6 +69,7 @@ export default function FailureAnalyticsPage() {
     };
 
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartMode, timeRange]);
 
   // Determine available grouping options based on time range
@@ -127,7 +128,7 @@ export default function FailureAnalyticsPage() {
   const groupDataByTime = (timeline: TimelineData[], grouping: TimeGrouping): TimelineData[] => {
     if (grouping === "daily") return timeline;
 
-    const grouped = new Map<string, Record<string, number>>();
+    const grouped = new Map<string, Record<string, string | number>>();
 
     timeline.forEach(item => {
       const date = new Date(item.date);
@@ -165,12 +166,13 @@ export default function FailureAnalyticsPage() {
       const groupData = grouped.get(groupKey)!;
       Object.keys(item).forEach(key => {
         if (key !== 'date') {
-          groupData[key] = (groupData[key] || 0) + (item[key] as number);
+          const currentValue = typeof groupData[key] === 'number' ? groupData[key] : 0;
+          groupData[key] = currentValue + (item[key] as number);
         }
       });
     });
 
-    return Array.from(grouped.values()).sort((a, b) => a.date.localeCompare(b.date));
+    return Array.from(grouped.values()).sort((a, b) => (a.date as string).localeCompare(b.date as string)) as TimelineData[];
   };
 
   // Prepare pie chart data based on percentage mode
@@ -198,12 +200,12 @@ export default function FailureAnalyticsPage() {
       title: { text: "Failures by Category Over Time", left: "center" },
       tooltip: {
         trigger: "axis",
-        formatter: (params: any) => {
+        formatter: (params: Array<{ axisValue?: string; value: number; marker: string; seriesName: string }>) => {
           const date = params[0]?.axisValue || "";
           const lines = [`<strong>${date}</strong>`];
 
           // Only show categories with non-zero values
-          params.forEach((param: any) => {
+          params.forEach((param) => {
             if (param.value > 0) {
               lines.push(
                 `${param.marker} ${param.seriesName}: <strong>${param.value}</strong>`
@@ -251,12 +253,12 @@ export default function FailureAnalyticsPage() {
       title: { text: "Failures by Group Over Time", left: "center" },
       tooltip: {
         trigger: "axis",
-        formatter: (params: any) => {
+        formatter: (params: Array<{ axisValue?: string; value: number; marker: string; seriesName: string }>) => {
           const date = params[0]?.axisValue || "";
           const lines = [`<strong>${date}</strong>`];
 
           // Only show groups with non-zero values
-          params.forEach((param: any) => {
+          params.forEach((param) => {
             if (param.value > 0) {
               lines.push(
                 `${param.marker} ${param.seriesName}: <strong>${param.value}</strong>`

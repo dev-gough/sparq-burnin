@@ -410,7 +410,6 @@ export default function ContributorsPage() {
 
                 // Determine what data to show
                 let chartData;
-                let chartTitle;
                 let showBackButton = false;
 
                 if (expandedGroup) {
@@ -420,7 +419,6 @@ export default function ContributorsPage() {
                     name: c.category_name,
                     value: c.count,
                   })) || [];
-                  chartTitle = `${expandedGroup} - Categories`;
                   showBackButton = true;
                 } else {
                   // Show top-level groups with colors
@@ -429,7 +427,6 @@ export default function ContributorsPage() {
                     value: g.count,
                     itemStyle: g.group_color ? { color: g.group_color } : undefined,
                   }));
-                  chartTitle = contributor.contributor_name;
                   showBackButton = false;
                 }
 
@@ -461,12 +458,12 @@ export default function ContributorsPage() {
                   ],
                 };
 
-                const handleChartClick = (params: any) => {
-                  if (!expandedGroup && params.componentType === 'series') {
+                const handleChartClick = (params: { componentType?: string; name?: string }) => {
+                  if (!expandedGroup && params.componentType === 'series' && params.name) {
                     // User clicked on a group slice - expand it
                     setExpandedCharts(prev => ({
                       ...prev,
-                      [contributor.contributor_name]: params.name,
+                      [contributor.contributor_name]: params.name || null,
                     }));
                   }
                 };
@@ -484,7 +481,7 @@ export default function ContributorsPage() {
                       <div className="flex items-center justify-between">
                         <div>
                           <CardTitle className="text-base">
-                            {contributor.contributor_name}'s Annotations
+                            {contributor.contributor_name}&apos;s Annotations
                           </CardTitle>
                           <CardDescription>
                             {contributor.total_annotations} total annotations
