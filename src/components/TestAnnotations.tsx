@@ -290,13 +290,27 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
             const groupOptions = groupedOptions[group.group_name] || []
             const isCollapsed = collapsedGroups.has(group.group_name)
 
+            // Calculate adjusted header color for dark mode
+            const headerColor = (() => {
+              const hex = group.group_color.replace('#', '')
+              const r = parseInt(hex.substring(0, 2), 16)
+              const g = parseInt(hex.substring(2, 4), 16)
+              const b = parseInt(hex.substring(4, 6), 16)
+              const isDark = resolvedTheme === 'dark'
+
+              // Slightly reduce brightness in dark mode for better visibility
+              return isDark
+                ? `rgb(${Math.round(r * 0.85)}, ${Math.round(g * 0.85)}, ${Math.round(b * 0.85)})`
+                : group.group_color
+            })()
+
             return (
               <div key={group.group_id} className="border rounded overflow-hidden">
                 {/* Group Header */}
                 <button
                   onClick={() => toggleGroup(group.group_name)}
                   className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-medium hover:opacity-80 transition-opacity"
-                  style={{ backgroundColor: group.group_color, color: 'white' }}
+                  style={{ backgroundColor: headerColor, color: 'white' }}
                 >
                   <span>{group.group_name}</span>
                   <span className="text-xs">{isCollapsed ? '▶' : '▼'}</span>
@@ -330,21 +344,21 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
             <div className="border rounded overflow-hidden">
               <button
                 onClick={() => toggleGroup('Ungrouped')}
-                className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-medium bg-gray-500 text-white hover:opacity-80 transition-opacity"
+                className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-medium bg-gray-500 dark:bg-gray-600 text-white hover:opacity-80 transition-opacity"
               >
                 <span>Ungrouped</span>
                 <span className="text-xs">{collapsedGroups.has('Ungrouped') ? '▶' : '▼'}</span>
               </button>
 
               {!collapsedGroups.has('Ungrouped') && (
-                <div className="p-2 flex flex-wrap gap-1 bg-gray-50">
+                <div className="p-2 flex flex-wrap gap-1 bg-gray-50 dark:bg-gray-700/50">
                   {groupedOptions['Ungrouped'].map((option) => (
                     <Button
                       key={option.option_id}
                       size="sm"
                       variant="outline"
                       onClick={() => addQuickAnnotation(option.option_text)}
-                      className="h-6 px-2 text-xs bg-white hover:bg-gray-50"
+                      className="h-6 px-2 text-xs"
                     >
                       {option.option_text}
                     </Button>

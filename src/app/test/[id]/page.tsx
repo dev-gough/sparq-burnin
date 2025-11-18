@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import { ArrowLeft, Download, Maximize2, X, ChevronLeft, ChevronRight, AlertTriangle, PanelRightClose, PanelRightOpen } from "lucide-react"
 import Link from "next/link"
 import ReactECharts from "echarts-for-react"
@@ -1340,9 +1341,135 @@ export default function TestPage() {
 
   if (loading) {
     return (
-      <div className="ml-10 px-6 py-6 pr-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-muted-foreground">Loading test data...</div>
+      <div className="ml-10 px-6 py-6 4xl:px-8 4xl:py-8 5xl:px-12 5xl:py-12 space-y-6 4xl:space-y-8 5xl:space-y-10">
+        {/* Header Skeleton */}
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-9 w-40" />
+          <Skeleton className="h-9 w-36" />
+        </div>
+
+        <div className="space-y-4 4xl:space-y-6 5xl:space-y-8">
+          {/* Test Info Header Skeleton */}
+          <div className="grid grid-cols-2 gap-6 4xl:gap-8 5xl:gap-12">
+            {/* Left Column - Test Information */}
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-96" />
+              <Skeleton className="h-7 w-32" />
+              <Skeleton className="h-6 w-64" />
+              <Skeleton className="h-6 w-64" />
+              <div className="flex items-center gap-4 mt-2">
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-6 w-16" />
+                  <Skeleton className="h-10 w-32" />
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column - Navigation & Toggle */}
+            <div className="flex flex-col gap-2">
+              <div className="flex justify-end">
+                <Skeleton className="h-9 w-9" />
+              </div>
+            </div>
+          </div>
+
+          {/* Charts Grid Skeleton */}
+          <div className="grid grid-cols-[1fr_320px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px] gap-6 4xl:gap-8 5xl:gap-12">
+            {/* Charts Column */}
+            <div className="space-y-6 4xl:space-y-8 5xl:space-y-10">
+              {/* Chart 1 Skeleton */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-6 w-32" />
+                    <div className="flex gap-2">
+                      <Skeleton className="h-9 w-24" />
+                      <Skeleton className="h-9 w-9" />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <Skeleton key={i} className="h-6 w-16" />
+                    ))}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-80 w-full" />
+                </CardContent>
+              </Card>
+
+              {/* Chart 2 Skeleton */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-6 w-32" />
+                    <div className="flex gap-2">
+                      <Skeleton className="h-9 w-24" />
+                      <Skeleton className="h-9 w-9" />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Skeleton key={i} className="h-6 w-16" />
+                    ))}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-80 w-full" />
+                </CardContent>
+              </Card>
+
+              {/* Chart 3 Skeleton */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-6 w-32" />
+                    <div className="flex gap-2">
+                      <Skeleton className="h-9 w-24" />
+                      <Skeleton className="h-9 w-9" />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <Skeleton key={i} className="h-6 w-16" />
+                    ))}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-80 w-full" />
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Annotations Sidebar Skeleton */}
+            <div className="sticky top-6 h-fit">
+              <Card>
+                <CardHeader>
+                  <Skeleton className="h-6 w-32" />
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-20 w-full" />
+                  </div>
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-32" />
+                    <div className="flex flex-wrap gap-2">
+                      {Array.from({ length: 6 }).map((_, i) => (
+                        <Skeleton key={i} className="h-8 w-20" />
+                      ))}
+                    </div>
+                  </div>
+                  <Skeleton className="h-10 w-full" />
+                  <div className="space-y-2">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <Skeleton key={i} className="h-16 w-full" />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </div>
       </div>
     )

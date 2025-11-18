@@ -41,6 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -279,7 +280,7 @@ export function DataTable({
   const { prefetchTests } = useTestDataCache();
   const { quickOptions: cachedQuickOptions, groups: cachedGroups } = useAnnotationCache();
   const [data, setData] = React.useState([]);
-  const [loading, setLoading] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
   const [rowSelection, setRowSelection] = React.useState({});
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
@@ -505,9 +506,110 @@ export function DataTable({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Loading test data...</div>
-      </div>
+      <Tabs
+        defaultValue="outline"
+        className="w-full flex-col justify-start gap-6"
+      >
+        <TabsContent
+          value="outline"
+          className="relative flex flex-col gap-4 overflow-auto"
+        >
+          {/* Filters Section Skeleton */}
+          <div className="flex flex-col gap-4 rounded-lg border p-4 bg-muted/50">
+            <div className="flex flex-col gap-4 md:flex-row md:items-end">
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-10 max-w-sm" />
+                <Skeleton className="h-3 w-32" />
+              </div>
+              <div className="flex justify-between sm:gap-4">
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-12" />
+                  <Skeleton className="h-10 w-32" />
+                </div>
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-10 w-64" />
+                </div>
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-10 w-40" />
+                </div>
+              </div>
+              <div className="flex justify-between sm:gap-4">
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-10 w-40" />
+                </div>
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-10 w-40" />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex flex-col items-center gap-1">
+                  <div className="h-4" />
+                  <Skeleton className="h-10 w-24" />
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <div className="h-4" />
+                  <Skeleton className="h-10 w-10" />
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <div className="h-4" />
+                  <Skeleton className="h-10 w-24" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Table Skeleton */}
+          <div className="overflow-hidden rounded-lg border">
+            <Table>
+              <TableHeader className="bg-muted sticky top-0 z-10">
+                <TableRow>
+                  <TableHead><Skeleton className="h-4 w-40" /></TableHead>
+                  <TableHead><Skeleton className="h-4 w-32" /></TableHead>
+                  <TableHead><Skeleton className="h-4 w-24" /></TableHead>
+                  <TableHead><Skeleton className="h-4 w-28" /></TableHead>
+                  <TableHead><Skeleton className="h-4 w-16" /></TableHead>
+                  <TableHead><Skeleton className="h-4 w-24" /></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Array.from({ length: 30 }).map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-6 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-40" /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Pagination Skeleton */}
+          <div className="flex items-center justify-between px-4">
+            <Skeleton className="h-4 w-48 hidden lg:block" />
+            <div className="flex w-full items-center gap-8 lg:w-fit">
+              <div className="hidden items-center gap-2 lg:flex">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-8 w-20" />
+              </div>
+              <Skeleton className="h-4 w-32" />
+              <div className="ml-auto flex items-center gap-2 lg:ml-0">
+                <Skeleton className="h-8 w-8 hidden lg:block" />
+                <Skeleton className="h-8 w-8" />
+                <Skeleton className="h-8 w-8" />
+                <Skeleton className="h-8 w-8 hidden lg:block" />
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
     );
   }
 
@@ -569,61 +671,69 @@ export function DataTable({
                     sideOffset={4}
                   >
                     <SelectItem value="all">All Annotations</SelectItem>
-                    {annotationGroups.map((group) => (
-                      <React.Fragment key={group.group_name}>
-                        {/* Group Header - Clickable */}
-                        <SelectItem
-                          value={`group:${group.group_name}`}
-                          className="font-semibold rounded-none border-y border-white/20 hover:brightness-90 transition-all"
-                          style={{
-                            backgroundColor: group.group_color,
-                            color: 'white'
-                          }}
-                        >
-                          {group.group_name} (All)
-                        </SelectItem>
-                        {/* Individual Options */}
-                        {group.options.map((option) => {
-                          // Calculate lighter color for light mode, darker for dark mode
-                          const hex = group.group_color.replace('#', '')
-                          const r = parseInt(hex.substring(0, 2), 16)
-                          const g = parseInt(hex.substring(2, 4), 16)
-                          const b = parseInt(hex.substring(4, 6), 16)
+                    {annotationGroups.map((group) => {
+                      // Parse color once for both header and options
+                      const hex = group.group_color.replace('#', '')
+                      const r = parseInt(hex.substring(0, 2), 16)
+                      const g = parseInt(hex.substring(2, 4), 16)
+                      const b = parseInt(hex.substring(4, 6), 16)
 
-                          // Determine if we're in dark mode
-                          const isDark = resolvedTheme === 'dark'
+                      // Determine if we're in dark mode
+                      const isDark = resolvedTheme === 'dark'
 
-                          let optionColor: string
-                          if (isDark) {
-                            // Dark mode: darker color (reduce brightness by 40%)
-                            const darkR = Math.round(r * 0.6)
-                            const darkG = Math.round(g * 0.6)
-                            const darkB = Math.round(b * 0.6)
-                            optionColor = `rgb(${darkR}, ${darkG}, ${darkB})`
-                          } else {
-                            // Light mode: lighter color (mix 70% toward white)
-                            const lightR = Math.round(r + (255 - r) * 0.7)
-                            const lightG = Math.round(g + (255 - g) * 0.7)
-                            const lightB = Math.round(b + (255 - b) * 0.7)
-                            optionColor = `rgb(${lightR}, ${lightG}, ${lightB})`
-                          }
+                      // Calculate header color (use full saturation in light mode, slightly reduced in dark mode)
+                      const headerColor = isDark
+                        ? `rgb(${Math.round(r * 0.85)}, ${Math.round(g * 0.85)}, ${Math.round(b * 0.85)})`
+                        : group.group_color
 
-                          return (
-                            <SelectItem
-                              key={option}
-                              value={option}
-                              className="pl-6 rounded-none border-b border-white/10 hover:brightness-95 transition-all"
-                              style={{
-                                backgroundColor: optionColor,
-                                color: isDark ? 'white' : 'inherit'
-                              }}
-                            >
-                              {option}
-                            </SelectItem>
-                          )
-                        })}
-                      </React.Fragment>
-                    ))}
+                      return (
+                        <React.Fragment key={group.group_name}>
+                          {/* Group Header - Clickable */}
+                          <SelectItem
+                            value={`group:${group.group_name}`}
+                            className="font-semibold rounded-none border-y border-white/20 hover:brightness-90 transition-all"
+                            style={{
+                              backgroundColor: headerColor,
+                              color: 'white'
+                            }}
+                          >
+                            {group.group_name} (All)
+                          </SelectItem>
+                          {/* Individual Options */}
+                          {group.options.map((option) => {
+                            // Calculate lighter color for light mode, darker for dark mode
+                            let optionColor: string
+                            if (isDark) {
+                              // Dark mode: darker color (reduce brightness by 40%)
+                              const darkR = Math.round(r * 0.6)
+                              const darkG = Math.round(g * 0.6)
+                              const darkB = Math.round(b * 0.6)
+                              optionColor = `rgb(${darkR}, ${darkG}, ${darkB})`
+                            } else {
+                              // Light mode: lighter color (mix 70% toward white)
+                              const lightR = Math.round(r + (255 - r) * 0.7)
+                              const lightG = Math.round(g + (255 - g) * 0.7)
+                              const lightB = Math.round(b + (255 - b) * 0.7)
+                              optionColor = `rgb(${lightR}, ${lightG}, ${lightB})`
+                            }
+
+                            return (
+                              <SelectItem
+                                key={option}
+                                value={option}
+                                className="pl-6 rounded-none border-b border-white/10 hover:brightness-95 transition-all"
+                                style={{
+                                  backgroundColor: optionColor,
+                                  color: isDark ? 'white' : 'inherit'
+                                }}
+                              >
+                                {option}
+                              </SelectItem>
+                            )
+                          })}
+                        </React.Fragment>
+                      )
+                    })}
                   </SelectContent>
                 </Select>
               </div>
