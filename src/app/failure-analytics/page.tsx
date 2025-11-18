@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTheme } from "next-themes";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -35,6 +36,7 @@ type PercentageMode = "all" | "failed";
 type TimeGrouping = "daily" | "weekly" | "biweekly" | "monthly" | "quarterly";
 
 export default function FailureAnalyticsPage() {
+  const { resolvedTheme } = useTheme();
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [refetching, setRefetching] = useState(false);
@@ -214,9 +216,20 @@ export default function FailureAnalyticsPage() {
     const groupedData = groupDataByTime(data.categoryTimeline, timeGrouping);
 
     return {
-      title: { text: "Failures by Category Over Time", left: "center" },
+      title: {
+        text: "Failures by Category Over Time",
+        left: "center",
+        textStyle: {
+          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+        },
+      },
       tooltip: {
         trigger: "axis",
+        backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
+        borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
+        textStyle: {
+          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+        },
         formatter: (params: Array<{ axisValue?: string; value: number; marker: string; seriesName: string }>) => {
           const date = params[0]?.axisValue || "";
           const lines = [`<strong>${date}</strong>`];
@@ -237,6 +250,9 @@ export default function FailureAnalyticsPage() {
         data: categories,
         top: 30,
         type: "scroll",
+        textStyle: {
+          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+        },
       },
       grid: { left: "3%", right: "4%", bottom: "3%", top: 80, containLabel: true },
       xAxis: {
@@ -270,9 +286,20 @@ export default function FailureAnalyticsPage() {
     });
 
     return {
-      title: { text: "Failures by Group Over Time", left: "center" },
+      title: {
+        text: "Failures by Group Over Time",
+        left: "center",
+        textStyle: {
+          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+        },
+      },
       tooltip: {
         trigger: "axis",
+        backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
+        borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
+        textStyle: {
+          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+        },
         formatter: (params: Array<{ axisValue?: string; value: number; marker: string; seriesName: string }>) => {
           const date = params[0]?.axisValue || "";
           const lines = [`<strong>${date}</strong>`];
@@ -292,6 +319,9 @@ export default function FailureAnalyticsPage() {
       legend: {
         data: groups,
         top: 30,
+        textStyle: {
+          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+        },
       },
       grid: { left: "3%", right: "4%", bottom: "3%", top: 80, containLabel: true },
       xAxis: {
@@ -314,16 +344,30 @@ export default function FailureAnalyticsPage() {
   };
 
   const categoryPieOption = {
-    title: { text: "Failures by Category", left: "center" },
+    title: {
+      text: "Failures by Category",
+      left: "center",
+      textStyle: {
+        color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+      },
+    },
     tooltip: {
       trigger: "item",
       formatter: "{a} <br/>{b}: {c}%",
+      backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
+      borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
+      textStyle: {
+        color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+      },
     },
     legend: {
       orient: "vertical",
       left: "left",
       top: 30,
       type: "scroll",
+      textStyle: {
+        color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+      },
     },
     series: [
       {
@@ -331,11 +375,21 @@ export default function FailureAnalyticsPage() {
         type: "pie",
         radius: "50%",
         data: getCategoryPieData(),
+        label: {
+          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+          textShadowColor: "transparent",
+          textShadowBlur: 0,
+        },
         emphasis: {
           itemStyle: {
             shadowBlur: 10,
             shadowOffsetX: 0,
             shadowColor: "rgba(0, 0, 0, 0.5)",
+          },
+          label: {
+            show: true,
+            fontSize: 14,
+            fontWeight: "bold",
           },
         },
       },
@@ -343,15 +397,29 @@ export default function FailureAnalyticsPage() {
   };
 
   const groupPieOption = {
-    title: { text: "Failures by Group", left: "center" },
+    title: {
+      text: "Failures by Group",
+      left: "center",
+      textStyle: {
+        color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+      },
+    },
     tooltip: {
       trigger: "item",
       formatter: "{a} <br/>{b}: {c}%",
+      backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
+      borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
+      textStyle: {
+        color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+      },
     },
     legend: {
       orient: "vertical",
       left: "left",
       top: 30,
+      textStyle: {
+        color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+      },
     },
     series: [
       {
@@ -359,11 +427,21 @@ export default function FailureAnalyticsPage() {
         type: "pie",
         radius: "50%",
         data: getGroupPieData(),
+        label: {
+          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+          textShadowColor: "transparent",
+          textShadowBlur: 0,
+        },
         emphasis: {
           itemStyle: {
             shadowBlur: 10,
             shadowOffsetX: 0,
             shadowColor: "rgba(0, 0, 0, 0.5)",
+          },
+          label: {
+            show: true,
+            fontSize: 14,
+            fontWeight: "bold",
           },
         },
       },

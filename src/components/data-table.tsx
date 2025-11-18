@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import { useTimezone } from "@/contexts/TimezoneContext";
 import { useTestDataCache } from "@/contexts/TestDataCacheContext";
 import { useAnnotationCache } from "@/contexts/AnnotationCacheContext";
@@ -204,7 +205,10 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
             ? "destructive"
             : "secondary";
       return (
-        <Badge variant={variant} className="px-2">
+        <Badge
+          variant={variant}
+          className={`px-2 ${status === "PASS" ? "dark:bg-green-900/30 dark:text-green-400 dark:border-green-800" : ""}`}
+        >
           {status === "PASS" ? (
             <>
               <IconCircleCheckFilled className="w-3 h-3 mr-1 fill-green-500 dark:fill-green-400" />
@@ -269,6 +273,7 @@ export function DataTable({
   onDateToFilterChange,
 }: DataTableProps) {
   const router = useRouter();
+  const { resolvedTheme } = useTheme();
   const { formatInTimezone, selectedTimezone } = useTimezone();
   const { prefetchTests } = useTestDataCache();
   const { quickOptions: cachedQuickOptions, groups: cachedGroups } = useAnnotationCache();
@@ -578,15 +583,29 @@ export function DataTable({
                         </SelectItem>
                         {/* Individual Options */}
                         {group.options.map((option) => {
-                          // Calculate lighter color
+                          // Calculate lighter color for light mode, darker for dark mode
                           const hex = group.group_color.replace('#', '')
                           const r = parseInt(hex.substring(0, 2), 16)
                           const g = parseInt(hex.substring(2, 4), 16)
                           const b = parseInt(hex.substring(4, 6), 16)
-                          const newR = Math.round(r + (255 - r) * 0.7)
-                          const newG = Math.round(g + (255 - g) * 0.7)
-                          const newB = Math.round(b + (255 - b) * 0.7)
-                          const lightColor = `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`
+
+                          // Determine if we're in dark mode
+                          const isDark = resolvedTheme === 'dark'
+
+                          let optionColor: string
+                          if (isDark) {
+                            // Dark mode: darker color (reduce brightness by 40%)
+                            const darkR = Math.round(r * 0.6)
+                            const darkG = Math.round(g * 0.6)
+                            const darkB = Math.round(b * 0.6)
+                            optionColor = `rgb(${darkR}, ${darkG}, ${darkB})`
+                          } else {
+                            // Light mode: lighter color (mix 70% toward white)
+                            const lightR = Math.round(r + (255 - r) * 0.7)
+                            const lightG = Math.round(g + (255 - g) * 0.7)
+                            const lightB = Math.round(b + (255 - b) * 0.7)
+                            optionColor = `rgb(${lightR}, ${lightG}, ${lightB})`
+                          }
 
                           return (
                             <SelectItem
@@ -594,7 +613,8 @@ export function DataTable({
                               value={option}
                               className="pl-6 rounded-none border-b border-white/10 hover:brightness-95 transition-all"
                               style={{
-                                backgroundColor: lightColor
+                                backgroundColor: optionColor,
+                                color: isDark ? 'white' : 'inherit'
                               }}
                             >
                               {option}

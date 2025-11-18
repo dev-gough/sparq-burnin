@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from 'react'
+import { useTheme } from 'next-themes'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -31,6 +32,7 @@ interface TestAnnotationsProps {
 }
 
 export default function TestAnnotations({ testId, serialNumber }: TestAnnotationsProps) {
+  const { resolvedTheme } = useTheme()
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [annotationsLoading, setAnnotationsLoading] = useState(true)
@@ -223,17 +225,27 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
     })
   }
 
-  const getLighterColor = (hexColor: string, amount: number = 0.7): string => {
+  const getAdjustedColor = (hexColor: string): string => {
     const hex = hexColor.replace('#', '')
     const r = parseInt(hex.substring(0, 2), 16)
     const g = parseInt(hex.substring(2, 4), 16)
     const b = parseInt(hex.substring(4, 6), 16)
 
-    const newR = Math.round(r + (255 - r) * amount)
-    const newG = Math.round(g + (255 - g) * amount)
-    const newB = Math.round(b + (255 - b) * amount)
+    const isDark = resolvedTheme === 'dark'
 
-    return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`
+    if (isDark) {
+      // Dark mode: darker color (reduce brightness by 40%)
+      const darkR = Math.round(r * 0.6)
+      const darkG = Math.round(g * 0.6)
+      const darkB = Math.round(b * 0.6)
+      return `#${darkR.toString(16).padStart(2, '0')}${darkG.toString(16).padStart(2, '0')}${darkB.toString(16).padStart(2, '0')}`
+    } else {
+      // Light mode: lighter color (mix 70% toward white)
+      const newR = Math.round(r + (255 - r) * 0.7)
+      const newG = Math.round(g + (255 - g) * 0.7)
+      const newB = Math.round(b + (255 - b) * 0.7)
+      return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`
+    }
   }
 
   // Group options by group_name
@@ -292,14 +304,14 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
 
                 {/* Group Options */}
                 {!isCollapsed && (
-                  <div className="p-2 flex flex-wrap gap-1" style={{ backgroundColor: getLighterColor(group.group_color) }}>
+                  <div className="p-2 flex flex-wrap gap-1" style={{ backgroundColor: getAdjustedColor(group.group_color), color: resolvedTheme === 'dark' ? 'white' : 'inherit' }}>
                     {groupOptions.map((option) => (
                       <Button
                         key={option.option_id}
                         size="sm"
                         variant="outline"
                         onClick={() => addQuickAnnotation(option.option_text)}
-                        className="h-6 px-2 text-xs bg-white hover:bg-gray-50"
+                        className="h-6 px-2 text-xs bg-white hover:bg-gray-50 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-white"
                       >
                         {option.option_text}
                       </Button>
@@ -409,7 +421,7 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
             <select
               value={newOptionGroup}
               onChange={(e) => setNewOptionGroup(e.target.value)}
-              className="w-full h-7 px-2 text-xs border border-input rounded"
+              className="w-full h-7 px-2 text-xs border border-input rounded bg-background text-foreground dark:bg-gray-800 dark:border-gray-600"
             >
               <option value="">No group</option>
               {groups.map((group) => (
@@ -483,7 +495,7 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
               <h4 className="text-sm font-medium">Annotations ({annotations.length}):</h4>
               {annotations.map((annotation) => {
                 const backgroundColor = annotation.group_color
-                  ? getLighterColor(annotation.group_color)
+                  ? getAdjustedColor(annotation.group_color)
                   : undefined
 
                 return (

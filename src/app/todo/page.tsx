@@ -204,7 +204,7 @@ export default function TodoPage() {
               <div className="flex items-center gap-2">
                 <AlertCircle className="h-5 w-5 text-orange-500" />
                 <span className="text-2xl font-bold">{filteredAndSortedTests.length}</span>
-                <span className="text-muted-foreground">
+                <span className="text-muted-foreground dark:text-gray-300">
                   {hasActiveFilters ? "filtered" : "tests need annotation"}
                 </span>
               </div>

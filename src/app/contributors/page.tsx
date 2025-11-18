@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTheme } from "next-themes";
 import { SiteHeader } from "@/components/site-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import ReactECharts from "echarts-for-react";
@@ -44,6 +45,7 @@ interface ContributorData {
 }
 
 export default function ContributorsPage() {
+  const { resolvedTheme } = useTheme();
   const [data, setData] = React.useState<ContributorData | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [sortField, setSortField] = React.useState<keyof ContributorStats>("total_annotations");
@@ -116,11 +118,19 @@ export default function ContributorsPage() {
       title: {
         text: "Annotation Activity (Last 30 Days)",
         left: "center",
+        textStyle: {
+          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+        },
       },
       tooltip: {
         trigger: "axis",
         axisPointer: {
           type: "shadow",
+        },
+        backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
+        borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
+        textStyle: {
+          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
         },
       },
       xAxis: {
@@ -151,7 +161,7 @@ export default function ContributorsPage() {
         containLabel: true,
       },
     };
-  }, [data?.activity]);
+  }, [data?.activity, resolvedTheme]);
 
   if (loading) {
     return (
@@ -436,22 +446,39 @@ export default function ContributorsPage() {
                     left: "center",
                     textStyle: {
                       fontSize: 14,
+                      color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
                     },
                   },
                   tooltip: {
                     trigger: "item",
                     formatter: "{b}: {c} ({d}%)",
+                    backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
+                    borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
+                    textStyle: {
+                      color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+                    },
                   },
                   series: [
                     {
                       type: "pie",
                       radius: "60%",
                       data: chartData,
+                      label: {
+                        color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+                        fontSize: 12,
+                        textShadowColor: "transparent",
+                        textShadowBlur: 0,
+                      },
                       emphasis: {
                         itemStyle: {
                           shadowBlur: 10,
                           shadowOffsetX: 0,
                           shadowColor: "rgba(0, 0, 0, 0.5)",
+                        },
+                        label: {
+                          show: true,
+                          fontSize: 14,
+                          fontWeight: "bold",
                         },
                       },
                     },
