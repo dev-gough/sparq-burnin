@@ -175,6 +175,23 @@ export default function FailureAnalyticsPage() {
     return Array.from(grouped.values()).sort((a, b) => (a.date as string).localeCompare(b.date as string)) as TimelineData[];
   };
 
+  // Helper function to format date labels based on grouping
+  const formatDateLabel = (dateStr: string, grouping: TimeGrouping): string => {
+    const date = new Date(dateStr);
+
+    switch (grouping) {
+      case "monthly":
+        // Format as "Jan 2024"
+        return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      case "quarterly":
+        // Format as "Q1 2024"
+        const quarter = Math.floor(date.getMonth() / 3) + 1;
+        return `Q${quarter} ${date.getFullYear()}`;
+      default:
+        return dateStr;
+    }
+  };
+
   // Prepare pie chart data based on percentage mode
   const getCategoryPieData = () => {
     return data.categories.map(cat => ({
@@ -225,7 +242,10 @@ export default function FailureAnalyticsPage() {
       xAxis: {
         type: "category",
         boundaryGap: true,
-        data: groupedData.map(d => d.date),
+        data: groupedData.map(d => formatDateLabel(d.date as string, timeGrouping)),
+        axisLabel: {
+          rotate: timeGrouping === "daily" ? 45 : 0,
+        },
       },
       yAxis: { type: "value", name: "Number of Incidents" },
       series: categories.map(category => ({
@@ -277,7 +297,10 @@ export default function FailureAnalyticsPage() {
       xAxis: {
         type: "category",
         boundaryGap: true,
-        data: groupedData.map(d => d.date),
+        data: groupedData.map(d => formatDateLabel(d.date as string, timeGrouping)),
+        axisLabel: {
+          rotate: timeGrouping === "daily" ? 45 : 0,
+        },
       },
       yAxis: { type: "value", name: "Number of Incidents" },
       series: groups.map(group => ({
