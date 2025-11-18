@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Button } from "@/components/ui/button";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 export const description = "Burnin Daily Pass/Fail Results";
 
@@ -551,19 +552,28 @@ export function ChartAreaInteractive({
               </Button>
             </div>
             <div className="flex items-center gap-2">
-              <ToggleGroup
-                type="single"
-                value={chartMode}
-                onValueChange={(value) => {
-                  // Prevent deselecting - only allow switching between options
-                  if (value) onChartModeChange(value);
-                }}
-                variant="outline"
-                className="*:data-[slot=toggle-group-item]:!px-3"
-              >
-                <ToggleGroupItem value="all">All Tests</ToggleGroupItem>
-                <ToggleGroupItem value="recent">Latest per S/N</ToggleGroupItem>
-              </ToggleGroup>
+              <div className="flex items-center gap-1.5">
+                <ToggleGroup
+                  type="single"
+                  value={chartMode}
+                  onValueChange={(value) => {
+                    // Prevent deselecting - only allow switching between options
+                    if (value) onChartModeChange(value);
+                  }}
+                  variant="outline"
+                  className="*:data-[slot=toggle-group-item]:!px-3"
+                >
+                  <ToggleGroupItem value="all">All Tests</ToggleGroupItem>
+                  <ToggleGroupItem value="recent">Latest per S/N</ToggleGroupItem>
+                </ToggleGroup>
+                <InfoTooltip content={
+                  <>
+                    <strong>All Tests:</strong> Shows every test run.
+                    <br />
+                    <strong>Latest per S/N:</strong> Shows only the most recent test for each serial number.
+                  </>
+                } />
+              </div>
               <ToggleGroup
                 type="single"
                 value={timeRange}

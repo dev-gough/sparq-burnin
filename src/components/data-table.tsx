@@ -15,6 +15,7 @@ import {
   IconCircleCheckFilled,
 } from "@tabler/icons-react";
 import { Link2, Unlink } from "lucide-react";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -672,39 +673,48 @@ export function DataTable({
             </div>
             {/* Action Buttons */}
             <div className="flex items-center gap-2">
-              <Toggle
-                pressed={latestOnly}
-                onPressedChange={setLatestOnly}
-                variant="outline"
-                className="h-10 px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-              >
-                Latest Only
-              </Toggle>
-              <Button
-                size="sm"
-                variant={filterLinked ? "default" : "outline"}
-                onClick={() => onFilterLinkedChange(!filterLinked)}
-                title={filterLinked ? "Filter affects chart and table" : "Filter only affects table"}
-                className="h-10"
-              >
-                {filterLinked ? <Link2 className="h-4 w-4" /> : <Unlink className="h-4 w-4" />}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSerialSearch("");
-                  setStatusFilter("all");
-                  setFirmwareFilter("all");
-                  onAnnotationFilterChange("all");
-                  onDateFromFilterChange("");
-                  onDateToFilterChange("");
-                  setLatestOnly(false);
-                  onClearDateFilter?.();
-                }}
-                className="h-10"
-              >
-                Clear Filters
-              </Button>
+              <div className="flex flex-col items-center gap-1">
+                <InfoTooltip content="When enabled, shows only the most recent test for each serial number in the table." />
+                <Toggle
+                  pressed={latestOnly}
+                  onPressedChange={setLatestOnly}
+                  variant="outline"
+                  className="h-10 px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                >
+                  Latest Only
+                </Toggle>
+              </div>
+              <div className="flex flex-col items-center gap-1">
+                <InfoTooltip content="When linked, the annotation and date filters affect both the chart above and this table. When unlinked, filters only apply to the table." />
+                <Button
+                  size="sm"
+                  variant={filterLinked ? "default" : "outline"}
+                  onClick={() => onFilterLinkedChange(!filterLinked)}
+                  title={filterLinked ? "Filter affects chart and table" : "Filter only affects table"}
+                  className="h-10"
+                >
+                  {filterLinked ? <Link2 className="h-4 w-4" /> : <Unlink className="h-4 w-4" />}
+                </Button>
+              </div>
+              <div className="flex flex-col items-center gap-1">
+                <div className="h-4" /> {/* Spacer to match tooltip height */}
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSerialSearch("");
+                    setStatusFilter("all");
+                    setFirmwareFilter("all");
+                    onAnnotationFilterChange("all");
+                    onDateFromFilterChange("");
+                    onDateToFilterChange("");
+                    setLatestOnly(false);
+                    onClearDateFilter?.();
+                  }}
+                  className="h-10"
+                >
+                  Clear Filters
+                </Button>
+              </div>
             </div>
           </div>
         </div>

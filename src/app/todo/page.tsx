@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { AlertCircle, X } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 interface UnannotatedTest {
   test_id: number;
@@ -226,7 +227,10 @@ export default function TodoPage() {
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
-                    <label className="text-sm font-medium mb-2 block">Search Serial Number</label>
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <label className="text-sm font-medium">Search Serial Number</label>
+                      <InfoTooltip content="Use * as a wildcard to match any characters. For example: 19* matches serial numbers starting with 19, *265 matches those ending in 265, and *08* matches those containing 08." />
+                    </div>
                     <Input
                       placeholder="e.g. 19*265 or 1908254*"
                       value={searchSerial}

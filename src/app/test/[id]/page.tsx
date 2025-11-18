@@ -278,7 +278,15 @@ function createTooltipFormatter(chartData: Array<{ originalDataPoint?: DataPoint
 
     let html = `<div style="font-weight: 600; margin-bottom: 8px; color: ${textColor};">Time: ${timestamp}</div>`
 
-    params.forEach((param: { color?: string; seriesName?: string; value?: number | number[]; dataIndex?: number }) => {
+    // Filter out null/undefined values and sort by series name for consistent display
+    const validParams = params.filter((param: { value?: number | number[] | null }) => {
+      if (Array.isArray(param.value)) {
+        return param.value[param.value.length - 1] != null
+      }
+      return param.value != null
+    })
+
+    validParams.forEach((param: { color?: string; seriesName?: string; value?: number | number[]; dataIndex?: number }) => {
       const name = param.seriesName?.replace('_inst_latch', '') || ''
       // Handle both simple values and array values [x, y]
       let displayValue: string
@@ -500,8 +508,10 @@ function FullScreenChart({
       progressive: 1000,
       progressiveThreshold: 3000,
       progressiveChunkMode: 'mod' as const,
-      // Data sampling for better performance when zoomed out
-      sampling: 'lttb' as const,
+      // Only apply sampling when decimation is enabled - this prevents tooltip issues
+      // When sampling is active, different series may sample different points, causing
+      // incomplete tooltips. Decimation handles this better by pre-processing the data.
+      ...(decimationEnabled ? { sampling: 'lttb' as const } : {}),
     }))
 
     return {
@@ -571,6 +581,11 @@ function FullScreenChart({
         axisPointer: {
           type: "cross",
         },
+        // Ensure all series are included in tooltip, not limited by performance optimization
+        renderMode: 'html' as const,
+        appendToBody: false,
+        // Show all series in tooltip regardless of count
+        confine: true,
       },
       legend: {
         show: true,
@@ -878,8 +893,10 @@ function ConfigurableChart({
       progressive: 1000,
       progressiveThreshold: 3000,
       progressiveChunkMode: 'mod' as const,
-      // Data sampling for better performance when zoomed out
-      sampling: 'lttb' as const,
+      // Only apply sampling when decimation is enabled - this prevents tooltip issues
+      // When sampling is active, different series may sample different points, causing
+      // incomplete tooltips. Decimation handles this better by pre-processing the data.
+      ...(decimationEnabled ? { sampling: 'lttb' as const } : {}),
     }))
 
     return {
@@ -949,6 +966,11 @@ function ConfigurableChart({
         axisPointer: {
           type: "cross",
         },
+        // Ensure all series are included in tooltip, not limited by performance optimization
+        renderMode: 'html' as const,
+        appendToBody: false,
+        // Show all series in tooltip regardless of count
+        confine: true,
       },
       legend: {
         show: true,

@@ -8,6 +8,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ReactECharts from "echarts-for-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 
 interface FailureData {
   name: string;
@@ -22,6 +23,14 @@ interface TimelineData {
   [key: string]: string | number;
 }
 
+interface FailureRateData {
+  date: string;
+  total: number;
+  failed: number;
+  passed: number;
+  failureRate: number;
+}
+
 interface AnalyticsData {
   totalTests: number;
   totalFailedTests: number;
@@ -29,6 +38,7 @@ interface AnalyticsData {
   groups: FailureData[];
   categoryTimeline: TimelineData[];
   groupTimeline: TimelineData[];
+  failureRateTimeline: FailureRateData[];
 }
 
 type PercentageMode = "all" | "failed";
@@ -343,6 +353,135 @@ export default function FailureAnalyticsPage() {
     };
   };
 
+  // Helper function to calculate moving average from raw counts
+  const calculateMovingAverageFromCounts = (
+    totals: number[],
+    failures: number[],
+    windowSize: number
+  ): (number | null)[] => {
+    const result: (number | null)[] = [];
+    for (let i = 0; i < totals.length; i++) {
+      if (i < windowSize - 1) {
+        result.push(null);
+      } else {
+        const totalSum = totals.slice(i - windowSize + 1, i + 1).reduce((a, b) => a + b, 0);
+        const failureSum = failures.slice(i - windowSize + 1, i + 1).reduce((a, b) => a + b, 0);
+        result.push(totalSum > 0 ? (failureSum / totalSum) * 100 : 0);
+      }
+    }
+    return result;
+  };
+
+  const getFailureRateTimelineOption = () => {
+    const groupedData = groupDataByTime(
+      data.failureRateTimeline.map(d => ({
+        date: d.date,
+        total: d.total,
+        failed: d.failed,
+        passed: d.passed,
+      })),
+      timeGrouping
+    );
+
+    // Extract totals and failures for moving average calculation
+    const totals = groupedData.map(d => d.total as number);
+    const failures = groupedData.map(d => d.failed as number);
+
+    // Calculate failure rate for grouped data
+    const failureRates = groupedData.map(d => {
+      const total = d.total as number;
+      const failed = d.failed as number;
+      return total > 0 ? (failed / total) * 100 : 0;
+    });
+
+    // Calculate 7-period moving average (or fewer if less data available)
+    const windowSize = Math.min(7, Math.max(3, Math.floor(failureRates.length / 4)));
+    const movingAvg = calculateMovingAverageFromCounts(totals, failures, windowSize);
+
+    return {
+      title: {
+        text: "Failure Rate Over Time",
+        left: "center",
+        textStyle: {
+          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+        },
+      },
+      tooltip: {
+        trigger: "axis",
+        backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
+        borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
+        textStyle: {
+          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+        },
+        formatter: (params: Array<{ axisValue?: string; value: number; marker: string; seriesName: string }>) => {
+          const date = params[0]?.axisValue || "";
+          const lines = [`<strong>${date}</strong>`];
+
+          params.forEach((param) => {
+            if (param.value !== null && param.value !== undefined) {
+              lines.push(
+                `${param.marker} ${param.seriesName}: <strong>${param.value.toFixed(2)}%</strong>`
+              );
+            }
+          });
+
+          return lines.join("<br/>");
+        },
+      },
+      legend: {
+        data: ["Failure Rate", `${windowSize}-Period Moving Average`],
+        top: 30,
+        textStyle: {
+          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+        },
+      },
+      grid: { left: "3%", right: "4%", bottom: "3%", top: 80, containLabel: true },
+      xAxis: {
+        type: "category",
+        boundaryGap: false,
+        data: groupedData.map(d => formatDateLabel(d.date as string, timeGrouping)),
+        axisLabel: {
+          rotate: timeGrouping === "daily" ? 45 : 0,
+        },
+      },
+      yAxis: {
+        type: "value",
+        name: "Failure Rate (%)",
+        min: 0,
+        max: 100,
+      },
+      series: [
+        {
+          name: "Failure Rate",
+          type: "line",
+          data: failureRates,
+          itemStyle: {
+            color: "#ef4444",
+          },
+          lineStyle: {
+            width: 2,
+            opacity: 0.6,
+          },
+          symbol: "circle",
+          symbolSize: 6,
+        },
+        {
+          name: `${windowSize}-Period Moving Average`,
+          type: "line",
+          data: movingAvg,
+          itemStyle: {
+            color: "#3b82f6",
+          },
+          lineStyle: {
+            width: 3,
+          },
+          symbol: "none",
+          smooth: true,
+        },
+      ],
+    };
+  };
+
   const categoryPieOption = {
     title: {
       text: "Failures by Category",
@@ -353,7 +492,9 @@ export default function FailureAnalyticsPage() {
     },
     tooltip: {
       trigger: "item",
-      formatter: "{a} <br/>{b}: {c}%",
+      formatter: (params: { name: string; value: number; percent: number; seriesName: string }) => {
+        return `${params.seriesName}<br/>${params.name}: ${params.value.toFixed(2)}%`;
+      },
       backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
       borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
       textStyle: {
@@ -406,7 +547,9 @@ export default function FailureAnalyticsPage() {
     },
     tooltip: {
       trigger: "item",
-      formatter: "{a} <br/>{b}: {c}%",
+      formatter: (params: { name: string; value: number; percent: number; seriesName: string }) => {
+        return `${params.seriesName}<br/>${params.name}: ${params.value.toFixed(2)}%`;
+      },
       backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
       borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
       textStyle: {
@@ -456,7 +599,16 @@ export default function FailureAnalyticsPage() {
         <div className="flex gap-6 items-center flex-wrap">
           {/* Chart Mode Toggle */}
           <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-muted-foreground min-w-[50px]">Mode</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-medium text-muted-foreground min-w-[50px]">Mode</span>
+              <InfoTooltip content={
+                <>
+                  <strong>Latest per S/N:</strong> Analyzes only the most recent test for each serial number.
+                  <br />
+                  <strong>All Tests:</strong> Includes every test run in the analysis.
+                </>
+              } side="bottom" />
+            </div>
             <ToggleGroup
               type="single"
               value={chartMode}
@@ -516,7 +668,16 @@ export default function FailureAnalyticsPage() {
 
           {/* Percentage Mode Toggle */}
           <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-muted-foreground min-w-[80px]">Percentage</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-medium text-muted-foreground min-w-[80px]">Percentage</span>
+              <InfoTooltip content={
+                <>
+                  <strong>% of Failed:</strong> Shows each category as a percentage of all failed tests.
+                  <br />
+                  <strong>% of All:</strong> Shows each category as a percentage of all tests (passed + failed).
+                </>
+              } side="bottom" />
+            </div>
             <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
               <Button
                 variant={percentageMode === "failed" ? "default" : "ghost"}
@@ -586,7 +747,10 @@ export default function FailureAnalyticsPage() {
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold">Timeline Analysis</h3>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Group by:</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm text-muted-foreground">Group by:</span>
+                <InfoTooltip content="Groups test data by time period. Daily shows each day separately. Weekly, biweekly, monthly, and quarterly combine data into larger time buckets for easier trend analysis." side="left" />
+              </div>
               <Select value={timeGrouping} onValueChange={(value) => setTimeGrouping(value as TimeGrouping)}>
                 <SelectTrigger className="w-[140px]">
                   <SelectValue />
@@ -608,6 +772,9 @@ export default function FailureAnalyticsPage() {
             </Card>
             <Card className="p-6">
               <ReactECharts option={getGroupTimelineOption()} style={{ height: "400px" }} />
+            </Card>
+            <Card className="p-6">
+              <ReactECharts option={getFailureRateTimelineOption()} style={{ height: "400px" }} />
             </Card>
           </div>
         </div>

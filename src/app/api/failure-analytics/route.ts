@@ -185,6 +185,27 @@ export async function GET(request: NextRequest) {
       ...data,
     }));
 
+    // Get failure rate timeline (daily pass/fail counts for ALL tests, not just annotated)
+    const failureRateTimelineResult = await client.query(`
+      WITH base_tests AS (${baseTestsQuery})
+      SELECT
+        TO_CHAR(DATE(start_time_utc), 'YYYY-MM-DD') as date,
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE overall_status = 'FAIL') as failed,
+        COUNT(*) FILTER (WHERE overall_status = 'PASS') as passed
+      FROM base_tests
+      GROUP BY DATE(start_time_utc)
+      ORDER BY date
+    `);
+
+    const failureRateTimeline = failureRateTimelineResult.rows.map(row => ({
+      date: row.date,
+      total: parseInt(row.total),
+      failed: parseInt(row.failed),
+      passed: parseInt(row.passed),
+      failureRate: parseInt(row.total) > 0 ? (parseInt(row.failed) / parseInt(row.total)) * 100 : 0,
+    }));
+
     return NextResponse.json({
       totalTests,
       totalFailedTests,
@@ -192,6 +213,7 @@ export async function GET(request: NextRequest) {
       groups,
       categoryTimeline,
       groupTimeline,
+      failureRateTimeline,
     });
   } catch (error) {
     console.error("Error fetching failure analytics:", error);
