@@ -6,9 +6,21 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
-import { Plus, MessageSquare, Edit2, Trash2, Check, X } from 'lucide-react'
+import { Plus, MessageSquare, Edit2, Trash2, Check, X, GripVertical, Trash } from 'lucide-react'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import { useAnnotationCache, type AnnotationQuickOption } from '@/contexts/AnnotationCacheContext'
+import DeleteOptionModal from './DeleteOptionModal'
+import {
+  DndContext,
+  DragEndEvent,
+  useDraggable,
+  useDroppable,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import { CSS } from '@dnd-kit/utilities'
 
 interface Annotation {
   annotation_id: number
@@ -31,6 +43,144 @@ interface TestAnnotationsProps {
   startTime: string
 }
 
+// Draggable quick option button component
+function DraggableQuickOption({
+  option,
+  onClick
+}: {
+  option: AnnotationQuickOption
+  onClick: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `option-${option.option_id}`,
+    data: { option }
+  })
+
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} className="relative">
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={onClick}
+        className="h-6 px-2 text-xs bg-white hover:bg-gray-50 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-white pr-6"
+      >
+        {option.option_text}
+      </Button>
+      <div
+        {...listeners}
+        {...attributes}
+        className="absolute right-0 top-0 h-full px-1 flex items-center cursor-grab active:cursor-grabbing hover:bg-gray-200 dark:hover:bg-gray-600 rounded-r"
+        title="Drag to reassign group or delete"
+      >
+        <GripVertical className="h-3 w-3 text-gray-500 dark:text-gray-400" />
+      </div>
+    </div>
+  )
+}
+
+// Delete zone component that appears during drag
+function DeleteZone({ isDragging }: { isDragging: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: 'delete-zone',
+    data: { isDeleteZone: true }
+  })
+
+  if (!isDragging) return null
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center gap-2 transition-all ${
+        isOver
+          ? 'border-red-500 bg-red-50 dark:bg-red-950/30 scale-105'
+          : 'border-red-300 dark:border-red-800 bg-red-50/50 dark:bg-red-950/10'
+      }`}
+      style={{
+        animation: isDragging ? 'slideDown 0.2s ease-out' : undefined
+      }}
+    >
+      <Trash className={`h-6 w-6 transition-colors ${isOver ? 'text-red-600 dark:text-red-400' : 'text-red-400 dark:text-red-600'}`} />
+      <p className={`text-sm font-medium transition-colors ${isOver ? 'text-red-700 dark:text-red-300' : 'text-red-500 dark:text-red-500'}`}>
+        {isOver ? 'Release to delete' : 'Drag here to delete'}
+      </p>
+    </div>
+  )
+}
+
+// Droppable group container component
+function DroppableGroup({
+  groupName,
+  children,
+  isCollapsed,
+  onToggle,
+  onDelete,
+  headerColor,
+  backgroundColor,
+  textColor
+}: {
+  groupName: string
+  children: React.ReactNode
+  isCollapsed: boolean
+  onToggle: () => void
+  onDelete?: () => void
+  headerColor: string
+  backgroundColor: string
+  textColor: string
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `group-${groupName}`,
+    data: { groupName }
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`border rounded overflow-hidden transition-all group/group ${isOver && !isCollapsed ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
+    >
+      {/* Group Header */}
+      <div
+        className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-medium relative"
+        style={{ backgroundColor: headerColor, color: 'white' }}
+      >
+        <button
+          onClick={onToggle}
+          className="flex-1 flex items-center justify-between hover:opacity-80 transition-opacity"
+        >
+          <span>{groupName}</span>
+          <span className="text-xs">{isCollapsed ? '▶' : '▼'}</span>
+        </button>
+        {onDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete()
+            }}
+            className="ml-2 p-1 opacity-0 group-hover/group:opacity-100 hover:bg-white/20 rounded transition-opacity"
+            title="Delete group (only if empty)"
+          >
+            <Trash className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+
+      {/* Group Options */}
+      {!isCollapsed && (
+        <div
+          className="p-2 flex flex-wrap gap-1"
+          style={{ backgroundColor, color: textColor }}
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function TestAnnotations({ testId, serialNumber }: TestAnnotationsProps) {
   const { resolvedTheme } = useTheme()
   const [annotations, setAnnotations] = useState<Annotation[]>([])
@@ -44,8 +194,19 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
   const [newGroupName, setNewGroupName] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editText, setEditText] = useState('')
+  const [deleteOptionModal, setDeleteOptionModal] = useState<{ optionId: number; optionText: string } | null>(null)
+  const [isDraggingOption, setIsDraggingOption] = useState(false)
   const { formatInTimezone } = useTimezone()
   const { quickOptions, groups, refetchOptions, refetchGroups } = useAnnotationCache()
+
+  // Configure drag sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // Require 8px movement before drag starts
+      },
+    })
+  )
 
   const fetchAnnotations = useCallback(async () => {
     try {
@@ -225,6 +386,88 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
     })
   }
 
+  const handleDragStart = (event: DragEndEvent) => {
+    const optionData = event.active.data.current?.option as AnnotationQuickOption | undefined
+    if (optionData) {
+      setIsDraggingOption(true)
+    }
+  }
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event
+    setIsDraggingOption(false)
+
+    if (!over) return
+
+    // Extract option information
+    const optionData = active.data.current?.option as AnnotationQuickOption | undefined
+    if (!optionData) return
+
+    // Check if dropping into delete zone
+    const isDeleteZone = over.data.current?.isDeleteZone as boolean | undefined
+    if (isDeleteZone) {
+      setDeleteOptionModal({ optionId: optionData.option_id, optionText: optionData.option_text })
+      return
+    }
+
+    // Otherwise, handle group reassignment
+    const targetGroupName = over.data.current?.groupName as string | undefined
+    if (!targetGroupName) return
+
+    // Check if we're dropping into a different group
+    const newGroupName = targetGroupName === 'Ungrouped' ? null : targetGroupName
+    if (optionData.group_name === newGroupName) return
+
+    try {
+      const response = await fetch(`/api/annotation-quick-options/${optionData.option_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ group_name: newGroupName })
+      })
+
+      if (response.ok) {
+        await refetchOptions()
+      } else {
+        console.error('Failed to update option group')
+        alert('Failed to reassign option to new group')
+      }
+    } catch (error) {
+      console.error('Error updating option group:', error)
+      alert('Error reassigning option to new group')
+    }
+  }
+
+  const deleteGroup = async (groupId: number, groupName: string) => {
+    if (!confirm(`Are you sure you want to delete the group "${groupName}"?\n\nThis will only work if the group is empty.`)) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/annotation-groups/${groupId}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        await refetchGroups()
+      } else {
+        const errorData = await response.json()
+        if (response.status === 409) {
+          alert(errorData.message || 'Cannot delete group with existing options')
+        } else {
+          alert('Failed to delete group')
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting group:', error)
+      alert('Error deleting group')
+    }
+  }
+
+  const handleDeleteOptionConfirmed = async () => {
+    setDeleteOptionModal(null)
+    await Promise.all([refetchOptions(), fetchAnnotations()])
+  }
+
   const getAdjustedColor = (hexColor: string): string => {
     const hex = hexColor.replace('#', '')
     const r = parseInt(hex.substring(0, 2), 16)
@@ -269,104 +512,94 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
   }
 
   return (
-    <Card className="w-80 h-full flex flex-col">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <MessageSquare className="h-5 w-5" />
-          Test Annotations
-        </CardTitle>
-        <div className="text-xs text-muted-foreground">
-          S/N: {serialNumber}
-        </div>
-      </CardHeader>
-      
-      <CardContent className="flex-1 space-y-4 overflow-y-auto">
-        {/* Quick Annotate Section - Grouped */}
-        <div className="space-y-2">
-          <h4 className="text-sm font-medium">Quick Annotate:</h4>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      <Card className="w-80 h-full flex flex-col">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            Test Annotations
+          </CardTitle>
+          <div className="text-xs text-muted-foreground">
+            S/N: {serialNumber}
+          </div>
+        </CardHeader>
 
-          {/* Render groups */}
-          {groups.map((group) => {
-            const groupOptions = groupedOptions[group.group_name] || []
-            const isCollapsed = collapsedGroups.has(group.group_name)
+        <CardContent className="flex-1 space-y-4 overflow-y-auto">
+          {/* Quick Annotate Section - Grouped */}
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">Quick Annotate:</h4>
 
-            // Calculate adjusted header color for dark mode
-            const headerColor = (() => {
-              const hex = group.group_color.replace('#', '')
-              const r = parseInt(hex.substring(0, 2), 16)
-              const g = parseInt(hex.substring(2, 4), 16)
-              const b = parseInt(hex.substring(4, 6), 16)
-              const isDark = resolvedTheme === 'dark'
+            {/* Render groups */}
+            {groups.map((group) => {
+              const groupOptions = groupedOptions[group.group_name] || []
+              const isCollapsed = collapsedGroups.has(group.group_name)
 
-              // Slightly reduce brightness in dark mode for better visibility
-              return isDark
-                ? `rgb(${Math.round(r * 0.85)}, ${Math.round(g * 0.85)}, ${Math.round(b * 0.85)})`
-                : group.group_color
-            })()
+              // Calculate adjusted header color for dark mode
+              const headerColor = (() => {
+                const hex = group.group_color.replace('#', '')
+                const r = parseInt(hex.substring(0, 2), 16)
+                const g = parseInt(hex.substring(2, 4), 16)
+                const b = parseInt(hex.substring(4, 6), 16)
+                const isDark = resolvedTheme === 'dark'
 
-            return (
-              <div key={group.group_id} className="border rounded overflow-hidden">
-                {/* Group Header */}
-                <button
-                  onClick={() => toggleGroup(group.group_name)}
-                  className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-medium hover:opacity-80 transition-opacity"
-                  style={{ backgroundColor: headerColor, color: 'white' }}
+                // Slightly reduce brightness in dark mode for better visibility
+                return isDark
+                  ? `rgb(${Math.round(r * 0.85)}, ${Math.round(g * 0.85)}, ${Math.round(b * 0.85)})`
+                  : group.group_color
+              })()
+
+              return (
+                <DroppableGroup
+                  key={group.group_id}
+                  groupName={group.group_name}
+                  isCollapsed={isCollapsed}
+                  onToggle={() => toggleGroup(group.group_name)}
+                  onDelete={() => deleteGroup(group.group_id, group.group_name)}
+                  headerColor={headerColor}
+                  backgroundColor={getAdjustedColor(group.group_color)}
+                  textColor={resolvedTheme === 'dark' ? 'white' : 'inherit'}
                 >
-                  <span>{group.group_name}</span>
-                  <span className="text-xs">{isCollapsed ? '▶' : '▼'}</span>
-                </button>
-
-                {/* Group Options */}
-                {!isCollapsed && (
-                  <div className="p-2 flex flex-wrap gap-1" style={{ backgroundColor: getAdjustedColor(group.group_color), color: resolvedTheme === 'dark' ? 'white' : 'inherit' }}>
-                    {groupOptions.map((option) => (
-                      <Button
-                        key={option.option_id}
-                        size="sm"
-                        variant="outline"
-                        onClick={() => addQuickAnnotation(option.option_text)}
-                        className="h-6 px-2 text-xs bg-white hover:bg-gray-50 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-white"
-                      >
-                        {option.option_text}
-                      </Button>
-                    ))}
-                    {groupOptions.length === 0 && (
-                      <div className="text-xs text-muted-foreground italic">No options in this group</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-
-          {/* Ungrouped options */}
-          {groupedOptions['Ungrouped'] && groupedOptions['Ungrouped'].length > 0 && (
-            <div className="border rounded overflow-hidden">
-              <button
-                onClick={() => toggleGroup('Ungrouped')}
-                className="w-full flex items-center justify-between px-2 py-1.5 text-xs font-medium bg-gray-500 dark:bg-gray-600 text-white hover:opacity-80 transition-opacity"
-              >
-                <span>Ungrouped</span>
-                <span className="text-xs">{collapsedGroups.has('Ungrouped') ? '▶' : '▼'}</span>
-              </button>
-
-              {!collapsedGroups.has('Ungrouped') && (
-                <div className="p-2 flex flex-wrap gap-1 bg-gray-50 dark:bg-gray-700/50">
-                  {groupedOptions['Ungrouped'].map((option) => (
-                    <Button
+                  {groupOptions.map((option) => (
+                    <DraggableQuickOption
                       key={option.option_id}
-                      size="sm"
-                      variant="outline"
+                      option={option}
                       onClick={() => addQuickAnnotation(option.option_text)}
-                      className="h-6 px-2 text-xs"
-                    >
-                      {option.option_text}
-                    </Button>
+                    />
                   ))}
-                </div>
-              )}
-            </div>
-          )}
+                  {groupOptions.length === 0 && (
+                    <div className="text-xs text-muted-foreground italic">No options in this group</div>
+                  )}
+                </DroppableGroup>
+              )
+            })}
+
+            {/* Ungrouped options */}
+            {groupedOptions['Ungrouped'] && groupedOptions['Ungrouped'].length > 0 && (
+              <DroppableGroup
+                groupName="Ungrouped"
+                isCollapsed={collapsedGroups.has('Ungrouped')}
+                onToggle={() => toggleGroup('Ungrouped')}
+                headerColor={resolvedTheme === 'dark' ? 'rgb(75, 85, 99)' : 'rgb(107, 114, 128)'}
+                backgroundColor={resolvedTheme === 'dark' ? 'rgba(55, 65, 81, 0.5)' : 'rgb(249, 250, 251)'}
+                textColor={resolvedTheme === 'dark' ? 'white' : 'inherit'}
+              >
+                {groupedOptions['Ungrouped'].map((option) => (
+                  <DraggableQuickOption
+                    key={option.option_id}
+                    option={option}
+                    onClick={() => addQuickAnnotation(option.option_text)}
+                  />
+                ))}
+              </DroppableGroup>
+            )}
+
+            {/* Delete Zone - appears during drag at bottom */}
+            <DeleteZone isDragging={isDraggingOption} />
 
           {/* Add new group button */}
           {!showNewGroupForm ? (
@@ -596,5 +829,16 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
         </div>
       </CardContent>
     </Card>
+
+    {/* Delete Option Modal */}
+    {deleteOptionModal && (
+      <DeleteOptionModal
+        optionId={deleteOptionModal.optionId}
+        optionText={deleteOptionModal.optionText}
+        onClose={() => setDeleteOptionModal(null)}
+        onConfirm={handleDeleteOptionConfirmed}
+      />
+    )}
+    </DndContext>
   )
 }

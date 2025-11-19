@@ -13,6 +13,7 @@
     "reprocess": "tsx scripts/reprocess.ts",
     "clean": "tsx scripts/cleanup-debug-firmware.ts",
     "migrate": "tsx scripts/migrate-db.ts",
+    "migrate:annotations": "tsx scripts/migrate-annotations.ts",
     "setup-db": "./scripts/setup.sh",
     "db:schema": "psql -d burnin_dashboard -f scripts/setup-database.sql"
   },

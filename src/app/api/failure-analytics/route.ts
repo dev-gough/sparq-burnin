@@ -75,18 +75,20 @@ export async function GET(request: NextRequest) {
       WITH base_tests AS (${baseTestsQuery})
       SELECT
         aqo.option_text as name,
+        COALESCE(aqo.group_name, 'Other') as group_name,
         COUNT(*) as count
       FROM TestAnnotations ta
       JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
       JOIN base_tests t ON ta.current_test_id = t.test_id
       WHERE t.overall_status = 'FAIL'
         AND ta.current_test_id IS NOT NULL
-      GROUP BY aqo.option_text
+      GROUP BY aqo.option_text, aqo.group_name
       ORDER BY count DESC
     `);
 
     const categories = categoriesResult.rows.map(row => ({
       name: row.name,
+      group_name: row.group_name,
       count: parseInt(row.count),
       percentage_all: totalTests > 0 ? (parseInt(row.count) / totalTests) * 100 : 0,
       percentage_failed: totalFailedTests > 0 ? (parseInt(row.count) / totalFailedTests) * 100 : 0,

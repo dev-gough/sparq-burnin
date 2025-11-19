@@ -276,9 +276,15 @@ export default function ContributorsPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{data.teamStats.coverage_percentage}%</div>
-                    <p className="text-xs text-muted-foreground">of failed tests</p>
+                    <p className="text-xs text-muted-foreground">
+                      {data.teamStats.coverage_percentage >= 100
+                        ? "Perfect! All failures annotated! 🎉"
+                        : "of failed tests"}
+                    </p>
                     <span className="absolute bottom-2 right-2 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-1 rounded-full">
-                      Get to work →
+                      {data.teamStats.coverage_percentage >= 100
+                        ? "Amazing work! ✨"
+                        : "Get to work →"}
                     </span>
                   </CardContent>
                 </Card>

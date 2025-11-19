@@ -167,9 +167,11 @@ export async function GET() {
       WITH annotation_stats AS (
         SELECT
           COUNT(*) as total_annotations,
-          COUNT(DISTINCT current_test_id) as total_annotated_tests
-        FROM TestAnnotations
-        WHERE current_test_id IS NOT NULL
+          COUNT(DISTINCT ta.current_test_id) as total_annotated_tests
+        FROM TestAnnotations ta
+        INNER JOIN Tests t ON ta.current_test_id = t.test_id
+        WHERE ta.current_test_id IS NOT NULL
+          AND t.overall_status = 'FAIL'
       ),
       failed_tests AS (
         SELECT COUNT(*) as total_failed_tests

@@ -13,6 +13,7 @@ import { InfoTooltip } from "@/components/ui/info-tooltip";
 interface FailureData {
   name: string;
   count: number;
+  group_name?: string;
   group_color?: string | null;
   percentage_all: number;
   percentage_failed: number;
@@ -54,6 +55,7 @@ export default function FailureAnalyticsPage() {
   const [chartMode, setChartMode] = useState("recent"); // 'recent' or 'all'
   const [timeRange, setTimeRange] = useState("all");
   const [timeGrouping, setTimeGrouping] = useState<TimeGrouping>("daily");
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -213,6 +215,16 @@ export default function FailureAnalyticsPage() {
   };
 
   const getGroupPieData = () => {
+    // If a group is expanded, show categories within that group
+    if (expandedGroup) {
+      const categoriesInGroup = data.categories.filter(cat => cat.group_name === expandedGroup);
+      return categoriesInGroup.map(cat => ({
+        name: cat.name,
+        value: percentageMode === "all" ? cat.percentage_all : cat.percentage_failed,
+      }));
+    }
+
+    // Otherwise show top-level groups
     return data.groups.map(group => ({
       name: group.name,
       value: percentageMode === "all" ? group.percentage_all : group.percentage_failed,
@@ -537,9 +549,20 @@ export default function FailureAnalyticsPage() {
     ],
   };
 
+  const handleGroupChartClick = (params: { componentType?: string; name?: string }) => {
+    if (!expandedGroup && params.componentType === 'series' && params.name) {
+      // User clicked on a group slice - expand it
+      setExpandedGroup(params.name);
+    }
+  };
+
+  const handleGroupBackClick = () => {
+    setExpandedGroup(null);
+  };
+
   const groupPieOption = {
     title: {
-      text: "Failures by Group",
+      text: expandedGroup ? expandedGroup : "Failures by Group",
       left: "center",
       textStyle: {
         color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
@@ -741,8 +764,27 @@ export default function FailureAnalyticsPage() {
           <Card className="p-6">
             <ReactECharts option={categoryPieOption} style={{ height: "400px" }} />
           </Card>
-          <Card className="p-6">
-            <ReactECharts option={groupPieOption} style={{ height: "400px" }} />
+          <Card className="p-6 relative">
+            {expandedGroup && (
+              <button
+                onClick={handleGroupBackClick}
+                className="absolute top-4 right-4 text-sm text-primary hover:underline z-10"
+              >
+                ← Back to Groups
+              </button>
+            )}
+            <ReactECharts
+              option={groupPieOption}
+              style={{ height: "400px" }}
+              onEvents={{
+                click: handleGroupChartClick,
+              }}
+            />
+            {!expandedGroup && (
+              <p className="text-xs text-muted-foreground text-center mt-2">
+                Click a slice to view categories
+              </p>
+            )}
           </Card>
         </div>
 
