@@ -185,15 +185,15 @@ function FailedTestNavigation({
   }
 
   return (
-    <Card className="border-orange-200 bg-orange-50 w-full">
+    <Card className="border-orange-200 bg-orange-50 dark:border-orange-900 dark:bg-orange-950 w-full">
       <CardHeader className="pb-3">
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-orange-600" />
-            <CardTitle className="text-orange-800 text-base">Failed Test History</CardTitle>
+            <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+            <CardTitle className="text-orange-800 dark:text-orange-200 text-base">Failed Test History</CardTitle>
           </div>
           {navigation.current_failure_index && (
-            <span className="text-sm text-orange-600 font-medium">
+            <span className="text-sm text-orange-600 dark:text-orange-400 font-medium">
               {navigation.current_failure_index} of {navigation.total_failed_tests} failures
             </span>
           )}

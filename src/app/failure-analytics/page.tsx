@@ -594,7 +594,7 @@ export default function FailureAnalyticsPage() {
   return (
     <div className="ml-10 px-6 py-6 space-y-6">
       {/* Header - Never re-renders */}
-      <div className="flex items-center justify-between flex-wrap gap-6">
+      <div className="sticky top-0 z-10 bg-background pb-4 -mx-6 px-6 pt-6 -mt-6 flex items-center justify-between flex-wrap gap-6 shadow-sm">
         <h1 className="text-3xl font-bold">Failure Analytics</h1>
         <div className="flex gap-6 items-center flex-wrap">
           {/* Chart Mode Toggle */}
@@ -672,6 +672,10 @@ export default function FailureAnalyticsPage() {
               <span className="text-sm font-medium text-muted-foreground min-w-[80px]">Percentage</span>
               <InfoTooltip content={
                 <>
+                  <strong>Affects pie chart labels/tooltips only.</strong>
+                  <br /><br />
+                  Changes the percentage values shown, but not the visual slice sizes (relative proportions remain the same).
+                  <br /><br />
                   <strong>% of Failed:</strong> Shows each category as a percentage of all failed tests.
                   <br />
                   <strong>% of All:</strong> Shows each category as a percentage of all tests (passed + failed).
