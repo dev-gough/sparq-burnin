@@ -227,7 +227,8 @@ export default function TestAnnotations({ testId, serialNumber }: TestAnnotation
       setAnnotationsLoading(false)
     }
     loadData()
-  }, [fetchAnnotations])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testId]) // Only refetch when testId changes, not when fetchAnnotations reference changes
 
   const addQuickAnnotation = async (optionText: string) => {
     try {

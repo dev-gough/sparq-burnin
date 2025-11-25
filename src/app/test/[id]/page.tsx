@@ -1307,7 +1307,8 @@ export default function TestPage() {
     if (testId) {
       fetchTestData()
     }
-  }, [testId, getTest, setTest])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testId]) // Only refetch when testId changes, not when cache functions change
 
   const updateTestStatus = async (newStatus: string) => {
     if (!testData) return

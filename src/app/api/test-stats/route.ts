@@ -270,6 +270,10 @@ export async function GET(request: NextRequest) {
       const latestOnly = searchParams.get("latestOnly") === "true";
       const annotationFilter = searchParams.get("annotation");
 
+      // Pagination parameters for progressive loading
+      const limit = searchParams.get("limit") ? parseInt(searchParams.get("limit")!) : 10000;
+      const offset = searchParams.get("offset") ? parseInt(searchParams.get("offset")!) : 0;
+
       // Check if filtering by group or individual annotation
       const isGroupFilter = annotationFilter?.startsWith("group:") ?? false;
       const filterValue = isGroupFilter && annotationFilter ? annotationFilter.substring(6) : annotationFilter;
@@ -340,7 +344,8 @@ export async function GET(request: NextRequest) {
           GROUP BY lt.test_id, lt.inv_id, lt.serial_number, lt.firmware_version,
                    lt.duration, lt.non_zero_status_flags, lt.status, lt.failure_reason, lt.start_time
           ORDER BY lt.start_time DESC
-          LIMIT 10000
+          LIMIT $${annotationFilter && annotationFilter !== 'all' ? 2 : 1}
+          OFFSET $${annotationFilter && annotationFilter !== 'all' ? 3 : 2}
         `;
       } else {
         // Show all tests
@@ -396,13 +401,14 @@ export async function GET(request: NextRequest) {
                    t.overall_status, t.failure_description, t.start_time_utc, t.end_time,
                    t.ac_status, t.ch1_status, t.ch2_status, t.ch3_status, t.ch4_status
           ORDER BY t.start_time_utc DESC
-          LIMIT 10000
+          LIMIT $${annotationFilter && annotationFilter !== 'all' ? 2 : 1}
+          OFFSET $${annotationFilter && annotationFilter !== 'all' ? 3 : 2}
         `;
       }
 
       const result = annotationFilter && annotationFilter !== 'all'
-        ? await client.query(testsQuery, [filterValue])
-        : await client.query(testsQuery);
+        ? await client.query(testsQuery, [filterValue, limit, offset])
+        : await client.query(testsQuery, [limit, offset]);
 
       const tests: TestRecord[] = result.rows.map((row) => ({
         test_id: row.test_id,

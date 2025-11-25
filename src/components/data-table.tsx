@@ -279,7 +279,7 @@ export function DataTable({
   const { formatInTimezone, selectedTimezone } = useTimezone();
   const { prefetchTests } = useTestDataCache();
   const { quickOptions: cachedQuickOptions, groups: cachedGroups } = useAnnotationCache();
-  const [data, setData] = React.useState([]);
+  const [data, setData] = React.useState<z.infer<typeof testSchema>[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [rowSelection, setRowSelection] = React.useState({});
   const [columnVisibility, setColumnVisibility] =
@@ -329,22 +329,68 @@ export function DataTable({
     const fetchData = async () => {
       setLoading(true);
       try {
-        const params = new URLSearchParams({ view: "tests" });
+        // Build base params for all requests
+        const baseParams = new URLSearchParams({ view: "tests" });
         if (latestOnly) {
-          params.append("latestOnly", "true");
+          baseParams.append("latestOnly", "true");
         }
         if (annotationFilter && annotationFilter !== "all") {
-          params.append("annotation", annotationFilter);
+          baseParams.append("annotation", annotationFilter);
         }
 
+        // STEP 1: Fetch first page (200 tests) immediately for fast initial render
+        const initialParams = new URLSearchParams(baseParams);
+        initialParams.append("limit", "200");
+        initialParams.append("offset", "0");
+
         const [testsResponse, firmwareResponse] = await Promise.all([
-          fetch(`/api/test-stats?${params}`),
+          fetch(`/api/test-stats?${initialParams}`),
           fetch("/api/test-stats?view=firmware-versions"),
         ]);
 
         if (testsResponse.ok) {
-          const testData = await testsResponse.json();
-          setData(testData);
+          const initialData = await testsResponse.json();
+          setData(initialData);
+          setLoading(false); // Show data immediately
+
+          // STEP 2: Background load remaining tests in batches of 500
+          if (initialData.length === 200) {
+            // Only fetch more if we got a full first page (indicates more data exists)
+            let offset = 200;
+            const batchSize = 500;
+            let hasMore = true;
+
+            while (hasMore) {
+              const batchParams = new URLSearchParams(baseParams);
+              batchParams.append("limit", batchSize.toString());
+              batchParams.append("offset", offset.toString());
+
+              const batchResponse = await fetch(`/api/test-stats?${batchParams}`);
+              if (batchResponse.ok) {
+                const batchData = await batchResponse.json();
+
+                if (batchData.length > 0) {
+                  // Append batch to existing data
+                  setData(prevData => [...prevData, ...batchData]);
+                  offset += batchData.length;
+
+                  // Check if we got less than batch size (indicates last batch)
+                  if (batchData.length < batchSize) {
+                    hasMore = false;
+                  }
+                } else {
+                  hasMore = false;
+                }
+              } else {
+                console.warn(`Failed to fetch batch at offset ${offset}`);
+                hasMore = false;
+              }
+            }
+
+            console.log(`✅ Progressive loading complete: ${offset} total tests loaded`);
+          }
+        } else {
+          setLoading(false);
         }
 
         if (firmwareResponse.ok) {
