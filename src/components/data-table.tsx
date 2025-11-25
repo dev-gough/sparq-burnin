@@ -489,6 +489,11 @@ export function DataTable({
 
   // Prefetch failed tests when filters change
   React.useEffect(() => {
+    // Only prefetch if there are active filters (prevent prefetch on initial load)
+    if (columnFilters.length === 0) {
+      return;
+    }
+
     const filteredRows = table.getFilteredRowModel().rows;
 
     // Get test IDs of failed tests (status 'FAIL')

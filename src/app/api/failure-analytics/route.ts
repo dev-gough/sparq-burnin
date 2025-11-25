@@ -99,22 +99,28 @@ export async function GET(request: NextRequest) {
       WITH base_tests AS (${baseTestsQuery})
       SELECT
         COALESCE(aqo.group_name, 'Other') as name,
-        ag.group_color,
         COUNT(*) as count
       FROM TestAnnotations ta
       LEFT JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
-      LEFT JOIN AnnotationGroups ag ON aqo.group_name = ag.group_name
       JOIN base_tests t ON ta.current_test_id = t.test_id
       WHERE t.overall_status = 'FAIL'
         AND ta.current_test_id IS NOT NULL
-      GROUP BY aqo.group_name, ag.group_color
+      GROUP BY aqo.group_name
       ORDER BY count DESC
     `);
+
+    // Get group colors separately and merge with aggregated counts
+    const groupColorsResult = await client.query(`
+      SELECT group_name, group_color FROM AnnotationGroups
+    `);
+    const groupColorMap = new Map(
+      groupColorsResult.rows.map(row => [row.group_name, row.group_color])
+    );
 
     const groups = groupsResult.rows.map(row => ({
       name: row.name,
       count: parseInt(row.count),
-      group_color: row.group_color,
+      group_color: groupColorMap.get(row.name) || null,
       percentage_all: totalTests > 0 ? (parseInt(row.count) / totalTests) * 100 : 0,
       percentage_failed: totalFailedTests > 0 ? (parseInt(row.count) / totalFailedTests) * 100 : 0,
     }));
