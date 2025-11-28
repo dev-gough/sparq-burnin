@@ -121,32 +121,32 @@ const columnGroups = {
   "Power Generation": {
     columns: ["vpv1", "vpv2", "vpv3", "vpv4", "ppv1", "ppv2", "ppv3", "ppv4"],
     description: "PV voltages and power outputs",
-    color: "bg-green-50 border-green-200"
+    color: "bg-green-50 border-green-200 dark:bg-green-950 dark:border-green-800"
   },
   "Energy & Efficiency": {
     columns: ["epv1", "epv2", "epv3", "epv4", "activeenergy", "reactiveenergy"],
     description: "Energy measurements and efficiency metrics",
-    color: "bg-blue-50 border-blue-200"
+    color: "bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800"
   },
   "Grid Connection": {
     columns: ["vgrid", "pgrid", "qgrid", "vbus", "frequency"],
     description: "Grid interface measurements",
-    color: "bg-yellow-50 border-yellow-200"
+    color: "bg-yellow-50 border-yellow-200 dark:bg-yellow-950 dark:border-yellow-800"
   },
   "Current Latch": {
     columns: ["ipv1_inst_latch", "ipv2_inst_latch", "ipv3_inst_latch", "ipv4_inst_latch", "igrid_inst_latch", "vntrl_inst_latch"],
     description: "Instantaneous current latch readings",
-    color: "bg-purple-50 border-purple-200"
+    color: "bg-purple-50 border-purple-200 dark:bg-purple-950 dark:border-purple-800"
   },
   "Voltage Latch": {
     columns: ["vgrid_inst_latch", "vbus_inst_latch", "vpv1_inst_latch", "vpv2_inst_latch", "vpv3_inst_latch", "vpv4_inst_latch"],
     description: "Instantaneous voltage latch readings",
-    color: "bg-indigo-50 border-indigo-200"
+    color: "bg-indigo-50 border-indigo-200 dark:bg-indigo-950 dark:border-indigo-800"
   },
   "System Status": {
     columns: ["temperature", "extstatus", "status", "extstatus_latch", "status_latch"],
     description: "System health and diagnostics",
-    color: "bg-red-50 border-red-200"
+    color: "bg-red-50 border-red-200 dark:bg-red-950 dark:border-red-800"
   }
 }
 
@@ -405,6 +405,69 @@ function FullScreenChart({
       attributeFilter: ["class"],
     })
     return () => observer.disconnect()
+  }, [])
+
+  // Custom wheel event handler for SHIFT+scroll panning
+  useEffect(() => {
+    if (!chartRef.current) return
+
+    const chartInstance = chartRef.current.getEchartsInstance()
+    const chartDom = chartInstance.getDom()
+
+    const handleWheel = (e: WheelEvent) => {
+      // Only intercept when SHIFT is pressed - otherwise let eCharts handle it
+      if (!e.shiftKey) return
+
+      // SHIFT is pressed - get fresh instance from ref
+      if (!chartRef.current) return
+
+      const freshInstance = chartRef.current.getEchartsInstance()
+      const option = freshInstance.getOption()
+
+      if (!option || typeof option !== 'object') return
+
+      const dataZoomArray = (option as { dataZoom?: Array<{ start?: number; end?: number }> }).dataZoom
+
+      if (!dataZoomArray || !Array.isArray(dataZoomArray) || dataZoomArray.length === 0) return
+
+      const dataZoom = dataZoomArray[0]
+      const currentStart = dataZoom.start ?? 0
+      const currentEnd = dataZoom.end ?? 100
+      const range = currentEnd - currentStart
+
+      // Prevent default and handle panning
+      e.preventDefault()
+      e.stopPropagation()
+
+      // Horizontal pan when SHIFT is held
+      const panAmount = (e.deltaY / 100) * range * 0.3 // Adjust sensitivity
+
+      let newStart = currentStart + panAmount
+      let newEnd = currentEnd + panAmount
+
+      // Clamp to valid range [0, 100]
+      if (newStart < 0) {
+        newStart = 0
+        newEnd = range
+      }
+      if (newEnd > 100) {
+        newEnd = 100
+        newStart = 100 - range
+      }
+
+      freshInstance.dispatchAction({
+        type: 'dataZoom',
+        dataZoomIndex: 0,
+        start: newStart,
+        end: newEnd,
+      })
+    }
+
+    chartDom.addEventListener('wheel', handleWheel, { passive: false, capture: true })
+
+    return () => {
+      chartDom.removeEventListener('wheel', handleWheel, { capture: true })
+    }
   }, [])
 
   // Initialize state from inherited values
@@ -677,7 +740,7 @@ function FullScreenChart({
         {/* Enhanced Column Selection with Compact Grouping */}
         <div className="mt-4 max-h-80 overflow-y-auto">
           {/* Quick Presets */}
-          <div className="mb-3 p-2 bg-gray-50 rounded border">
+          <div className="mb-3 p-2 bg-gray-50 dark:bg-gray-900 rounded border dark:border-gray-700">
             <div className="flex flex-wrap gap-1">
               <Button
                 size="sm"
@@ -810,6 +873,69 @@ function ConfigurableChart({
       attributeFilter: ["class"],
     })
     return () => observer.disconnect()
+  }, [])
+
+  // Custom wheel event handler for SHIFT+scroll panning
+  useEffect(() => {
+    if (!chartRef.current) return
+
+    const chartInstance = chartRef.current.getEchartsInstance()
+    const chartDom = chartInstance.getDom()
+
+    const handleWheel = (e: WheelEvent) => {
+      // Only intercept when SHIFT is pressed - otherwise let eCharts handle it
+      if (!e.shiftKey) return
+
+      // SHIFT is pressed - get fresh instance from ref
+      if (!chartRef.current) return
+
+      const freshInstance = chartRef.current.getEchartsInstance()
+      const option = freshInstance.getOption()
+
+      if (!option || typeof option !== 'object') return
+
+      const dataZoomArray = (option as { dataZoom?: Array<{ start?: number; end?: number }> }).dataZoom
+
+      if (!dataZoomArray || !Array.isArray(dataZoomArray) || dataZoomArray.length === 0) return
+
+      const dataZoom = dataZoomArray[0]
+      const currentStart = dataZoom.start ?? 0
+      const currentEnd = dataZoom.end ?? 100
+      const range = currentEnd - currentStart
+
+      // Prevent default and handle panning
+      e.preventDefault()
+      e.stopPropagation()
+
+      // Horizontal pan when SHIFT is held
+      const panAmount = (e.deltaY / 100) * range * 0.3 // Adjust sensitivity
+
+      let newStart = currentStart + panAmount
+      let newEnd = currentEnd + panAmount
+
+      // Clamp to valid range [0, 100]
+      if (newStart < 0) {
+        newStart = 0
+        newEnd = range
+      }
+      if (newEnd > 100) {
+        newEnd = 100
+        newStart = 100 - range
+      }
+
+      freshInstance.dispatchAction({
+        type: 'dataZoom',
+        dataZoomIndex: 0,
+        start: newStart,
+        end: newEnd,
+      })
+    }
+
+    chartDom.addEventListener('wheel', handleWheel, { passive: false, capture: true })
+
+    return () => {
+      chartDom.removeEventListener('wheel', handleWheel, { capture: true })
+    }
   }, [])
 
   // Function to get display name for columns
