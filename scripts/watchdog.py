@@ -6,6 +6,7 @@ import re
 import logging
 import subprocess
 import json
+import psutil
 from logging.handlers import RotatingFileHandler
 
 def load_config():
@@ -38,6 +39,10 @@ to_process_results_dir = os.path.join(to_process_dir, 'results')
 os.makedirs(to_process_tests_dir, exist_ok=True)
 os.makedirs(to_process_results_dir, exist_ok=True)
 
+# Lock file for preventing concurrent ingestion
+LOCK_FILE = os.path.join(main_dir, '.ingestion.lock')
+STALE_LOCK_TIMEOUT = 7200  # 2 hours - consider lock stale if older than this
+
 # Configure logging
 log_dir = config['paths']['local']['log_dir']
 os.makedirs(log_dir, exist_ok=True)
@@ -54,6 +59,70 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)  # Remove this line if you want file-only logging
+
+def is_process_running(pid):
+    """Check if a process with the given PID is running."""
+    try:
+        return psutil.pid_exists(pid)
+    except:
+        return False
+
+def acquire_lock():
+    """
+    Attempt to acquire the ingestion lock.
+    Returns True if lock was acquired, False if another process holds it.
+    """
+    if os.path.exists(LOCK_FILE):
+        # Check if lock is stale
+        try:
+            lock_age = time.time() - os.path.getmtime(LOCK_FILE)
+
+            # Read PID from lock file
+            with open(LOCK_FILE, 'r') as f:
+                lock_data = json.load(f)
+                lock_pid = lock_data.get('pid')
+                lock_timestamp = lock_data.get('timestamp')
+
+            # Check if process is still running
+            if lock_pid and is_process_running(lock_pid):
+                logger.warning(f"Ingestion already running (PID: {lock_pid}, started: {lock_timestamp}). Skipping this cycle.")
+                return False
+            else:
+                # Lock file exists but process is dead - clean up stale lock
+                logger.warning(f"Found stale lock file (PID {lock_pid} not running). Cleaning up and acquiring new lock.")
+                os.remove(LOCK_FILE)
+        except (json.JSONDecodeError, KeyError, FileNotFoundError) as e:
+            # Corrupt or old format lock file
+            if lock_age > STALE_LOCK_TIMEOUT:
+                logger.warning(f"Found stale/corrupt lock file (age: {lock_age:.0f}s). Removing and acquiring new lock.")
+                os.remove(LOCK_FILE)
+            else:
+                logger.warning(f"Lock file exists but couldn't read it. Waiting for timeout. Age: {lock_age:.0f}s")
+                return False
+
+    # Create new lock file
+    try:
+        lock_data = {
+            'pid': os.getpid(),
+            'timestamp': datetime.datetime.now().isoformat(),
+            'hostname': os.uname().nodename
+        }
+        with open(LOCK_FILE, 'w') as f:
+            json.dump(lock_data, f)
+        logger.info(f"Acquired ingestion lock (PID: {os.getpid()})")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to create lock file: {e}")
+        return False
+
+def release_lock():
+    """Release the ingestion lock."""
+    try:
+        if os.path.exists(LOCK_FILE):
+            os.remove(LOCK_FILE)
+            logger.info("Released ingestion lock")
+    except Exception as e:
+        logger.error(f"Failed to remove lock file: {e}")
 
 def parse_results_file(filename):
     """Parse results file to extract inverter S/N and timestamp."""
@@ -239,6 +308,9 @@ def run_ingestion():
     except Exception as e:
         logger.error(f"Error running ingestion: {e}")
         return False
+    finally:
+        # Always release the lock when ingestion completes, fails, or times out
+        release_lock()
 
 def main():
     cycle_count = 0
@@ -334,18 +406,23 @@ def main():
             # Run cleanup and ingestion if new files were copied
             if files_copied > 0:
                 logger.info(f"New files detected, running cleanup and ingestion process...")
-                
-                # First run cleanup to remove debug firmware files
-                cleanup_success = run_cleanup()
-                if not cleanup_success:
-                    logger.warning("Cleanup failed, but continuing with ingestion...")
-                
-                # Then run ingestion
-                ingestion_success = run_ingestion()
-                if ingestion_success:
-                    logger.info(f"Successfully processed {files_copied} new files")
+
+                # Attempt to acquire lock before running ingestion
+                if not acquire_lock():
+                    logger.warning(f"Skipping ingestion for {files_copied} new files - another ingestion process is already running")
+                    logger.info("Files will be processed in the next cycle when the lock is released")
                 else:
-                    logger.error("Ingestion failed - files remain in to_process directory")
+                    # First run cleanup to remove debug firmware files
+                    cleanup_success = run_cleanup()
+                    if not cleanup_success:
+                        logger.warning("Cleanup failed, but continuing with ingestion...")
+
+                    # Then run ingestion (lock will be released in finally block)
+                    ingestion_success = run_ingestion()
+                    if ingestion_success:
+                        logger.info(f"Successfully processed {files_copied} new files")
+                    else:
+                        logger.error("Ingestion failed - files remain in to_process directory")
                 
             time.sleep(check_interval)
         except Exception as e:

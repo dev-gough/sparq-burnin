@@ -24,6 +24,10 @@
 .DS_Store
 *.pem
 
+# python
+__pycache__/
+*.pyc
+
 # debug
 npm-debug.log*
 yarn-debug.log*
@@ -48,3 +52,6 @@ config.json
 
 # Annotation groups configuration
 ANNOTATIONGROUPS.md
+
+# Security reports
+docs/cve-report.md
