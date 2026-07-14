@@ -252,7 +252,6 @@ export function capacityStatus(snap: CapacitySnapshot): {
   detail: string
 } {
   if (snap.freeBytes != null) {
-    const freeGiB = snap.freeBytes / GiB
     const pct =
       snap.freeRatio != null
         ? `${Math.round(snap.freeRatio * 100)}% free`

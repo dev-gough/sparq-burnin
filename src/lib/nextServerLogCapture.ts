@@ -187,7 +187,7 @@ export function installNextServerLogCapture(): void {
         typeof chunk === 'string'
           ? chunk
           : Buffer.isBuffer(chunk)
-            ? chunk.toString(typeof encoding === 'string' ? encoding : 'utf8')
+            ? chunk.toString('utf8')
             : String(chunk)
       onStdout(text)
     } catch {
@@ -203,7 +203,7 @@ export function installNextServerLogCapture(): void {
         typeof chunk === 'string'
           ? chunk
           : Buffer.isBuffer(chunk)
-            ? chunk.toString(typeof encoding === 'string' ? encoding : 'utf8')
+            ? chunk.toString('utf8')
             : String(chunk)
       onStderr(text)
     } catch {
