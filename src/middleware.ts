@@ -34,10 +34,13 @@ function addSecurityHeaders(response: NextResponse) {
 export default auth((req) => {
   const { pathname } = req.nextUrl;
 
-  // Allow access to auth pages and API routes
+  // Allow access to auth pages and Control Center probe/ops endpoints
+  // (ops uses HMAC; health uses optional HEALTH_TOKEN — not session cookies)
   if (
     pathname.startsWith("/api/auth") ||
-    pathname.startsWith("/auth/")
+    pathname.startsWith("/auth/") ||
+    pathname === "/api/health" ||
+    pathname.startsWith("/api/ops/")
   ) {
     return NextResponse.next();
   }
@@ -72,7 +75,7 @@ export const config = {
      * - favicon.ico (favicon file)
      * - public assets
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\..*|api/auth).*)",
-    "/api/((?!auth).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\..*|api/auth|api/health|api/ops).*)",
+    "/api/((?!auth|health|ops).*)",
   ],
 };

@@ -55,3 +55,8 @@ ANNOTATIONGROUPS.md
 
 # Security reports
 docs/cve-report.md
+# LibreOffice lock files
+.~lock.*#
+
+# Control Center ops status (watchdog / ingest)
+/data/.ops/

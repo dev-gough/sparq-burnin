@@ -43,6 +43,28 @@ os.makedirs(to_process_results_dir, exist_ok=True)
 LOCK_FILE = os.path.join(main_dir, '.ingestion.lock')
 STALE_LOCK_TIMEOUT = 7200  # 2 hours - consider lock stale if older than this
 
+# Ops status for Control Center (read by GET /api/health)
+OPS_DIR = os.path.join(main_dir, '.ops')
+WATCHDOG_STATUS_FILE = os.path.join(OPS_DIR, 'watchdog-status.json')
+
+
+def write_watchdog_status(payload: dict) -> None:
+    """Atomically write watchdog cycle status for Control Center health metrics."""
+    try:
+        os.makedirs(OPS_DIR, exist_ok=True)
+        data = {
+            **payload,
+            'updatedAt': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),
+            'checkIntervalSec': check_interval,
+            'pid': os.getpid(),
+        }
+        tmp = WATCHDOG_STATUS_FILE + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, WATCHDOG_STATUS_FILE)
+    except Exception as e:
+        logger.warning(f"Failed to write watchdog status: {e}")
+
 # Configure logging
 log_dir = config['paths']['local']['log_dir']
 os.makedirs(log_dir, exist_ok=True)
@@ -315,14 +337,25 @@ def run_ingestion():
 def main():
     cycle_count = 0
     logger.info("Watchdog started - monitoring for new files...")
+    write_watchdog_status({
+        'cycleCount': 0,
+        'lastCycleStartedAt': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),
+        'nextCycleAt': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),
+        'lastFilesCopied': 0,
+        'lastIngestTriggered': False,
+        'lastIngestSuccess': None,
+    })
     while True:
         try:
             cycle_count += 1
+            cycle_started = datetime.datetime.now(datetime.timezone.utc)
             logger.debug(f"Starting cycle {cycle_count}")
             
             # Check and process each source directory
             files_copied = 0
             total_results_files = 0
+            ingest_triggered = False
+            ingest_success = None
             
             for source_dir in source_directories:
                 results_dir = source_dir['results_dir']
@@ -418,15 +451,40 @@ def main():
                         logger.warning("Cleanup failed, but continuing with ingestion...")
 
                     # Then run ingestion (lock will be released in finally block)
+                    ingest_triggered = True
                     ingestion_success = run_ingestion()
+                    ingest_success = bool(ingestion_success)
                     if ingestion_success:
                         logger.info(f"Successfully processed {files_copied} new files")
                     else:
                         logger.error("Ingestion failed - files remain in to_process directory")
+
+            cycle_finished = datetime.datetime.now(datetime.timezone.utc)
+            next_cycle = cycle_finished + datetime.timedelta(seconds=check_interval)
+            write_watchdog_status({
+                'cycleCount': cycle_count,
+                'lastCycleStartedAt': cycle_started.isoformat().replace('+00:00', 'Z'),
+                'lastCycleFinishedAt': cycle_finished.isoformat().replace('+00:00', 'Z'),
+                'nextCycleAt': next_cycle.isoformat().replace('+00:00', 'Z'),
+                'lastFilesCopied': files_copied,
+                'lastIngestTriggered': ingest_triggered,
+                'lastIngestSuccess': ingest_success,
+            })
                 
             time.sleep(check_interval)
         except Exception as e:
             logger.error(f"Error in cycle {cycle_count}: {e}")
+            cycle_finished = datetime.datetime.now(datetime.timezone.utc)
+            next_cycle = cycle_finished + datetime.timedelta(seconds=check_interval)
+            write_watchdog_status({
+                'cycleCount': cycle_count,
+                'lastCycleFinishedAt': cycle_finished.isoformat().replace('+00:00', 'Z'),
+                'nextCycleAt': next_cycle.isoformat().replace('+00:00', 'Z'),
+                'lastFilesCopied': 0,
+                'lastIngestTriggered': False,
+                'lastIngestSuccess': None,
+                'error': str(e),
+            })
             time.sleep(check_interval)
 
 if __name__ == "__main__":

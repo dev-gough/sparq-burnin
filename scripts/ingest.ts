@@ -826,7 +826,22 @@ class CSVIngester {
     });
   }
 
-  async processAllFiles(): Promise<void> {
+  async countTotalTests(): Promise<number> {
+    const result = await this.client.query('SELECT COUNT(*)::int AS n FROM Tests');
+    return result.rows[0]?.n ?? 0;
+  }
+
+  /**
+   * Process all pending files under to_process/.
+   * Returns summary stats for ops status / Control Center.
+   */
+  async processAllFiles(): Promise<{
+    newTests: number;
+    exactMatches: number;
+    closestMatches: number;
+    unmatched: number;
+    totalTests: number;
+  }> {
     console.log('Starting new ingestion process...');
 
     // Load used files cache once at startup
@@ -954,11 +969,12 @@ class CSVIngester {
     }
 
     // Report final statistics
+    const newTests = exactMatches.length + closestMatches.length;
     console.log(`\n📈 Final Processing Summary:`);
     console.log(`   ✅ Exact matches: ${exactMatches.length}`);
     console.log(`   🔍 Closest matches: ${closestMatches.length}`);
     console.log(`   ❌ Unmatched files: ${unmatched.length}`);
-    console.log(`   📄 Total processed: ${exactMatches.length + closestMatches.length}`);
+    console.log(`   📄 Total processed: ${newTests}`);
 
     if (unmatched.length > 0) {
       console.log(`\n❌ Unmatched files (require manual review):`);
@@ -972,6 +988,44 @@ class CSVIngester {
 
     this.profiler.stop('overall_ingestion');
     this.profiler.printSummary();
+
+    let totalTests = 0;
+    try {
+      totalTests = await this.countTotalTests();
+      console.log(`   📚 Total tests in DB: ${totalTests}`);
+    } catch (err) {
+      console.warn('Could not count total tests:', err);
+    }
+
+    return {
+      newTests,
+      exactMatches: exactMatches.length,
+      closestMatches: closestMatches.length,
+      unmatched: unmatched.length,
+      totalTests,
+    };
+  }
+}
+
+async function writeOpsIngestStatus(payload: {
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  success: boolean;
+  newTests: number;
+  totalTests: number | null;
+  exactMatches?: number;
+  closestMatches?: number;
+  unmatched?: number;
+  error?: string | null;
+}): Promise<void> {
+  try {
+    // Dynamic import so the script still works if path aliases differ
+    const { writeIngestStatus } = await import('../src/lib/opsStatus');
+    await writeIngestStatus(payload);
+    console.log('📝 Wrote ingest ops status for Control Center');
+  } catch (err) {
+    console.warn('Failed to write ingest ops status:', err);
   }
 }
 
@@ -980,12 +1034,37 @@ async function main() {
   console.log('🔄 Checking for database migrations...');
   await runMigrations();
 
+  const startedAt = new Date().toISOString();
+  const startedMs = Date.now();
   const ingester = new CSVIngester();
   try {
     await ingester.connect();
-    await ingester.processAllFiles();
+    const summary = await ingester.processAllFiles();
+    const finishedAt = new Date().toISOString();
+    await writeOpsIngestStatus({
+      startedAt,
+      finishedAt,
+      durationMs: Date.now() - startedMs,
+      success: true,
+      newTests: summary.newTests,
+      totalTests: summary.totalTests,
+      exactMatches: summary.exactMatches,
+      closestMatches: summary.closestMatches,
+      unmatched: summary.unmatched,
+      error: null,
+    });
   } catch (error) {
     console.error('Ingestion failed:', error);
+    const finishedAt = new Date().toISOString();
+    await writeOpsIngestStatus({
+      startedAt,
+      finishedAt,
+      durationMs: Date.now() - startedMs,
+      success: false,
+      newTests: 0,
+      totalTests: null,
+      error: error instanceof Error ? error.message : String(error),
+    });
     process.exit(1);
   } finally {
     await ingester.disconnect();
