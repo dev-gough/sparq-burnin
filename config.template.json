@@ -43,5 +43,19 @@
   },
   "api": {
     "base_url": "http://localhost:3000"
+  },
+  "ingest": {
+    "maxBodyBytes": 67108864,
+    "maxSamples": 500000,
+    "stations": {
+      "BurnInTest-1": {
+        "secret": "replace-with-station-1-hmac-secret",
+        "enabled": true
+      },
+      "BurnInTest-2": {
+        "secret": "replace-with-station-2-hmac-secret",
+        "enabled": true
+      }
+    }
   }
 }

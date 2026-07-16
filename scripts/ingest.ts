@@ -462,20 +462,31 @@ class CSVIngester {
                 priority = 3; // If already marked invalid but no specific reason, medium priority
               }
 
+              // Support both historical headers (AC Output / Failure time)
+              // and current burn-in software headers (AC / Failure Time).
+              const acStatus = test['AC Output'] ?? (test as Record<string, string>)['AC'];
+              const ch1Status = test['CH1 Output'] ?? (test as Record<string, string>)['CH1'];
+              const ch2Status = test['CH2 Output'] ?? (test as Record<string, string>)['CH2'];
+              const ch3Status = test['CH3 Output'] ?? (test as Record<string, string>)['CH3'];
+              const ch4Status = test['CH4 Output'] ?? (test as Record<string, string>)['CH4'];
+              const failureTime =
+                test['Failure time'] ??
+                (test as Record<string, string>)['Failure Time'];
+
               const testInfo: ProcessedTestResult = {
                 serialNumber,
                 startTime: test['Start Time'],
                 endTime: test['End Time'],
                 firmwareVersion: test['Inverter Firmware'],
                 overallStatus,
-                acStatus: test['AC Output'],
-                ch1Status: test['CH1 Output'],
-                ch2Status: test['CH2 Output'],
-                ch3Status: test['CH3 Output'],
-                ch4Status: test['CH4 Output'],
+                acStatus,
+                ch1Status,
+                ch2Status,
+                ch3Status,
+                ch4Status,
                 statusFlags: test['Status Flags'],
                 failureDescription: test['Failure Description'],
-                failureTime: test['Failure time'],
+                failureTime,
                 priority,
                 invalidReason
               };

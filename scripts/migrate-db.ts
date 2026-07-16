@@ -321,6 +321,69 @@ const migrations: Migration[] = [
       END
       $$;
     `
+  },
+  {
+    id: '010',
+    name: 'https_ingest_receipts_and_station',
+    sql: `
+      DO $$
+      BEGIN
+        -- Station identity + idempotency on Tests
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'tests' AND column_name = 'station_id'
+        ) THEN
+          ALTER TABLE Tests ADD COLUMN station_id TEXT;
+          RAISE NOTICE 'Added Tests.station_id';
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'tests' AND column_name = 'idempotency_key'
+        ) THEN
+          ALTER TABLE Tests ADD COLUMN idempotency_key TEXT;
+          RAISE NOTICE 'Added Tests.idempotency_key';
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_indexes
+          WHERE tablename = 'tests' AND indexname = 'idx_tests_station_id'
+        ) THEN
+          CREATE INDEX idx_tests_station_id ON Tests(station_id);
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_indexes
+          WHERE tablename = 'tests' AND indexname = 'idx_tests_idempotency_key'
+        ) THEN
+          CREATE UNIQUE INDEX idx_tests_idempotency_key
+            ON Tests(idempotency_key)
+            WHERE idempotency_key IS NOT NULL;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_name = 'ingestreceipts'
+        ) THEN
+          CREATE TABLE IngestReceipts (
+            idempotency_key TEXT PRIMARY KEY,
+            station_id TEXT NOT NULL,
+            test_id INTEGER REFERENCES Tests(test_id),
+            payload_hash TEXT,
+            status TEXT NOT NULL,
+            error TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            completed_at TIMESTAMPTZ
+          );
+          CREATE INDEX idx_ingestreceipts_station ON IngestReceipts(station_id);
+          CREATE INDEX idx_ingestreceipts_status ON IngestReceipts(status);
+          RAISE NOTICE 'Created IngestReceipts table';
+        ELSE
+          RAISE NOTICE 'IngestReceipts already exists, skipping';
+        END IF;
+      END
+      $$;
+    `
   }
 ];
 

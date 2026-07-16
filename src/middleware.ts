@@ -40,7 +40,8 @@ export default auth((req) => {
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/auth/") ||
     pathname === "/api/health" ||
-    pathname.startsWith("/api/ops/")
+    pathname.startsWith("/api/ops/") ||
+    pathname.startsWith("/api/ingest/")
   ) {
     return NextResponse.next();
   }
@@ -75,7 +76,7 @@ export const config = {
      * - favicon.ico (favicon file)
      * - public assets
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\..*|api/auth|api/health|api/ops).*)",
-    "/api/((?!auth|health|ops).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\..*|api/auth|api/health|api/ops|api/ingest).*)",
+    "/api/((?!auth|health|ops|ingest).*)",
   ],
 };
