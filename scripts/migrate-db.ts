@@ -384,6 +384,32 @@ const migrations: Migration[] = [
       END
       $$;
     `
+  },
+  {
+    id: '011',
+    name: 'station_controls',
+    sql: `
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_name = 'stationcontrols'
+        ) THEN
+          CREATE TABLE StationControls (
+            station_id TEXT PRIMARY KEY,
+            enabled BOOLEAN NOT NULL DEFAULT true,
+            reason TEXT,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_by TEXT,
+            revision BIGINT NOT NULL DEFAULT 1
+          );
+          RAISE NOTICE 'Created StationControls table';
+        ELSE
+          RAISE NOTICE 'StationControls already exists, skipping';
+        END IF;
+      END
+      $$;
+    `
   }
 ];
 

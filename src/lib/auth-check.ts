@@ -4,6 +4,10 @@ import { NextResponse } from "next/server";
 // Check if authentication should be skipped (for local development)
 const shouldSkipAuth = process.env.SKIP_AUTH === 'true';
 
+export function isAuthSkipped(): boolean {
+  return shouldSkipAuth;
+}
+
 /**
  * Hardcoded allowlist of email addresses authorized to perform privileged
  * data-recovery operations such as restoring TestAnnotations from a backup.
@@ -106,4 +110,70 @@ export async function requireRestoreAuth() {
 export function isOnRestoreAllowlist(email: string | null | undefined): boolean {
   if (!email) return false;
   return getRestoreAllowlist().includes(email.toLowerCase());
+}
+
+/**
+ * Env-only allowlist for remote station control (enable/disable testing).
+ * STATION_ADMIN_ALLOWLIST=comma,separated,emails
+ * Default: dgough@sparqsys.com only.
+ */
+const DEFAULT_STATION_ADMIN_ALLOWLIST: string[] = ['dgough@sparqsys.com'];
+
+function getStationAdminAllowlist(): string[] {
+  const envList = process.env.STATION_ADMIN_ALLOWLIST;
+  if (envList && envList.trim().length > 0) {
+    return envList
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+  }
+  return DEFAULT_STATION_ADMIN_ALLOWLIST.map((e) => e.toLowerCase());
+}
+
+/**
+ * Signed-in user on STATION_ADMIN_ALLOWLIST.
+ *
+ * Local/dev: when SKIP_AUTH=true, allow without a session (UI + APIs work
+ * without Entra). Production must leave SKIP_AUTH unset/false.
+ */
+export async function requireStationAdminAuth() {
+  if (shouldSkipAuth) {
+    const session = (await auth()) ?? null;
+    return { error: null, session };
+  }
+
+  const { error: authError, session } = await requireAuth();
+  if (authError) return { error: authError, session: null };
+
+  const email = session?.user?.email?.toLowerCase();
+  if (!email) {
+    return {
+      error: NextResponse.json(
+        { error: 'Forbidden. Station admin requires a signed-in user.' },
+        { status: 403 }
+      ),
+      session: null,
+    };
+  }
+
+  if (!getStationAdminAllowlist().includes(email)) {
+    return {
+      error: NextResponse.json(
+        { error: 'Forbidden. Your account is not authorized to manage stations.' },
+        { status: 403 }
+      ),
+      session: null,
+    };
+  }
+
+  return { error: null, session };
+}
+
+export function isOnStationAdminAllowlist(
+  email: string | null | undefined
+): boolean {
+  // Dev/local: show Stations UI without Entra
+  if (shouldSkipAuth) return true;
+  if (!email) return false;
+  return getStationAdminAllowlist().includes(email.toLowerCase());
 }

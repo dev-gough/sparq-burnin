@@ -7,6 +7,7 @@ import {
   loadIngestConfig,
   processIngestPayload,
 } from '@/lib/ingest'
+import { isStationEnabled } from '@/lib/stationControls'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -44,23 +45,37 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // Auth needs body hash of wire bytes; body stationId checked after parse.
-  // First pass: verify with header station only (body station checked later).
+  // HMAC identity only (config secret). Runtime enablement is StationControls.
   const earlyAuth = verifyIngestRequest({
     request,
     rawBody,
     stationIdHeader,
     bodyStationId: undefined,
-    getStation,
+    getStation: (id) => {
+      const s = getStation(id)
+      if (!s) return undefined
+      return { secret: s.secret, enabled: true }
+    },
   })
   if (!earlyAuth.ok) {
-    if (earlyAuth.reason === 'station_disabled') {
-      return errorJson(403, 'station_disabled', 'Station ingest is disabled')
-    }
     if (earlyAuth.reason === 'station_mismatch') {
       return errorJson(400, 'station_mismatch', 'Station id mismatch')
     }
     return errorJson(401, 'auth', `Unauthorized (${earlyAuth.reason})`)
+  }
+
+  try {
+    const allowed = await isStationEnabled(earlyAuth.stationId)
+    if (!allowed) {
+      return errorJson(
+        403,
+        'station_disabled',
+        'Station is disabled (remote control)'
+      )
+    }
+  } catch (err) {
+    console.error('station enable check failed:', err)
+    return errorJson(500, 'server_error', 'Failed to check station policy')
   }
 
   let jsonText: string

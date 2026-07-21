@@ -2,6 +2,8 @@
 
 Source of truth for station → dashboard test delivery. Replaces pCloud + watchdog pairing for new stations.
 
+Production rollout: [`INGEST_PRODUCTION.md`](./INGEST_PRODUCTION.md).
+
 ## Overview
 
 | Item | Value |

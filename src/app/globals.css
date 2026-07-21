@@ -134,7 +134,8 @@
     @apply border-border outline-ring/50;
   }
   html {
-    overflow-y: scroll;
+    /* auto: hide vertical scrollbar when content fits the viewport */
+    overflow-y: auto;
   }
   body {
     @apply bg-background text-foreground;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession, signOut, signIn } from "next-auth/react";
-import { User, LogOut, Users, LayoutDashboard, ListTodo, LogIn, BarChart3, Settings, Monitor, Moon, Sun } from "lucide-react";
+import { User, LogOut, Users, LayoutDashboard, ListTodo, LogIn, BarChart3, Settings, Monitor, Moon, Sun, Server } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -12,7 +12,7 @@ import { useSettings } from "@/contexts/settings-context";
 import { useTheme } from "next-themes";
 
 export function HoverSidebar() {
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const pathname = usePathname();
   const { settings } = useSettings();
   const { theme, setTheme } = useTheme();
@@ -20,6 +20,7 @@ export function HoverSidebar() {
   const [isInteracting, setIsInteracting] = useState(false);
   const [todoCount, setTodoCount] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [isStationAdmin, setIsStationAdmin] = useState(false);
   const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const userName = session?.user?.name || "User";
@@ -30,6 +31,9 @@ export function HoverSidebar() {
     { href: "/contributors", label: "Contributors", icon: Users },
     { href: "/failure-analytics", label: "Failure Analytics", icon: BarChart3 },
     { href: "/todo", label: "Todo", icon: ListTodo, badge: todoCount },
+    ...(isStationAdmin
+      ? [{ href: "/stations", label: "Stations", icon: Server }]
+      : []),
     { href: "/settings", label: "Settings", icon: Settings },
   ];
 
@@ -55,6 +59,25 @@ export function HoverSidebar() {
     const interval = setInterval(fetchTodoCount, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Station admin nav (hidden for non-allowlisted users).
+  // Under SKIP_AUTH, admin-status returns true without a session — always ask the API.
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const res = await fetch("/api/stations/admin-status");
+        const data = await res.json();
+        if (!cancelled) setIsStationAdmin(Boolean(data.isStationAdmin));
+      } catch {
+        if (!cancelled) setIsStationAdmin(false);
+      }
+    };
+    check();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.email, sessionStatus]);
 
   const handleMouseEnter = () => {
     // Only open on hover if the setting is "hover"
