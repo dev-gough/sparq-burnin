@@ -1,13 +1,17 @@
 # burnin-dashboard — CI + labserver deploy
 #
 # Flow: push master → test (Docker) → deploy (host) → systemctl restart
-# Manual: workflow_dispatch with a branch input (e.g. feature/https-ingest
-# during the lab-test phase) deploys that branch instead of master.
+# Manual re-run: workflow_dispatch (Gitea 1.22 — no input forms; deploys master).
+# Non-master lab deploys: run the deploy script on the host with BRANCH=...
 #
 # Requires (same infra as sparq-toolbox — see docs/CI_DEPLOY.md):
 #   - Gitea Actions enabled + runner with labels: ubuntu-latest, labserver:host
 #   - /home/server/bin/deploy-burnin-dashboard.sh on the lab host
 #   - passwordless sudo for systemctl restart burnin-dashboard (user: server)
+#
+# Note: Gitea 1.22.x rejects workflow_dispatch.inputs (DetectWorkflows:
+# "unknown on type") and silently ignores the whole workflow. Keep on: in
+# sync with sparq-toolbox — push + bare workflow_dispatch only.
 
 name: CI and deploy
 
@@ -15,11 +19,6 @@ on:
   push:
     branches: [master]
   workflow_dispatch:
-    inputs:
-      branch:
-        description: "Branch to deploy (default: master)"
-        required: false
-        default: "master"
 
 concurrency:
   group: deploy-burnin-dashboard
@@ -55,5 +54,3 @@ jobs:
     steps:
       - name: Deploy burnin-dashboard
         run: /home/server/bin/deploy-burnin-dashboard.sh
-        env:
-          BRANCH: ${{ github.event.inputs.branch || 'master' }}

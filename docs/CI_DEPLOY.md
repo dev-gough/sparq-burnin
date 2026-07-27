@@ -11,9 +11,13 @@ git push origin master
   → health check on /api/health
 ```
 
-Manual deploys (including non-master branches, e.g. `feature/https-ingest`
-during the lab-test phase): run the workflow via **workflow_dispatch** and set
-the `branch` input. The deploy script receives it as `BRANCH`.
+Manual re-runs of the pipeline (always deploys **master**): trigger
+**workflow_dispatch** in the Gitea Actions UI. Gitea 1.22 does not support
+`workflow_dispatch` input forms — if you add inputs, `DetectWorkflows`
+rejects the whole file (`unknown on type`) and no runs are created.
+
+Non-master lab deploys (e.g. `feature/https-ingest` during lab-test): run the
+deploy script on the host with `BRANCH` set (see Manual deploy below).
 
 ## Database migrations
 
