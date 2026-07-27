@@ -1,0 +1,59 @@
+# burnin-dashboard — CI + labserver deploy
+#
+# Flow: push master → test (Docker) → deploy (host) → systemctl restart
+# Manual: workflow_dispatch with a branch input (e.g. feature/https-ingest
+# during the lab-test phase) deploys that branch instead of master.
+#
+# Requires (same infra as sparq-toolbox — see docs/CI_DEPLOY.md):
+#   - Gitea Actions enabled + runner with labels: ubuntu-latest, labserver:host
+#   - /home/server/bin/deploy-burnin-dashboard.sh on the lab host
+#   - passwordless sudo for systemctl restart burnin-dashboard (user: server)
+
+name: CI and deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to deploy (default: master)"
+        required: false
+        default: "master"
+
+concurrency:
+  group: deploy-burnin-dashboard
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        run: npm test
+
+  deploy:
+    name: Deploy labserver
+    needs: test
+    runs-on: labserver
+    steps:
+      - name: Deploy burnin-dashboard
+        run: /home/server/bin/deploy-burnin-dashboard.sh
+        env:
+          BRANCH: ${{ github.event.inputs.branch || 'master' }}
