@@ -112,6 +112,12 @@ for i in $(seq 1 20); do
 done
 
 log "health check ${HEALTH_URL}"
+# The app 401s /api/health when its HEALTH_TOKEN env is set. If the caller
+# didn't provide the token, pull it from the checkout's .env.local (the same
+# file the unit's next-server reads it from).
+if [[ -z "$HEALTH_TOKEN" && -f "$APP_DIR/.env.local" ]]; then
+  HEALTH_TOKEN="$(grep -E '^HEALTH_TOKEN=' "$APP_DIR/.env.local" | tail -1 | cut -d= -f2- | sed -e 's/^["'\'']//' -e 's/["'\'']$//' || true)"
+fi
 curl_args=(-sS -o /dev/null -w '%{http_code}' --max-time 5)
 if [[ -n "$HEALTH_TOKEN" ]]; then
   curl_args+=(-H "x-health-token: ${HEALTH_TOKEN}")
