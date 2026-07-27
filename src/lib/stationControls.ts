@@ -29,21 +29,7 @@ export interface StationControlRow {
   stats: StationTestStats
 }
 
-const emptyStats = (): StationTestStats => ({
-  totalTests: 0,
-  passCount: 0,
-  failCount: 0,
-  invalidCount: 0,
-  retestCount: 0,
-  otherCount: 0,
-  uniqueSerials: 0,
-  testsLast24h: 0,
-  testsLast7d: 0,
-  firstIngestAt: null,
-  lastIngestAt: null,
-})
-
-async function withClient<T>(fn: (client: Client) => Promise<T>): Promise<T> {
+export async function withClient<T>(fn: (client: Client) => Promise<T>): Promise<T> {
   const client = new Client(getDatabaseConfig())
   await client.connect()
   try {

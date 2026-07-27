@@ -45,23 +45,61 @@ class SimpleReprocessor {
   }
 
   async clearDatabase(): Promise<void> {
-    console.log('🗑️  Clearing existing database data...');
+    console.log('🗑️  Clearing CSV-ingested database data...');
 
-    // Clear tables in reverse dependency order
-    await this.client.query('DELETE FROM TestData');
-    console.log('  ✅ Cleared TestData table');
+    // HTTPS-ingested tests (source_file LIKE 'https:%') have no archived CSV and
+    // are otherwise unrecoverable, so we must NOT wipe them on reprocess. Delete
+    // only rows that originate from CSV files (which get re-ingested below).
+    //
+    // Deletion order respects FKs:
+    //   1. TestData → Tests   (TestData.test_id references Tests)
+    //   2. Tests              (IngestReceipts.test_id now cascades via migration 012;
+    //                          TestAnnotations.current_test_id is ON DELETE SET NULL,
+    //                          but surviving HTTPS tests keep their annotations linked)
+    //   3. unreferenced Inverters (only those left with zero surviving tests)
 
-    await this.client.query('DELETE FROM Tests');
-    console.log('  ✅ Cleared Tests table');
+    // Delete TestData for CSV-ingested tests. Match on the parent Tests row so a
+    // NULL source_file on TestData (legacy rows) still gets cleared iff its test is CSV.
+    const testDataResult = await this.client.query(`
+      DELETE FROM TestData
+      WHERE test_id IN (
+        SELECT test_id FROM Tests
+        WHERE source_file IS NULL OR source_file NOT LIKE 'https:%'
+      )
+    `);
+    console.log(`  ✅ Cleared ${testDataResult.rowCount ?? 0} CSV TestData rows`);
 
-    await this.client.query('DELETE FROM Inverters');
-    console.log('  ✅ Cleared Inverters table');
+    // Delete the CSV-ingested Tests themselves (HTTPS tests survive).
+    const testsResult = await this.client.query(`
+      DELETE FROM Tests
+      WHERE source_file IS NULL OR source_file NOT LIKE 'https:%'
+    `);
+    console.log(`  ✅ Cleared ${testsResult.rowCount ?? 0} CSV Tests rows (HTTPS tests preserved)`);
 
-    // Reset sequences
-    await this.client.query('ALTER SEQUENCE testdata_data_id_seq RESTART WITH 1');
-    await this.client.query('ALTER SEQUENCE tests_test_id_seq RESTART WITH 1');
-    await this.client.query('ALTER SEQUENCE inverters_inv_id_seq RESTART WITH 1');
-    console.log('  ✅ Reset all sequences');
+    // Do NOT blanket-delete Inverters: an inverter referenced by a surviving HTTPS
+    // test must remain (Tests.inv_id references it). ensureInverter() upserts
+    // idempotently (ON CONFLICT (serial_number) DO NOTHING), so re-ingest reuses
+    // surviving inverters. We still tidy up inverters that no longer have any tests.
+    const invResult = await this.client.query(`
+      DELETE FROM Inverters
+      WHERE inv_id NOT IN (SELECT DISTINCT inv_id FROM Tests WHERE inv_id IS NOT NULL)
+    `);
+    console.log(`  ✅ Removed ${invResult.rowCount ?? 0} orphan Inverters`);
+
+    // Re-align sequences to the surviving max id (NOT to 1): resetting to 1 while
+    // HTTPS rows survive would let re-ingest collide with existing primary keys.
+    // setval(..., max, is_called=false) makes the NEXT nextval() return max, and
+    // COALESCE handles an empty table (start at 1).
+    await this.client.query(
+      `SELECT setval('testdata_data_id_seq', COALESCE((SELECT MAX(data_id) FROM TestData), 0) + 1, false)`
+    );
+    await this.client.query(
+      `SELECT setval('tests_test_id_seq', COALESCE((SELECT MAX(test_id) FROM Tests), 0) + 1, false)`
+    );
+    await this.client.query(
+      `SELECT setval('inverters_inv_id_seq', COALESCE((SELECT MAX(inv_id) FROM Inverters), 0) + 1, false)`
+    );
+    console.log('  ✅ Realigned sequences to surviving max ids');
   }
 
   async moveFiles(fromDir: string, toDir: string, fileType: string): Promise<number> {

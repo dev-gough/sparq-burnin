@@ -56,7 +56,7 @@ Default ±300 seconds (`INGEST_HMAC_SKEW_SEC`). Nonces are rejected if reused wi
 | HTTP | `code` | Meaning |
 |------|--------|---------|
 | 401 | `auth` | Missing/invalid signature, skew, replay, unknown station |
-| 403 | `station_disabled` | Station configured with `enabled: false` |
+| 403 | `station_disabled` | Station disabled via the Stations admin UI (`StationControls`) |
 | 400 | `invalid_schema` | JSON/schema validation failed |
 | 400 | `too_large` | Body or sample count exceeds limits |
 | 400 | `station_mismatch` | Header station id ≠ body `stationId` |
@@ -195,13 +195,13 @@ In `config.json`:
   "maxBodyBytes": 67108864,
   "maxSamples": 500000,
   "stations": {
-    "BurnInTest-1": { "secret": "replace-me", "enabled": true },
-    "BurnInTest-2": { "secret": "replace-me", "enabled": true }
+    "BurnInTest-1": { "secret": "replace-me" },
+    "BurnInTest-2": { "secret": "replace-me" }
   }
 }
 ```
 
-Disable a station (`enabled: false`) to stop accepting POSTs (403 `station_disabled`) without revoking the peer permanently.
+Each station entry supplies the HMAC **secret** only. To stop accepting POSTs from a station (403 `station_disabled`) without revoking its secret, disable it in the **Stations** admin UI (`/stations`), which writes to the `StationControls` table. A station with no `StationControls` row defaults to enabled.
 
 ## Deployment notes
 

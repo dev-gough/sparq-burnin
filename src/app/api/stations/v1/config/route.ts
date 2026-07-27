@@ -16,17 +16,27 @@ export async function GET(request: NextRequest) {
   const rawBody = Buffer.alloc(0)
 
   // Identity only — policy enablement comes from StationControls, not config.json
-  const earlyAuth = verifyIngestRequest({
-    request,
-    rawBody,
-    stationIdHeader,
-    bodyStationId: undefined,
-    getStation: (id) => {
-      const s = getStation(id)
-      if (!s) return undefined
-      return { secret: s.secret, enabled: true }
-    },
-  })
+  let earlyAuth
+  try {
+    earlyAuth = await verifyIngestRequest({
+      request,
+      rawBody,
+      stationIdHeader,
+      bodyStationId: undefined,
+      getStation: (id) => {
+        const s = getStation(id)
+        if (!s) return undefined
+        return { secret: s.secret }
+      },
+    })
+  } catch (err) {
+    // Nonce store unreachable — fail closed; station treats 500 as transient.
+    console.error('station config auth (nonce store) failed:', err)
+    return NextResponse.json(
+      { ok: false, code: 'server_error', message: 'Failed to verify request' },
+      { status: 500 }
+    )
+  }
 
   if (!earlyAuth.ok) {
     return NextResponse.json(

@@ -49,12 +49,10 @@
     "maxSamples": 500000,
     "stations": {
       "BurnInTest-1": {
-        "secret": "replace-with-station-1-hmac-secret",
-        "enabled": true
+        "secret": "replace-with-station-1-hmac-secret"
       },
       "BurnInTest-2": {
-        "secret": "replace-with-station-2-hmac-secret",
-        "enabled": true
+        "secret": "replace-with-station-2-hmac-secret"
       }
     }
   }

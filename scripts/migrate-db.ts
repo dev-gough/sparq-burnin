@@ -410,6 +410,128 @@ const migrations: Migration[] = [
       END
       $$;
     `
+  },
+  {
+    id: '012',
+    name: 'ingest_receipts_test_id_cascade',
+    sql: `
+      -- Make IngestReceipts.test_id FK cascade on Tests deletion.
+      -- Without this, DELETE FROM Tests fails once any HTTPS ingest has written
+      -- a receipt (blocking reprocess); with the partial-clear reprocess we still
+      -- want a receipt to disappear if its test row is removed.
+      DO $$
+      DECLARE
+        fk_name TEXT;
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_name = 'ingestreceipts'
+        ) THEN
+          -- Drop whatever FK currently backs IngestReceipts.test_id (name may vary)
+          FOR fk_name IN
+            SELECT con.conname
+            FROM pg_constraint con
+            JOIN pg_attribute att
+              ON att.attrelid = con.conrelid
+             AND att.attnum = ANY (con.conkey)
+            WHERE con.conrelid = 'ingestreceipts'::regclass
+              AND con.contype = 'f'
+              AND att.attname = 'test_id'
+          LOOP
+            EXECUTE format('ALTER TABLE IngestReceipts DROP CONSTRAINT %I', fk_name);
+            RAISE NOTICE 'Dropped IngestReceipts FK %', fk_name;
+          END LOOP;
+
+          -- Re-add with ON DELETE CASCADE
+          ALTER TABLE IngestReceipts
+            ADD CONSTRAINT ingestreceipts_test_id_fkey
+            FOREIGN KEY (test_id) REFERENCES Tests(test_id) ON DELETE CASCADE;
+          RAISE NOTICE 'Added IngestReceipts.test_id FK with ON DELETE CASCADE';
+        ELSE
+          RAISE NOTICE 'IngestReceipts does not exist, skipping FK cascade migration';
+        END IF;
+      END
+      $$;
+    `
+  },
+  {
+    id: '013',
+    name: 'unique_tests_inv_start_time_utc',
+    sql: `
+      -- Durable cross-pipeline dedup: a UNIQUE index on (inv_id, start_time_utc)
+      -- so the same physical test cannot land twice (once via CSV filename dedup,
+      -- once via HTTPS idempotency-key dedup) during the migration window.
+      --
+      -- Guard on start_time_utc (the column app-level checks and annotation
+      -- relink use); it mirrors start_time but is the canonical UTC value. Rows
+      -- with a NULL start_time_utc are excluded (partial index), matching the
+      -- app-level guards which also skip NULLs.
+      --
+      -- SAFETY: only create the index if no pre-existing duplicates would violate
+      -- it. If duplicates exist, log a clear warning with the count and skip
+      -- index creation rather than failing the whole migration run.
+      DO $$
+      DECLARE
+        dup_groups INTEGER;
+        dup_rows INTEGER;
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM pg_indexes
+          WHERE tablename = 'tests' AND indexname = 'idx_tests_inv_start_time_utc'
+        ) THEN
+          RAISE NOTICE 'idx_tests_inv_start_time_utc already exists, skipping';
+          RETURN;
+        END IF;
+
+        SELECT COUNT(*), COALESCE(SUM(cnt), 0)
+          INTO dup_groups, dup_rows
+          FROM (
+            SELECT inv_id, start_time_utc, COUNT(*) AS cnt
+              FROM Tests
+             WHERE start_time_utc IS NOT NULL
+             GROUP BY inv_id, start_time_utc
+            HAVING COUNT(*) > 1
+          ) d;
+
+        IF dup_groups > 0 THEN
+          RAISE WARNING 'Skipping UNIQUE index idx_tests_inv_start_time_utc: found % duplicate (inv_id, start_time_utc) group(s) spanning % row(s). Resolve duplicates then re-run this migration (delete the migrations row for 013 first).', dup_groups, dup_rows;
+        ELSE
+          CREATE UNIQUE INDEX idx_tests_inv_start_time_utc
+            ON Tests(inv_id, start_time_utc)
+            WHERE start_time_utc IS NOT NULL;
+          RAISE NOTICE 'Created UNIQUE index idx_tests_inv_start_time_utc on Tests(inv_id, start_time_utc)';
+        END IF;
+      END
+      $$;
+    `
+  },
+  {
+    id: '014',
+    name: 'ingest_nonces',
+    sql: `
+      -- Shared, DB-backed nonce replay store for station->dashboard HMAC auth.
+      -- Replaces the process-local in-memory Map (void across restarts/workers).
+      -- Rows are pruned opportunistically per-request (TTL = 2x the HMAC skew
+      -- window); the index on seen_at keeps that prune cheap.
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_name = 'ingestnonces'
+        ) THEN
+          CREATE TABLE IngestNonces (
+            nonce TEXT PRIMARY KEY,
+            station_id TEXT NOT NULL,
+            seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE INDEX idx_ingestnonces_seen_at ON IngestNonces(seen_at);
+          RAISE NOTICE 'Created IngestNonces table with idx_ingestnonces_seen_at';
+        ELSE
+          RAISE NOTICE 'IngestNonces already exists, skipping';
+        END IF;
+      END
+      $$;
+    `
   }
 ];
 

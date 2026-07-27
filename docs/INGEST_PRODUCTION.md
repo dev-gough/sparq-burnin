@@ -44,8 +44,8 @@ outbox_dir = C:\BurnIn\line2\outbox
 Server `config.json` must list both:
 
 ```json
-"BurnInTest-1-A": { "secret": "...", "enabled": true },
-"BurnInTest-1-B": { "secret": "...", "enabled": true }
+"BurnInTest-1-A": { "secret": "..." },
+"BurnInTest-1-B": { "secret": "..." }
 ```
 
 Same secret for both is OK if the whole PC is trusted; separate secrets are better for revoke.
@@ -62,10 +62,10 @@ If you keep **one** `station_id` for the whole PC, still split **outbox**, **tes
 
 - [ ] Deploy ingest code; app restarted
 - [ ] `npm run migrate` (migration **010**: `IngestReceipts`, `station_id`, `idempotency_key`)
-- [ ] `config.json` → `ingest.stations` with strong secrets, `enabled: true`
+- [ ] `config.json` → `ingest.stations` with strong secrets (secret only; enablement is DB-controlled)
 - [ ] HTTPS only for station URLs
 - [ ] Reverse proxy: `client_max_body_size` ≥ **64m**; read/send timeouts ≥ **5–10 min**
-- [ ] Disable a station: set `"enabled": false` (no redeploy required if config is re-read; otherwise restart)
+- [ ] Disable a station: toggle it in the **Stations** admin UI (`/stations`) — see "Remote station enable/disable" below
 
 Example:
 
@@ -74,8 +74,8 @@ Example:
   "maxBodyBytes": 67108864,
   "maxSamples": 500000,
   "stations": {
-    "BurnInTest-1": { "secret": "<long-random>", "enabled": true },
-    "BurnInTest-2": { "secret": "<long-random>", "enabled": true }
+    "BurnInTest-1": { "secret": "<long-random>" },
+    "BurnInTest-2": { "secret": "<long-random>" }
   }
 }
 ```
@@ -122,13 +122,13 @@ enable_file_upload = False
 |---------|--------|
 | Outbox `pending` + `lastError` | Network, URL, secret, 403 disabled, timeouts |
 | 401 `auth` | Secret, path, clock skew, `station_id` mismatch |
-| 403 `station_disabled` | Server `enabled: false` |
+| 403 `station_disabled` | Station disabled in Stations admin UI (`StationControls`) |
 | No outbox files | `enable=False` or post-test path didn’t run |
 | Duplicate 200 | Normal retry; same `testId` |
 
 ## Remote station enable/disable
 
-Single flag: **`enabled`** (blocks Start Test on master + HTTPS ingest).
+Single flag: **`enabled`** (blocks Start Test on master + HTTPS ingest). This is the **only** way to disable a station — there is no config.json flag; `config.json` `ingest.stations` supplies the HMAC secret only. A station with no `StationControls` row defaults to **enabled**.
 
 | Piece | Detail |
 |-------|--------|
@@ -146,6 +146,23 @@ Admin env:
 STATION_ADMIN_ALLOWLIST=dgough@sparqsys.com
 ```
 
+## Nonce replay store
+
+Nonces are **DB-backed** (`IngestNonces` table, migration **014**) and therefore
+shared across processes/workers and durable across restarts — replay protection
+holds in a multi-node Next cluster. A `(timestamp, nonce, signature)` triple is
+accepted at most once; a replay returns **401 `auth`** (reason `replay`). Rows
+are pruned opportunistically per-request (TTL = 2× the HMAC skew window), so no
+cron is needed.
+
+Signature verification runs **before** the nonce is claimed, so an
+unauthenticated caller cannot poison the store to lock out a legitimate nonce.
+
+**Fail-closed:** if the nonce store (DB) is unreachable, both the ingest POST and
+the policy GET return **500 `server_error`** rather than accepting an
+unverifiable request. The station client treats 500 as transient and retries,
+which is the correct behavior here.
+
 ## Explicitly out of v1
 
-Shared nonce store for multi-node Next clusters, async job queue, full remote config (criteria/duration), force-end running tests.
+Async job queue, full remote config (criteria/duration), force-end running tests.

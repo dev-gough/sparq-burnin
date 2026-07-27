@@ -3,10 +3,20 @@
  * Matches scripts/ingest.ts behaviour for v1 of the HTTPS ingest API.
  */
 
+/**
+ * Regex accepted by parseTimestampFromDelhi. Exported so zod schemas can reject
+ * malformed timestamps at parse time (→ 400) instead of throwing mid-insert (→ 500).
+ */
+export const DELHI_TIMESTAMP_REGEX =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{3,}))?/
+
+/** True if `parseTimestampFromDelhi` would accept this string (i.e. not throw). */
+export function isParseableDelhiTimestamp(timestamp: string): boolean {
+  return DELHI_TIMESTAMP_REGEX.test(timestamp)
+}
+
 export function parseTimestampFromDelhi(timestamp: string): Date {
-  const match = timestamp.match(
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{3,}))?/
-  )
+  const match = timestamp.match(DELHI_TIMESTAMP_REGEX)
   if (!match) {
     throw new Error(`Invalid timestamp format: ${timestamp}`)
   }

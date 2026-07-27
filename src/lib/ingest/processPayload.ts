@@ -4,10 +4,10 @@ import { sha256Hex } from '@/lib/ingestAuth'
 import { writeIngestStatus } from '@/lib/opsStatus'
 import type { IngestPayload } from './schema'
 import { applyResultValidation } from './validate'
-import { parseTimestampFromDelhi } from './timestamps'
 import {
   ensureInverter,
   findCompletedReceipt,
+  findExistingTestByInvStart,
   insertSamplesCopy,
   insertTest,
   relinkAnnotationsForTest,
@@ -76,6 +76,37 @@ export async function processIngestPayload(
     await client.query('BEGIN')
     try {
       const invId = await ensureInverter(client, validated.serialNumber)
+
+      // Cross-pipeline dedup: the same physical test may already exist from the
+      // legacy CSV ingester (which dedups by filename, not idempotency key).
+      // Guard on (inv_id, start_time_utc) with the annotation-relink tolerance.
+      if (validated.startTimeUtc) {
+        const crossExisting = await findExistingTestByInvStart(
+          client,
+          invId,
+          validated.startTimeUtc
+        )
+        if (crossExisting) {
+          // Record the receipt so subsequent retries with this key short-circuit
+          // on the idempotency lookup and map to the existing (CSV) test row.
+          await writeCompletedReceipt(client, {
+            idempotencyKey: payload.idempotencyKey,
+            stationId: payload.stationId,
+            testId: crossExisting.testId,
+            payloadHash: rawBodyHash,
+          })
+          await client.query('COMMIT')
+          return {
+            ok: true,
+            testId: crossExisting.testId,
+            idempotencyKey: payload.idempotencyKey,
+            duplicate: true,
+            overallStatus: crossExisting.overallStatus,
+            stationId: payload.stationId,
+          }
+        }
+      }
+
       const testId = await insertTest(client, {
         invId,
         validated,
@@ -91,11 +122,16 @@ export async function processIngestPayload(
         payloadHash: rawBodyHash,
       })
 
-      try {
-        const startUtc = parseTimestampFromDelhi(validated.startTime).toISOString()
-        await relinkAnnotationsForTest(client, validated.serialNumber, startUtc)
-      } catch (e) {
-        console.warn('Annotation relink failed (non-fatal):', e)
+      if (validated.startTimeUtc) {
+        try {
+          await relinkAnnotationsForTest(
+            client,
+            validated.serialNumber,
+            validated.startTimeUtc
+          )
+        } catch (e) {
+          console.warn('Annotation relink failed (non-fatal):', e)
+        }
       }
 
       await client.query('COMMIT')
@@ -130,8 +166,12 @@ export async function processIngestPayload(
       }
     } catch (err) {
       await client.query('ROLLBACK')
-      // Concurrent insert with same idempotency key
+      // A concurrent insert can race us to a unique violation (23505) on either
+      // the idempotency-key index or the (inv_id, start_time_utc) index added by
+      // migration 013. Both mean "someone else committed the same test" — resolve
+      // to the winning row and report a duplicate.
       const pgCode = (err as { code?: string })?.code
+      const constraint = (err as { constraint?: string })?.constraint
       if (pgCode === '23505') {
         const again = await findCompletedReceipt(client, payload.idempotencyKey)
         if (again) {
@@ -156,6 +196,40 @@ export async function processIngestPayload(
             duplicate: true,
             overallStatus: byKey.rows[0].overall_status as string,
             stationId: payload.stationId,
+          }
+        }
+        // Violation of the cross-pipeline (inv_id, start_time_utc) index: the
+        // winning row has a different (or null) idempotency key, so fall back to
+        // the inv_id/start_time lookup. Match by constraint name, but also try
+        // this path defensively when the key lookups above found nothing.
+        if (
+          constraint === 'idx_tests_inv_start_time_utc' ||
+          validated.startTimeUtc
+        ) {
+          try {
+            const inv = await client.query(
+              `SELECT inv_id FROM Inverters WHERE serial_number = $1`,
+              [validated.serialNumber]
+            )
+            if (inv.rows.length > 0 && validated.startTimeUtc) {
+              const crossExisting = await findExistingTestByInvStart(
+                client,
+                inv.rows[0].inv_id as number,
+                validated.startTimeUtc
+              )
+              if (crossExisting) {
+                return {
+                  ok: true,
+                  testId: crossExisting.testId,
+                  idempotencyKey: payload.idempotencyKey,
+                  duplicate: true,
+                  overallStatus: crossExisting.overallStatus,
+                  stationId: payload.stationId,
+                }
+              }
+            }
+          } catch {
+            /* fall through to rethrow */
           }
         }
       }

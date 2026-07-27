@@ -60,3 +60,8 @@ docs/cve-report.md
 
 # Control Center ops status (watchdog / ingest)
 /data/.ops/
+
+burnin_annotations.*
+docs/FAILURE_CLASSIFICATION_REPORT.md
+logs/
+scripts/export_annotation_table.py

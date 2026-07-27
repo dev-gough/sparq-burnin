@@ -1,4 +1,5 @@
 import { createHmac, createHash, timingSafeEqual, randomBytes } from 'crypto'
+import { withClient } from '@/lib/stationControls'
 
 /**
  * HMAC auth for station → dashboard ingest POSTs.
@@ -14,16 +15,6 @@ import { createHmac, createHash, timingSafeEqual, randomBytes } from 'crypto'
  */
 
 const DEFAULT_SKEW_SEC = 300
-const NONCE_TTL_MS = 5 * 60 * 1000
-
-type NonceEntry = { expiresAt: number }
-const usedNonces = new Map<string, NonceEntry>()
-
-function pruneNonces(now = Date.now()) {
-  for (const [k, v] of usedNonces) {
-    if (v.expiresAt <= now) usedNonces.delete(k)
-  }
-}
 
 export function sha256Hex(buf: Buffer | string): string {
   return createHash('sha256').update(buf).digest('hex')
@@ -73,21 +64,51 @@ export type IngestAuthFailure =
   | 'replay'
   | 'bad_signature'
   | 'unknown_station'
-  | 'station_disabled'
   | 'station_mismatch'
 
 export type IngestAuthResult =
   | { ok: true; stationId: string }
   | { ok: false; reason: IngestAuthFailure }
 
-export function verifyIngestRequest(params: {
+/**
+ * Atomically record a nonce and detect replay via the shared IngestNonces table.
+ * Returns true on first use (row inserted), false on replay (ON CONFLICT hit).
+ * Opportunistically prunes rows older than the TTL so the table stays tiny
+ * without a cron. Throws if the DB is unreachable — callers must FAIL CLOSED.
+ *
+ * The nonce key is namespaced by station id so two stations can never collide,
+ * matching the prior in-memory `${stationId}:${nonce}` key.
+ */
+async function recordNonce(
+  nonceKey: string,
+  stationId: string,
+  ttlSec: number
+): Promise<boolean> {
+  return withClient(async (client) => {
+    // Prune expired nonces first (cheap; index on seen_at). TTL = 2x skew window.
+    await client.query(
+      `DELETE FROM IngestNonces WHERE seen_at < NOW() - ($1 || ' seconds')::interval`,
+      [String(ttlSec)]
+    )
+    const r = await client.query(
+      `INSERT INTO IngestNonces (nonce, station_id)
+       VALUES ($1, $2)
+       ON CONFLICT (nonce) DO NOTHING
+       RETURNING nonce`,
+      [nonceKey, stationId]
+    )
+    return r.rows.length > 0
+  })
+}
+
+export async function verifyIngestRequest(params: {
   request: Request
   rawBody: Buffer
   stationIdHeader: string
   bodyStationId: string | undefined
-  getStation: (stationId: string) => { secret: string; enabled: boolean } | undefined
+  getStation: (stationId: string) => { secret: string } | undefined
   skewSec?: number
-}): IngestAuthResult {
+}): Promise<IngestAuthResult> {
   const stationId = params.stationIdHeader?.trim() || ''
   const timestamp = params.request.headers.get('x-ingest-timestamp')?.trim() || ''
   const nonce = params.request.headers.get('x-ingest-nonce')?.trim() || ''
@@ -105,9 +126,6 @@ export function verifyIngestRequest(params: {
   if (!station) {
     return { ok: false, reason: 'unknown_station' }
   }
-  if (!station.enabled) {
-    return { ok: false, reason: 'station_disabled' }
-  }
 
   if (!/^\d+$/.test(timestamp)) {
     return { ok: false, reason: 'bad_timestamp' }
@@ -121,12 +139,9 @@ export function verifyIngestRequest(params: {
     return { ok: false, reason: 'skew' }
   }
 
-  pruneNonces()
-  const nonceKey = `${stationId}:${nonce}`
-  if (usedNonces.has(nonceKey)) {
-    return { ok: false, reason: 'replay' }
-  }
-
+  // Verify the signature BEFORE touching the nonce store: only a request with a
+  // valid signature may consume/record a nonce, so an unauthenticated caller
+  // can never poison the store to lock out a legitimate (timestamp, nonce).
   const url = new URL(params.request.url)
   const bodySha256Hex = sha256Hex(params.rawBody)
   const expected = signIngestRequest(station.secret, {
@@ -148,6 +163,13 @@ export function verifyIngestRequest(params: {
     return { ok: false, reason: 'bad_signature' }
   }
 
-  usedNonces.set(nonceKey, { expiresAt: Date.now() + NONCE_TTL_MS })
+  // Signature is valid — atomically claim the nonce. A DB error propagates so
+  // the caller fails closed (500); we never accept an unverifiable nonce.
+  const nonceKey = `${stationId}:${nonce}`
+  const firstUse = await recordNonce(nonceKey, stationId, skewSec * 2)
+  if (!firstUse) {
+    return { ok: false, reason: 'replay' }
+  }
+
   return { ok: true, stationId }
 }

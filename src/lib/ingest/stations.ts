@@ -2,7 +2,6 @@ import { loadConfig } from '@/lib/config'
 
 export interface StationConfig {
   secret: string
-  enabled: boolean
 }
 
 export interface IngestServerConfig {
@@ -28,7 +27,7 @@ export function loadIngestConfig(): IngestServerConfig {
       ingest?: {
         maxBodyBytes?: number
         maxSamples?: number
-        stations?: Record<string, { secret?: string; enabled?: boolean }>
+        stations?: Record<string, { secret?: string }>
       }
     }
     if (config.ingest) {
@@ -43,7 +42,6 @@ export function loadIngestConfig(): IngestServerConfig {
           if (s?.secret) {
             stations[id] = {
               secret: s.secret,
-              enabled: s.enabled !== false,
             }
           }
         }
@@ -58,13 +56,12 @@ export function loadIngestConfig(): IngestServerConfig {
     try {
       const parsed = JSON.parse(envJson) as Record<
         string,
-        { secret?: string; enabled?: boolean }
+        { secret?: string }
       >
       for (const [id, s] of Object.entries(parsed)) {
         if (s?.secret) {
           stations[id] = {
             secret: s.secret,
-            enabled: s.enabled !== false,
           }
         }
       }

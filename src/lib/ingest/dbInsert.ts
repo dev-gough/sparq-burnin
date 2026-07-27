@@ -67,6 +67,38 @@ export async function findCompletedReceipt(
   }
 }
 
+/**
+ * Cross-pipeline duplicate guard. During the migration window a station may
+ * deliver the same physical test via BOTH the legacy CSV path (dedups by
+ * source_file filename) and the HTTPS path (dedups by idempotency key), so
+ * neither path's own dedup catches the other. Guard on (inv_id, start_time_utc)
+ * with a 1-second tolerance, mirroring the annotation-relink/restore dedup
+ * convention (see src/app/api/annotations/restore/route.ts). Exact-match would
+ * normally suffice because both paths run the same Delhi->UTC parser, but the
+ * tolerance absorbs sub-second drift (e.g. filename rounded to the minute).
+ */
+export async function findExistingTestByInvStart(
+  client: Client,
+  invId: number,
+  startTimeUtc: string
+): Promise<{ testId: number; overallStatus: string } | null> {
+  const result = await client.query(
+    `SELECT test_id, overall_status
+     FROM Tests
+     WHERE inv_id = $1
+       AND start_time_utc IS NOT NULL
+       AND ABS(EXTRACT(EPOCH FROM (start_time_utc - $2::timestamptz))) < 1
+     ORDER BY test_id ASC
+     LIMIT 1`,
+    [invId, startTimeUtc]
+  )
+  if (result.rows.length === 0) return null
+  return {
+    testId: result.rows[0].test_id as number,
+    overallStatus: (result.rows[0].overall_status as string) || 'UNKNOWN',
+  }
+}
+
 export async function insertTest(
   client: Client,
   params: {
@@ -77,12 +109,15 @@ export async function insertTest(
     sourceFile: string
   }
 ): Promise<number> {
-  const startTimeUtc = parseTimestampFromDelhi(
-    params.validated.startTime
-  ).toISOString()
-  const endTimeUtc = parseTimestampFromDelhi(
-    params.validated.endTime
-  ).toISOString()
+  // Timestamps were parsed once during validation; never re-parse raw strings
+  // here (that path used to throw → 500). The zod schema rejects unparseable
+  // timestamps with 400 before we ever reach this insert, so these are non-null.
+  const { startTimeUtc, endTimeUtc } = params.validated
+  if (startTimeUtc === null || endTimeUtc === null) {
+    throw new Error(
+      'insertTest called with unparsed timestamps (should be rejected upstream)'
+    )
+  }
 
   const query = `
     INSERT INTO Tests (

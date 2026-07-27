@@ -528,6 +528,36 @@ class CSVIngester {
             if (testToProcess) {
               const invId = await this.ensureInverter(testToProcess.serialNumber);
 
+              const startTimeUtc = this.parseTimestampFromDelhi(testToProcess.startTime).toISOString();
+
+              // Cross-pipeline dedup (migration window): the same physical test
+              // may already exist from an HTTPS ingest (which dedups by
+              // idempotency key, not filename). Guard on (inv_id, start_time_utc)
+              // with a 1-second tolerance, mirroring the annotation-relink dedup.
+              // NOTE: this queries only rows ALREADY committed to the DB, so it
+              // never collides with the multi-row priority selection above (which
+              // picks a single row per file) and it stays reprocess-safe: during
+              // reprocess only https:* rows survive the clear, and those are
+              // exactly the rows we want to dedup against.
+              const existingTest = await this.client.query(
+                `SELECT test_id, source_file
+                   FROM Tests
+                  WHERE inv_id = $1
+                    AND start_time_utc IS NOT NULL
+                    AND ABS(EXTRACT(EPOCH FROM (start_time_utc - $2::timestamptz))) < 1
+                  ORDER BY test_id ASC
+                  LIMIT 1`,
+                [invId, startTimeUtc]
+              );
+              if (existingTest.rows.length > 0) {
+                const existing = existingTest.rows[0];
+                console.log(
+                  `⏭️  Skipping ${path.basename(filePath)}: test already exists for inverter ${testToProcess.serialNumber} at ${startTimeUtc} (test_id ${existing.test_id}, source ${existing.source_file}). Cross-pipeline duplicate.`
+                );
+                resolve(testIds);
+                return;
+              }
+
               const query = `
                 INSERT INTO Tests (
                   inv_id, start_time, start_time_utc, end_time, firmware_version, overall_status,
@@ -537,7 +567,6 @@ class CSVIngester {
                 RETURNING test_id
               `;
 
-              const startTimeUtc = this.parseTimestampFromDelhi(testToProcess.startTime).toISOString();
               const values = [
                 invId,
                 startTimeUtc,

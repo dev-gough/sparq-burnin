@@ -5,6 +5,14 @@ export interface ValidatedResult {
   serialNumber: string
   startTime: string
   endTime: string
+  /**
+   * start/end parsed to UTC ISO strings ONCE during validation. Null when the
+   * raw timestamp was unparseable (kept for defence-in-depth; the zod schema
+   * already rejects such payloads with 400 before this runs). Downstream insert
+   * code uses these and never re-parses the raw strings.
+   */
+  startTimeUtc: string | null
+  endTimeUtc: string | null
   firmwareVersion: string | null
   overallStatus: string
   acStatus: string | null
@@ -28,6 +36,8 @@ export function applyResultValidation(
 ): ValidatedResult {
   let overallStatus = result.overallStatus
   let invalidReason = ''
+  let startTimeUtc: string | null = null
+  let endTimeUtc: string | null = null
 
   if (result.firmwareVersion === debugFirmwareVersion) {
     overallStatus = 'INVALID'
@@ -37,6 +47,8 @@ export function applyResultValidation(
   try {
     const start = parseTimestampFromDelhi(result.startTime)
     const end = parseTimestampFromDelhi(result.endTime)
+    startTimeUtc = start.toISOString()
+    endTimeUtc = end.toISOString()
     if (start > end) {
       overallStatus = 'INVALID'
       invalidReason = invalidReason
@@ -62,6 +74,8 @@ export function applyResultValidation(
     serialNumber: result.serialNumber,
     startTime: result.startTime,
     endTime: result.endTime,
+    startTimeUtc,
+    endTimeUtc,
     firmwareVersion: result.firmwareVersion ?? null,
     overallStatus,
     acStatus: result.acStatus ?? null,
