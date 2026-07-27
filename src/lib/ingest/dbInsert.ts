@@ -81,9 +81,13 @@ export async function findExistingTestByInvStart(
   client: Client,
   invId: number,
   startTimeUtc: string
-): Promise<{ testId: number; overallStatus: string } | null> {
+): Promise<{
+  testId: number
+  overallStatus: string
+  sourceFile: string | null
+} | null> {
   const result = await client.query(
-    `SELECT test_id, overall_status
+    `SELECT test_id, overall_status, source_file
      FROM Tests
      WHERE inv_id = $1
        AND start_time_utc IS NOT NULL
@@ -96,16 +100,22 @@ export async function findExistingTestByInvStart(
   return {
     testId: result.rows[0].test_id as number,
     overallStatus: (result.rows[0].overall_status as string) || 'UNKNOWN',
+    sourceFile: (result.rows[0].source_file as string | null) ?? null,
   }
 }
 
+/**
+ * Insert one Tests row. Shared by both transports: the HTTPS path passes its
+ * stationId/idempotencyKey, the legacy CSV path passes null for both (those
+ * columns are HTTPS-only bookkeeping and stay NULL for CSV-ingested tests).
+ */
 export async function insertTest(
   client: Client,
   params: {
     invId: number
     validated: ValidatedResult
-    stationId: string
-    idempotencyKey: string
+    stationId: string | null
+    idempotencyKey: string | null
     sourceFile: string
   }
 ): Promise<number> {
@@ -153,6 +163,13 @@ export async function insertTest(
   return result.rows[0].test_id as number
 }
 
+/**
+ * Bulk-insert TestData rows via PostgreSQL COPY (5-10x faster than INSERT).
+ * This is the single 41-column COPY implementation for BOTH transports — the
+ * legacy CSV ingester maps its parsed CSV rows into IngestSample and calls
+ * this too. The column list below must stay in sync with the TestData schema;
+ * change it here and nowhere else.
+ */
 export async function insertSamplesCopy(
   client: Client,
   testId: number,
@@ -266,6 +283,32 @@ export async function writeCompletedReceipt(
   )
 }
 
+/**
+ * Global annotation relink: point TestAnnotations at freshly-inserted Tests
+ * rows matched by (serial_number, start_time). Used by the CSV ingester after
+ * a full run (annotations survive reprocess via ON DELETE SET NULL and are
+ * re-linked here). Returns the number of annotations re-linked.
+ */
+export async function relinkAllAnnotations(client: Client): Promise<number> {
+  const result = await client.query(
+    `UPDATE TestAnnotations
+     SET
+       current_test_id = t.test_id,
+       updated_at = CURRENT_TIMESTAMP
+     FROM Tests t
+     INNER JOIN Inverters i ON t.inv_id = i.inv_id
+     WHERE
+       TestAnnotations.serial_number = i.serial_number
+       AND TestAnnotations.start_time = t.start_time_utc
+       AND TestAnnotations.current_test_id IS NULL`
+  )
+  return result.rowCount ?? 0
+}
+
+/**
+ * Per-test variant of relinkAllAnnotations used by the HTTPS path right after
+ * inserting a single test (same matching rule, narrowed to one serial/start).
+ */
 export async function relinkAnnotationsForTest(
   client: Client,
   serialNumber: string,

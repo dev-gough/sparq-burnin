@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server'
-import {
-  isOnStationAdminAllowlist,
-  requireStationAdminAuth,
-} from '@/lib/auth-check'
+import { requireStationAdminAuth } from '@/lib/auth-check'
 import { listStationControls } from '@/lib/stationControls'
-import { auth } from '@/lib/auth'
 
 /** GET /api/stations — list station control state (station admins only). */
 export async function GET() {
@@ -21,14 +17,4 @@ export async function GET() {
       { status: 500 }
     )
   }
-}
-
-/** Lightweight check for UI: is current user a station admin? */
-export async function HEAD() {
-  const session = await auth()
-  const email = session?.user?.email
-  if (!isOnStationAdminAllowlist(email)) {
-    return new NextResponse(null, { status: 403 })
-  }
-  return new NextResponse(null, { status: 204 })
 }

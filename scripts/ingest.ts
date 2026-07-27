@@ -6,12 +6,30 @@ import * as path from 'path';
 import csvParser from 'csv-parser';
 import { createReadStream } from 'fs';
 import { toZonedTime } from 'date-fns-tz';
-import { Readable } from 'stream';
-import copyFrom from 'pg-copy-streams';
 
 import { loadConfig, type Config, isProfilingEnabled } from '../src/lib/config';
 import { runMigrations } from './migrate-db';
 import { Profiler } from './profiler';
+// Shared ingest core (single source of truth for BOTH transports — HTTPS API
+// and this CSV script). Import the specific modules, NOT the barrel
+// (src/lib/ingest/index.ts): the barrel re-exports processPayload.ts, which
+// pulls in `@/`-aliased Next-side modules that tsx doesn't resolve here.
+import {
+  parseTimestampFromDelhi,
+} from '../src/lib/ingest/timestamps';
+import {
+  evaluateResultRow,
+  selectBestResult,
+  type ValidatedResult,
+} from '../src/lib/ingest/validate';
+import {
+  ensureInverter,
+  findExistingTestByInvStart,
+  insertSamplesCopy,
+  insertTest,
+  relinkAllAnnotations,
+} from '../src/lib/ingest/dbInsert';
+import type { IngestSample } from '../src/lib/ingest/schema';
 
 // CSV data interfaces for raw parsed data
 interface TestDataCsvRow {
@@ -87,6 +105,9 @@ interface ProcessedTestResult {
   failureTime?: string;
   priority: number;
   invalidReason: string;
+  /** Parsed once by the shared rule evaluation; null when start/end missing. */
+  startTimeUtc: string | null;
+  endTimeUtc: string | null;
 }
 
 class CSVIngester {
@@ -150,23 +171,7 @@ class CSVIngester {
 
   async ensureInverter(serialNumber: string): Promise<number> {
     return await this.profiler.time('db_ensure_inverter', async () => {
-      const query = `
-        INSERT INTO Inverters (serial_number)
-        VALUES ($1)
-        ON CONFLICT (serial_number) DO NOTHING
-        RETURNING inv_id
-      `;
-
-      const result = await this.client.query(query, [serialNumber]);
-
-      if (result.rows.length > 0) {
-        return result.rows[0].inv_id;
-      }
-
-      // If no row was inserted (conflict), get the existing inv_id
-      const selectQuery = 'SELECT inv_id FROM Inverters WHERE serial_number = $1';
-      const selectResult = await this.client.query(selectQuery, [serialNumber]);
-      return selectResult.rows[0].inv_id;
+      return await ensureInverter(this.client, serialNumber);
     }, { serialNumber });
   }
 
@@ -174,92 +179,60 @@ class CSVIngester {
     if (rows.length === 0) return;
 
     return await this.profiler.time('db_insert_test_data_batch', async () => {
-      // Use PostgreSQL COPY for much faster bulk inserts
-      // COPY is 5-10x faster than INSERT for bulk data
-
-      // Format: Convert rows to TSV format for COPY
-      const copyData: string[] = [];
-
-      for (const row of rows) {
-        const timestampUtc = this.parseTimestampFromDelhi(row['Timestamp']).toISOString();
-
-        // Build TSV row (tab-separated values)
-        // Use \N for NULL values (PostgreSQL COPY convention)
-        const rowData = [
-          testId,
-          timestampUtc,
-          timestampUtc, // populate both timestamp and timestamp_utc with the same UTC value
-          this.parseFloat(row['Vgrid']) ?? '\\N',
-          this.parseFloat(row['Pgrid']) ?? '\\N',
-          this.parseFloat(row['Qgrid']) ?? '\\N',
-          this.parseFloat(row['Vpv1']) ?? '\\N',
-          this.parseFloat(row['Ppv1']) ?? '\\N',
-          this.parseFloat(row['Vpv2']) ?? '\\N',
-          this.parseFloat(row['Ppv2']) ?? '\\N',
-          this.parseFloat(row['Vpv3']) ?? '\\N',
-          this.parseFloat(row['Ppv3']) ?? '\\N',
-          this.parseFloat(row['Vpv4']) ?? '\\N',
-          this.parseFloat(row['Ppv4']) ?? '\\N',
-          this.parseFloat(row['Frequency']) ?? '\\N',
-          this.parseFloat(row['Vbus']) ?? '\\N',
-          this.parseInt(row['extstatus']) ?? '\\N',
-          this.parseInt(row['status']) ?? '\\N',
-          this.parseFloat(row['Temperature']) ?? '\\N',
-          this.parseFloat(row['EPV1']) ?? '\\N',
-          this.parseFloat(row['EPV2']) ?? '\\N',
-          this.parseFloat(row['EPV3']) ?? '\\N',
-          this.parseFloat(row['EPV4']) ?? '\\N',
-          this.parseFloat(row['ActiveEnergy']) ?? '\\N',
-          this.parseFloat(row['ReactiveEnergy']) ?? '\\N',
-          this.parseInt(row['extstatus_latch']) ?? '\\N',
-          this.parseInt(row['status_latch']) ?? '\\N',
-          this.parseFloat(row['Vgrid_inst_latch']) ?? '\\N',
-          this.parseFloat(row['Vntrl_inst_latch']) ?? '\\N',
-          this.parseFloat(row['Igrid_inst_latch']) ?? '\\N',
-          this.parseFloat(row['Vbus_inst_latch']) ?? '\\N',
-          this.parseFloat(row['Vpv1_inst_latch']) ?? '\\N',
-          this.parseFloat(row['Ipv1_inst_latch']) ?? '\\N',
-          this.parseFloat(row['Vpv2_inst_latch']) ?? '\\N',
-          this.parseFloat(row['Ipv2_inst_latch']) ?? '\\N',
-          this.parseFloat(row['Vpv3_inst_latch']) ?? '\\N',
-          this.parseFloat(row['Ipv3_inst_latch']) ?? '\\N',
-          this.parseFloat(row['Vpv4_inst_latch']) ?? '\\N',
-          this.parseFloat(row['Ipv4_inst_latch']) ?? '\\N',
-          row['status_bits'] || '\\N',
-          sourceFile
-        ];
-
-        copyData.push(rowData.join('\t'));
-      }
-
-      // Create readable stream from TSV data
-      const dataStream = Readable.from(copyData.join('\n') + '\n');
-
-      // Use COPY command
-      const copyQuery = `
-        COPY TestData (
-          test_id, timestamp, timestamp_utc, vgrid, pgrid, qgrid, vpv1, ppv1, vpv2, ppv2,
-          vpv3, ppv3, vpv4, ppv4, frequency, vbus, extstatus, status,
-          temperature, epv1, epv2, epv3, epv4, active_energy, reactive_energy,
-          extstatus_latch, status_latch, vgrid_inst_latch, vntrl_inst_latch,
-          igrid_inst_latch, vbus_inst_latch, vpv1_inst_latch, ipv1_inst_latch,
-          vpv2_inst_latch, ipv2_inst_latch, vpv3_inst_latch, ipv3_inst_latch,
-          vpv4_inst_latch, ipv4_inst_latch, status_bits, source_file
-        ) FROM STDIN WITH (FORMAT text, NULL '\\N', DELIMITER E'\\t')
-      `;
-
-      const stream = this.client.query(copyFrom.from(copyQuery));
-      dataStream.pipe(stream);
-
-      await new Promise<void>((resolve, reject) => {
-        stream.on('finish', resolve);
-        stream.on('error', reject);
-        dataStream.on('error', reject);
-      });
+      // Map raw CSV strings into the shared sample shape; the 41-column COPY
+      // itself (column list, TSV/NULL serialization, batching) is the shared
+      // implementation in src/lib/ingest/dbInsert.ts, identical for both
+      // transports.
+      const samples: IngestSample[] = rows.map((row) => this.csvRowToSample(row));
+      await insertSamplesCopy(this.client, testId, samples, sourceFile);
 
       // Add to used files cache after successful insert
       this.usedFilesCache.add(sourceFile);
     }, { rowCount: rows.length, testId });
+  }
+
+  /** CSV header/string → shared IngestSample mapping (CSV-transport specific). */
+  private csvRowToSample(row: TestDataCsvRow): IngestSample {
+    return {
+      timestamp: row['Timestamp'],
+      vgrid: this.parseFloat(row['Vgrid']),
+      pgrid: this.parseFloat(row['Pgrid']),
+      qgrid: this.parseFloat(row['Qgrid']),
+      vpv1: this.parseFloat(row['Vpv1']),
+      ppv1: this.parseFloat(row['Ppv1']),
+      vpv2: this.parseFloat(row['Vpv2']),
+      ppv2: this.parseFloat(row['Ppv2']),
+      vpv3: this.parseFloat(row['Vpv3']),
+      ppv3: this.parseFloat(row['Ppv3']),
+      vpv4: this.parseFloat(row['Vpv4']),
+      ppv4: this.parseFloat(row['Ppv4']),
+      frequency: this.parseFloat(row['Frequency']),
+      vbus: this.parseFloat(row['Vbus']),
+      extstatus: this.parseInt(row['extstatus']),
+      status: this.parseInt(row['status']),
+      temperature: this.parseFloat(row['Temperature']),
+      epv1: this.parseFloat(row['EPV1']),
+      epv2: this.parseFloat(row['EPV2']),
+      epv3: this.parseFloat(row['EPV3']),
+      epv4: this.parseFloat(row['EPV4']),
+      activeEnergy: this.parseFloat(row['ActiveEnergy']),
+      reactiveEnergy: this.parseFloat(row['ReactiveEnergy']),
+      extstatusLatch: this.parseInt(row['extstatus_latch']),
+      statusLatch: this.parseInt(row['status_latch']),
+      vgridInstLatch: this.parseFloat(row['Vgrid_inst_latch']),
+      vntrlInstLatch: this.parseFloat(row['Vntrl_inst_latch']),
+      igridInstLatch: this.parseFloat(row['Igrid_inst_latch']),
+      vbusInstLatch: this.parseFloat(row['Vbus_inst_latch']),
+      vpv1InstLatch: this.parseFloat(row['Vpv1_inst_latch']),
+      ipv1InstLatch: this.parseFloat(row['Ipv1_inst_latch']),
+      vpv2InstLatch: this.parseFloat(row['Vpv2_inst_latch']),
+      ipv2InstLatch: this.parseFloat(row['Ipv2_inst_latch']),
+      vpv3InstLatch: this.parseFloat(row['Vpv3_inst_latch']),
+      ipv3InstLatch: this.parseFloat(row['Ipv3_inst_latch']),
+      vpv4InstLatch: this.parseFloat(row['Vpv4_inst_latch']),
+      ipv4InstLatch: this.parseFloat(row['Ipv4_inst_latch']),
+      statusBits: row['status_bits'] || null,
+    };
   }
 
   private parseFloat(value: string | undefined): number | null {
@@ -274,104 +247,9 @@ class CSVIngester {
     return isNaN(parsed) ? null : parsed;
   }
 
-  private parseTimestampFromDelhi(timestamp: string): Date {
-    // Parse timestamp as Delhi time (Asia/Kolkata), convert to UTC for database storage
-    try {
-      // Parse the timestamp components manually to avoid any timezone interpretation
-      // Handle both full timestamps (with seconds) and partial ones (without seconds)
-      const match = timestamp.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{3}))?/);
-      if (!match) {
-        throw new Error(`Invalid timestamp format: ${timestamp}`);
-      }
-
-      const [, year, month, day, hour, minute, second, milliseconds] = match;
-
-      // Calculate UTC time directly from Delhi time components
-      // Delhi (IST) = UTC + 5:30, so UTC = Delhi time - 5:30
-
-      // Extract time components
-      const delhiHour = parseInt(hour);
-      const delhiMinute = parseInt(minute);
-      const delhiSecond = parseInt(second || '0');
-      const delhiMs = parseInt(milliseconds || '0');
-
-      // Subtract 5 hours 30 minutes from Delhi time to get UTC
-      let utcHour = delhiHour - 5;
-      let utcMinute = delhiMinute - 30;
-      let utcDay = parseInt(day);
-      let utcMonth = parseInt(month);
-      let utcYear = parseInt(year);
-
-      // Handle minute underflow
-      if (utcMinute < 0) {
-        utcMinute += 60;
-        utcHour -= 1;
-      }
-
-      // Handle hour underflow (day rollback)
-      if (utcHour < 0) {
-        utcHour += 24;
-        utcDay -= 1;
-
-        // Handle day underflow (month rollback)
-        if (utcDay < 1) {
-          utcMonth -= 1;
-          if (utcMonth < 1) {
-            utcMonth = 12;
-            utcYear -= 1;
-          }
-          // Get days in previous month (simplified)
-          const daysInMonth = new Date(utcYear, utcMonth, 0).getDate();
-          utcDay = daysInMonth;
-        }
-      }
-
-      // Create UTC date with calculated components
-      const utcDate = new Date(Date.UTC(
-        utcYear,
-        utcMonth - 1, // Month is 0-indexed
-        utcDay,
-        utcHour,
-        utcMinute,
-        delhiSecond,
-        delhiMs
-      ));
-
-      // console.log(`🕐 Delhi timestamp conversion: ${timestamp} (Delhi) -> ${utcDate.toISOString()} (UTC)`);
-      return utcDate;
-    } catch (error) {
-      console.warn(`Error parsing Delhi timestamp: ${timestamp}`, error);
-      throw error;
-    }
-  }
-
-  private parseFailureTime(value: string | null): string | null {
-    if (!value || value.trim() === '' || value.trim().toUpperCase() === 'N/A') {
-      return null;
-    }
-
-    // Expected format: "2025-07-15_11-08-38"
-    // Convert to ISO timestamp format, treating as Delhi time
-    try {
-      const parts = value.split('_');
-      if (parts.length !== 2) {
-        console.warn(`Invalid failure time format: ${value}`);
-        return null;
-      }
-
-      const datePart = parts[0]; // "2025-07-15"
-      const timePart = parts[1].replace(/-/g, ':'); // "11:08:38"
-
-      const delhiTimestamp = `${datePart}T${timePart}`;
-
-      // Convert Delhi time to UTC for database storage
-      const utcDate = this.parseTimestampFromDelhi(delhiTimestamp);
-      return utcDate.toISOString();
-    } catch (error) {
-      console.warn(`Error parsing failure time: ${value}`, error);
-      return null;
-    }
-  }
+  // Delhi→UTC parsing and failure-time parsing live in the shared core
+  // (src/lib/ingest/timestamps.ts) — used via parseTimestampFromDelhi and,
+  // inside insertTest, parseFailureTime.
 
   async isTestDataFileAlreadyUsed(fileName: string): Promise<boolean> {
     // Use in-memory cache instead of querying database
@@ -405,7 +283,9 @@ class CSVIngester {
         })
         .on('end', async () => {
           try {
-            // Process all rows and categorize them with priority levels
+            // Process all rows and categorize them with priority levels using
+            // the shared rule core (src/lib/ingest/validate.ts) — the same
+            // INVALID/priority rules the HTTPS transport applies.
             const allTests: ProcessedTestResult[] = [];
 
             for (const test of tests) {
@@ -416,69 +296,40 @@ class CSVIngester {
                 continue;
               }
 
-              // Get start and end times for validation
-              const startTime = test['Start Time'];
-              const endTime = test['End Time'];
-              let overallStatus = test['Overall'];
-              let invalidReason = '';
-              let priority = 4; // Start with highest priority (valid)
-
-              // Mark debug firmware version as INVALID
-              const firmwareVersion = test['Inverter Firmware'];
-              if (firmwareVersion === this.config.settings.debug_firmware_version) {
-                console.log(`Marking test with debug firmware version ${this.config.settings.debug_firmware_version} as INVALID for inverter ${serialNumber}`);
-                overallStatus = 'INVALID';
-                invalidReason = 'Debug firmware version';
-                priority = 3; // Medium priority - can be processed if no better options
-              }
-
-              // Check if start time is after end time
-              if (startTime && endTime) {
-                const start = this.parseTimestampFromDelhi(startTime);
-                const end = this.parseTimestampFromDelhi(endTime);
-                if (start > end) {
-                  console.log(`Marking test as INVALID due to start time (${startTime}) being after end time (${endTime}) for inverter ${serialNumber}`);
-                  overallStatus = 'INVALID';
-                  invalidReason = invalidReason ? `${invalidReason}, Invalid date range` : 'Invalid date range';
-                  priority = 1; // Lowest priority - only process if no other options
-                } else {
-                  // Check if test duration is less than 2 hours
-                  const durationMs = end.getTime() - start.getTime();
-                  const durationHours = durationMs / (1000 * 60 * 60);
-                  if (durationHours < 2) {
-                    console.log(`Marking test as INVALID due to duration less than 2 hours (${durationHours.toFixed(2)} hours) for inverter ${serialNumber}`);
-                    overallStatus = 'INVALID';
-                    invalidReason = invalidReason ? `${invalidReason}, Duration less than 2 hours` : 'Duration less than 2 hours';
-                    // Only lower priority if not already lowered by date range issue
-                    if (priority > 2) {
-                      priority = 2; // Medium-low priority - acceptable if no date range issues
-                    }
-                  }
-                }
-              }
-
-              // Check if overall status is already invalid (from CSV data itself)
-              if (overallStatus === 'INVALID' && priority === 4) {
-                priority = 3; // If already marked invalid but no specific reason, medium priority
+              const evaluation = evaluateResultRow(
+                {
+                  serialNumber,
+                  startTime: test['Start Time'],
+                  endTime: test['End Time'],
+                  firmwareVersion: test['Inverter Firmware'],
+                  overallStatus: test['Overall'],
+                },
+                this.config.settings.debug_firmware_version,
+                (message) => console.log(message)
+              );
+              // Legacy behavior: an unparseable start/end timestamp fails the
+              // whole results file (rejects this promise), it is not stored.
+              if (evaluation.timestampParseError) {
+                throw evaluation.timestampParseError;
               }
 
               // Support both historical headers (AC Output / Failure time)
               // and current burn-in software headers (AC / Failure Time).
-              const acStatus = test['AC Output'] ?? (test as Record<string, string>)['AC'];
-              const ch1Status = test['CH1 Output'] ?? (test as Record<string, string>)['CH1'];
-              const ch2Status = test['CH2 Output'] ?? (test as Record<string, string>)['CH2'];
-              const ch3Status = test['CH3 Output'] ?? (test as Record<string, string>)['CH3'];
-              const ch4Status = test['CH4 Output'] ?? (test as Record<string, string>)['CH4'];
+              const acStatus = test['AC Output'] ?? (test as unknown as Record<string, string>)['AC'];
+              const ch1Status = test['CH1 Output'] ?? (test as unknown as Record<string, string>)['CH1'];
+              const ch2Status = test['CH2 Output'] ?? (test as unknown as Record<string, string>)['CH2'];
+              const ch3Status = test['CH3 Output'] ?? (test as unknown as Record<string, string>)['CH3'];
+              const ch4Status = test['CH4 Output'] ?? (test as unknown as Record<string, string>)['CH4'];
               const failureTime =
                 test['Failure time'] ??
-                (test as Record<string, string>)['Failure Time'];
+                (test as unknown as Record<string, string>)['Failure Time'];
 
               const testInfo: ProcessedTestResult = {
                 serialNumber,
                 startTime: test['Start Time'],
                 endTime: test['End Time'],
                 firmwareVersion: test['Inverter Firmware'],
-                overallStatus,
+                overallStatus: evaluation.overallStatus,
                 acStatus,
                 ch1Status,
                 ch2Status,
@@ -487,8 +338,10 @@ class CSVIngester {
                 statusFlags: test['Status Flags'],
                 failureDescription: test['Failure Description'],
                 failureTime,
-                priority,
-                invalidReason
+                priority: evaluation.priority,
+                invalidReason: evaluation.invalidReason,
+                startTimeUtc: evaluation.startTimeUtc,
+                endTimeUtc: evaluation.endTimeUtc,
               };
 
               allTests.push(testInfo);
@@ -497,98 +350,77 @@ class CSVIngester {
             // Log summary
             console.log(`Found ${tests.length} total rows`);
 
-            // Select the best test to process based on priority
-            let testToProcess = null;
-
-            if (allTests.length === 1) {
-              // Single row: always process regardless of validity
-              testToProcess = allTests[0];
-              console.log(`Single row found - processing regardless of validity (priority: ${testToProcess.priority})`);
-            } else if (allTests.length > 1) {
-              // Multiple rows: select highest priority
-              allTests.sort((a, b) => b.priority - a.priority); // Sort by priority descending
-              testToProcess = allTests[0];
-
-              const priorityGroups = {
-                1: allTests.filter(t => t.priority === 1).length,
-                2: allTests.filter(t => t.priority === 2).length,
-                3: allTests.filter(t => t.priority === 3).length,
-                4: allTests.filter(t => t.priority === 4).length
-              };
-
-              console.log(`Multiple rows found - priority breakdown: P4(valid)=${priorityGroups[4]}, P3(debug/invalid)=${priorityGroups[3]}, P2(short)=${priorityGroups[2]}, P1(date-range)=${priorityGroups[1]}`);
-              console.log(`Selected: ${testToProcess.serialNumber} (${testToProcess['startTime']}) with priority ${testToProcess.priority}`);
-
-              if (testToProcess.priority === 1 && priorityGroups[1] === allTests.length) {
-                console.warn(`⚠️  WARNING: All rows in ${path.basename(filePath)} have date range issues (start > end). Skipping file.`);
-                testToProcess = null;
-              }
-            }
+            // Select the best test to process based on priority — shared
+            // multi-row selection rule (see selectBestResult's doc; the station
+            // client mirrors it).
+            const testToProcess = selectBestResult(allTests, {
+              fileLabel: path.basename(filePath),
+              log: (message) => console.log(message),
+              warn: (message) => console.warn(message),
+            });
 
             if (testToProcess) {
               const invId = await this.ensureInverter(testToProcess.serialNumber);
 
-              const startTimeUtc = this.parseTimestampFromDelhi(testToProcess.startTime).toISOString();
+              const startTimeUtc =
+                testToProcess.startTimeUtc ??
+                parseTimestampFromDelhi(testToProcess.startTime).toISOString();
 
               // Cross-pipeline dedup (migration window): the same physical test
               // may already exist from an HTTPS ingest (which dedups by
-              // idempotency key, not filename). Guard on (inv_id, start_time_utc)
-              // with a 1-second tolerance, mirroring the annotation-relink dedup.
+              // idempotency key, not filename). Shared guard on
+              // (inv_id, start_time_utc) with a 1-second tolerance.
               // NOTE: this queries only rows ALREADY committed to the DB, so it
               // never collides with the multi-row priority selection above (which
               // picks a single row per file) and it stays reprocess-safe: during
               // reprocess only https:* rows survive the clear, and those are
               // exactly the rows we want to dedup against.
-              const existingTest = await this.client.query(
-                `SELECT test_id, source_file
-                   FROM Tests
-                  WHERE inv_id = $1
-                    AND start_time_utc IS NOT NULL
-                    AND ABS(EXTRACT(EPOCH FROM (start_time_utc - $2::timestamptz))) < 1
-                  ORDER BY test_id ASC
-                  LIMIT 1`,
-                [invId, startTimeUtc]
+              const existingTest = await findExistingTestByInvStart(
+                this.client,
+                invId,
+                startTimeUtc
               );
-              if (existingTest.rows.length > 0) {
-                const existing = existingTest.rows[0];
+              if (existingTest) {
                 console.log(
-                  `⏭️  Skipping ${path.basename(filePath)}: test already exists for inverter ${testToProcess.serialNumber} at ${startTimeUtc} (test_id ${existing.test_id}, source ${existing.source_file}). Cross-pipeline duplicate.`
+                  `⏭️  Skipping ${path.basename(filePath)}: test already exists for inverter ${testToProcess.serialNumber} at ${startTimeUtc} (test_id ${existingTest.testId}, source ${existingTest.sourceFile}). Cross-pipeline duplicate.`
                 );
                 resolve(testIds);
                 return;
               }
 
-              const query = `
-                INSERT INTO Tests (
-                  inv_id, start_time, start_time_utc, end_time, firmware_version, overall_status,
-                  ac_status, ch1_status, ch2_status, ch3_status, ch4_status,
-                  status_flags, failure_description, failure_time, source_file
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-                RETURNING test_id
-              `;
+              const endTimeUtc =
+                testToProcess.endTimeUtc ??
+                parseTimestampFromDelhi(testToProcess.endTime).toISOString();
 
-              const values = [
-                invId,
+              const validated: ValidatedResult = {
+                serialNumber: testToProcess.serialNumber,
+                startTime: testToProcess.startTime,
+                endTime: testToProcess.endTime,
                 startTimeUtc,
-                startTimeUtc, // populate both start_time and start_time_utc with the same UTC value
-                this.parseTimestampFromDelhi(testToProcess.endTime).toISOString(),
-                testToProcess.firmwareVersion,
-                testToProcess.overallStatus,
-                testToProcess.acStatus,
-                testToProcess.ch1Status,
-                testToProcess.ch2Status,
-                testToProcess.ch3Status,
-                testToProcess.ch4Status,
-                testToProcess.statusFlags || null,
-                testToProcess.failureDescription || null,
-                this.parseFailureTime(testToProcess.failureTime || null),
-                path.basename(filePath)
-              ];
+                endTimeUtc,
+                firmwareVersion: testToProcess.firmwareVersion ?? null,
+                overallStatus: testToProcess.overallStatus,
+                acStatus: testToProcess.acStatus ?? null,
+                ch1Status: testToProcess.ch1Status ?? null,
+                ch2Status: testToProcess.ch2Status ?? null,
+                ch3Status: testToProcess.ch3Status ?? null,
+                ch4Status: testToProcess.ch4Status ?? null,
+                statusFlags: testToProcess.statusFlags || null,
+                failureDescription: testToProcess.failureDescription || null,
+                failureTime: testToProcess.failureTime ?? null,
+                invalidReason: testToProcess.invalidReason,
+              };
 
-              const result = await this.client.query(query, values);
-              testIds.push(result.rows[0].test_id);
+              const testId = await insertTest(this.client, {
+                invId,
+                validated,
+                stationId: null,
+                idempotencyKey: null,
+                sourceFile: path.basename(filePath),
+              });
+              testIds.push(testId);
 
-              console.log(`Inserted test ${result.rows[0].test_id} for inverter ${testToProcess.serialNumber}`);
+              console.log(`Inserted test ${testId} for inverter ${testToProcess.serialNumber}`);
             } else {
               console.log(`No valid tests found in ${path.basename(filePath)}`);
             }
@@ -677,7 +509,7 @@ class CSVIngester {
             }
 
             // Parse start time as Delhi time, convert to UTC
-            const startTimeUtc = this.parseTimestampFromDelhi(startTime);
+            const startTimeUtc = parseTimestampFromDelhi(startTime);
 
             // Convert back to Delhi time for filename construction
             const startTimeDelhi = toZonedTime(startTimeUtc, 'Asia/Kolkata');
@@ -773,7 +605,7 @@ class CSVIngester {
       const timestampStr = `${datePart}T${timeFormatted}`;
 
       // Parse as Delhi time, then convert to UTC for comparison
-      return this.parseTimestampFromDelhi(timestampStr);
+      return parseTimestampFromDelhi(timestampStr);
     } catch (error) {
       console.warn(`Error parsing timestamp from filename: ${filename}`, error);
       return null;
@@ -848,21 +680,8 @@ class CSVIngester {
     console.log('🔗 Re-linking annotations to new test IDs...');
 
     await this.profiler.time('db_relink_annotations', async () => {
-      const query = `
-        UPDATE TestAnnotations
-        SET
-          current_test_id = t.test_id,
-          updated_at = CURRENT_TIMESTAMP
-        FROM Tests t
-        INNER JOIN Inverters i ON t.inv_id = i.inv_id
-        WHERE
-          TestAnnotations.serial_number = i.serial_number
-          AND TestAnnotations.start_time = t.start_time_utc
-          AND TestAnnotations.current_test_id IS NULL
-      `;
-
-      const result = await this.client.query(query);
-      console.log(`✅ Re-linked ${result.rowCount} annotations to new test IDs`);
+      const count = await relinkAllAnnotations(this.client);
+      console.log(`✅ Re-linked ${count} annotations to new test IDs`);
     });
   }
 

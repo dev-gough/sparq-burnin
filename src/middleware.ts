@@ -4,6 +4,35 @@ import { NextResponse } from "next/server";
 // Check if authentication should be skipped (for local development)
 const shouldSkipAuth = process.env.SKIP_AUTH === 'true';
 
+/**
+ * Route prefixes that bypass session auth. These use their own auth schemes:
+ * NextAuth handlers, HEALTH_TOKEN probe, HMAC (ops/ingest/station-policy),
+ * or are the sign-in pages themselves.
+ *
+ * This constant drives the runtime bypass below. Next.js requires
+ * `config.matcher` to be a static literal (dynamic values are ignored by the
+ * build-time analyzer), so the matcher regexes CANNOT consume this constant —
+ * tests/middleware.test.ts pins the two representations against each other so
+ * they cannot drift.
+ */
+export const PUBLIC_PREFIXES = [
+  "/api/auth",
+  "/auth/",
+  "/api/ops/",
+  "/api/ingest/",
+  "/api/stations/v1/",
+] as const;
+
+/** Paths matched exactly (no sub-paths). */
+export const PUBLIC_EXACT = ["/api/health"] as const;
+
+export function isPublicPath(pathname: string): boolean {
+  return (
+    PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix)) ||
+    (PUBLIC_EXACT as readonly string[]).includes(pathname)
+  );
+}
+
 function addSecurityHeaders(response: NextResponse) {
   const headers = response.headers;
 
@@ -36,14 +65,7 @@ export default auth((req) => {
 
   // Allow access to auth pages and Control Center probe/ops endpoints
   // (ops uses HMAC; health uses optional HEALTH_TOKEN — not session cookies)
-  if (
-    pathname.startsWith("/api/auth") ||
-    pathname.startsWith("/auth/") ||
-    pathname === "/api/health" ||
-    pathname.startsWith("/api/ops/") ||
-    pathname.startsWith("/api/ingest/") ||
-    pathname.startsWith("/api/stations/v1/")
-  ) {
+  if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
@@ -76,6 +98,10 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - public assets
+     *
+     * The api/* exclusions below MUST cover PUBLIC_PREFIXES/PUBLIC_EXACT
+     * (they must stay literal — Next.js ignores dynamic matcher values).
+     * tests/middleware.test.ts fails if the two lists drift.
      */
     "/((?!_next/static|_next/image|favicon.ico|.*\\..*|api/auth|api/health|api/ops|api/ingest|api/stations/v1).*)",
     "/api/((?!auth|health|ops|ingest|stations/v1).*)",

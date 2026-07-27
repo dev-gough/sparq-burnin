@@ -22,7 +22,6 @@ export async function GET(request: NextRequest) {
       request,
       rawBody,
       stationIdHeader,
-      bodyStationId: undefined,
       getStation: (id) => {
         const s = getStation(id)
         if (!s) return undefined

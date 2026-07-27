@@ -1,5 +1,12 @@
-import { createHmac, createHash, timingSafeEqual, randomBytes } from 'crypto'
 import { withClient } from '@/lib/stationControls'
+import {
+  hmacSha256Hex,
+  randomHexNonce,
+  readSignedHeaders,
+  sha256Hex,
+  verifyHmacCore,
+  type HmacCoreFailure,
+} from '@/lib/hmacVerifyCore'
 
 /**
  * HMAC auth for station → dashboard ingest POSTs.
@@ -12,13 +19,15 @@ import { withClient } from '@/lib/stationControls'
  *
  * Canonical (UTF-8):
  *   `${timestamp}\n${nonce}\nPOST\n/api/ingest/v1/tests\n${stationId}\n${sha256_hex(rawBody)}`
+ *
+ * The canonical format is a wire contract shared with the station repo —
+ * pinned by tests/fixtures/hmac_golden_vectors.json (byte-identical in both
+ * repos). Verification mechanics live in @/lib/hmacVerifyCore.
  */
 
 const DEFAULT_SKEW_SEC = 300
 
-export function sha256Hex(buf: Buffer | string): string {
-  return createHash('sha256').update(buf).digest('hex')
-}
+export { sha256Hex }
 
 export function buildIngestCanonical(params: {
   timestamp: string
@@ -49,25 +58,17 @@ export function signIngestRequest(
     bodySha256Hex: string
   }
 ): string {
-  const canonical = buildIngestCanonical(params)
-  return createHmac('sha256', secret).update(canonical, 'utf8').digest('hex')
+  return hmacSha256Hex(secret, buildIngestCanonical(params))
 }
 
 export function createIngestNonce(): string {
-  return randomBytes(16).toString('hex')
+  return randomHexNonce()
 }
 
-export type IngestAuthFailure =
-  | 'missing_headers'
-  | 'bad_timestamp'
-  | 'skew'
-  | 'replay'
-  | 'bad_signature'
-  | 'unknown_station'
-  | 'station_mismatch'
+export type IngestAuthFailure = HmacCoreFailure | 'unknown_station'
 
 export type IngestAuthResult =
-  | { ok: true; stationId: string }
+  | { ok: true; stationId: string; bodySha256Hex: string }
   | { ok: false; reason: IngestAuthFailure }
 
 /**
@@ -105,21 +106,20 @@ export async function verifyIngestRequest(params: {
   request: Request
   rawBody: Buffer
   stationIdHeader: string
-  bodyStationId: string | undefined
   getStation: (stationId: string) => { secret: string } | undefined
   skewSec?: number
 }): Promise<IngestAuthResult> {
   const stationId = params.stationIdHeader?.trim() || ''
-  const timestamp = params.request.headers.get('x-ingest-timestamp')?.trim() || ''
-  const nonce = params.request.headers.get('x-ingest-nonce')?.trim() || ''
-  const signature = params.request.headers.get('x-ingest-signature')?.trim() || ''
+  const { timestamp, nonce, signature } = readSignedHeaders(
+    params.request,
+    'x-ingest'
+  )
 
+  // Station id is part of the required header set — checked here (with the
+  // core's trio) so a missing station id reports missing_headers, not
+  // unknown_station.
   if (!stationId || !timestamp || !nonce || !signature) {
     return { ok: false, reason: 'missing_headers' }
-  }
-
-  if (params.bodyStationId != null && params.bodyStationId !== stationId) {
-    return { ok: false, reason: 'station_mismatch' }
   }
 
   const station = params.getStation(stationId)
@@ -127,49 +127,40 @@ export async function verifyIngestRequest(params: {
     return { ok: false, reason: 'unknown_station' }
   }
 
-  if (!/^\d+$/.test(timestamp)) {
-    return { ok: false, reason: 'bad_timestamp' }
-  }
-
   const skewSec =
     params.skewSec ?? Number(process.env.INGEST_HMAC_SKEW_SEC || DEFAULT_SKEW_SEC)
-  const ts = Number(timestamp)
-  const nowSec = Math.floor(Date.now() / 1000)
-  if (Math.abs(nowSec - ts) > skewSec) {
-    return { ok: false, reason: 'skew' }
-  }
-
-  // Verify the signature BEFORE touching the nonce store: only a request with a
-  // valid signature may consume/record a nonce, so an unauthenticated caller
-  // can never poison the store to lock out a legitimate (timestamp, nonce).
   const url = new URL(params.request.url)
-  const bodySha256Hex = sha256Hex(params.rawBody)
-  const expected = signIngestRequest(station.secret, {
+
+  // Body hash is computed lazily inside the signature callback (requests
+  // rejected on skew never pay for it) and captured so callers can reuse it
+  // (e.g. as the ingest payload hash) instead of re-hashing the raw body.
+  let bodySha256Hex = ''
+
+  // Core verifies the signature BEFORE touching the nonce store: only a request
+  // with a valid signature may consume/record a nonce. A DB error from
+  // recordNonce propagates so the caller fails closed (500); we never accept an
+  // unverifiable nonce.
+  const result = await verifyHmacCore({
     timestamp,
     nonce,
-    method: params.request.method,
-    path: url.pathname,
-    stationId,
-    bodySha256Hex,
+    signature,
+    skewSec,
+    computeExpectedSignature: () => {
+      bodySha256Hex = sha256Hex(params.rawBody)
+      return signIngestRequest(station.secret, {
+        timestamp,
+        nonce,
+        method: params.request.method,
+        path: url.pathname,
+        stationId,
+        bodySha256Hex,
+      })
+    },
+    claimNonce: (n) => recordNonce(`${stationId}:${n}`, stationId, skewSec * 2),
   })
 
-  try {
-    const a = Buffer.from(expected, 'utf8')
-    const b = Buffer.from(signature, 'utf8')
-    if (a.length !== b.length || !timingSafeEqual(a, b)) {
-      return { ok: false, reason: 'bad_signature' }
-    }
-  } catch {
-    return { ok: false, reason: 'bad_signature' }
+  if (!result.ok) {
+    return { ok: false, reason: result.reason }
   }
-
-  // Signature is valid — atomically claim the nonce. A DB error propagates so
-  // the caller fails closed (500); we never accept an unverifiable nonce.
-  const nonceKey = `${stationId}:${nonce}`
-  const firstUse = await recordNonce(nonceKey, stationId, skewSec * 2)
-  if (!firstUse) {
-    return { ok: false, reason: 'replay' }
-  }
-
-  return { ok: true, stationId }
+  return { ok: true, stationId, bodySha256Hex }
 }

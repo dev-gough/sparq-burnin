@@ -1,6 +1,6 @@
-import { Client } from 'pg'
-import { getDatabaseConfig, loadConfig } from '@/lib/config'
-import { sha256Hex } from '@/lib/ingestAuth'
+import type { Client, PoolClient } from 'pg'
+import { getPool } from '@/lib/db'
+import { loadConfig } from '@/lib/config'
 import { writeIngestStatus } from '@/lib/opsStatus'
 import type { IngestPayload } from './schema'
 import { applyResultValidation } from './validate'
@@ -29,43 +29,64 @@ export interface ProcessFailure {
   message: string
 }
 
+/** Duplicate-delivery response: same shape for every dedup path. */
+function duplicateResult(
+  payload: IngestPayload,
+  existing: { testId: number; overallStatus: string }
+): ProcessSuccess {
+  return {
+    ok: true,
+    testId: existing.testId,
+    idempotencyKey: payload.idempotencyKey,
+    duplicate: true,
+    overallStatus: existing.overallStatus,
+    stationId: payload.stationId,
+  }
+}
+
+/**
+ * Idempotency lookup: completed receipt first, then Tests.idempotency_key
+ * directly (race-safe short-circuit — a concurrent insert may have committed
+ * the Tests row before its receipt is visible). Used both pre-insert and in
+ * the 23505 conflict handler.
+ */
+async function findExistingByKey(
+  client: Client,
+  idempotencyKey: string
+): Promise<{ testId: number; overallStatus: string } | null> {
+  const receipt = await findCompletedReceipt(client, idempotencyKey)
+  if (receipt) return receipt
+  const byKey = await client.query(
+    `SELECT test_id, overall_status FROM Tests WHERE idempotency_key = $1`,
+    [idempotencyKey]
+  )
+  if (byKey.rows.length > 0) {
+    return {
+      testId: byKey.rows[0].test_id as number,
+      overallStatus: byKey.rows[0].overall_status as string,
+    }
+  }
+  return null
+}
+
 export async function processIngestPayload(
   payload: IngestPayload,
   rawBodyHash: string
 ): Promise<ProcessSuccess | ProcessFailure> {
   const startedMs = Date.now()
   const startedAt = new Date().toISOString()
-  const client = new Client(getDatabaseConfig())
+  let poolClient: PoolClient | null = null
+  let releaseAndDestroy = false
 
   try {
-    await client.connect()
+    poolClient = await getPool().connect()
+    // The dbInsert helpers are typed against pg.Client; PoolClient shares the
+    // ClientBase query surface, so cast once at acquisition.
+    const client = poolClient as unknown as Client
 
-    const existing = await findCompletedReceipt(client, payload.idempotencyKey)
+    const existing = await findExistingByKey(client, payload.idempotencyKey)
     if (existing) {
-      return {
-        ok: true,
-        testId: existing.testId,
-        idempotencyKey: payload.idempotencyKey,
-        duplicate: true,
-        overallStatus: existing.overallStatus,
-        stationId: payload.stationId,
-      }
-    }
-
-    // Also check Tests.idempotency_key for race-safe short-circuit
-    const byKey = await client.query(
-      `SELECT test_id, overall_status FROM Tests WHERE idempotency_key = $1`,
-      [payload.idempotencyKey]
-    )
-    if (byKey.rows.length > 0) {
-      return {
-        ok: true,
-        testId: byKey.rows[0].test_id as number,
-        idempotencyKey: payload.idempotencyKey,
-        duplicate: true,
-        overallStatus: byKey.rows[0].overall_status as string,
-        stationId: payload.stationId,
-      }
+      return duplicateResult(payload, existing)
     }
 
     const debugFw =
@@ -96,14 +117,7 @@ export async function processIngestPayload(
             payloadHash: rawBodyHash,
           })
           await client.query('COMMIT')
-          return {
-            ok: true,
-            testId: crossExisting.testId,
-            idempotencyKey: payload.idempotencyKey,
-            duplicate: true,
-            overallStatus: crossExisting.overallStatus,
-            stationId: payload.stationId,
-          }
+          return duplicateResult(payload, crossExisting)
         }
       }
 
@@ -137,16 +151,24 @@ export async function processIngestPayload(
       await client.query('COMMIT')
 
       try {
+        // Planner estimate instead of a full COUNT(*) scan on every ingest
+        // POST. totalTests only feeds the best-effort ops-status file, and
+        // GET /api/health prefers the live freshness snapshot's exact count
+        // whenever the DB is reachable — an estimate is plenty here.
+        // reltuples is -1 when the table has never been VACUUMed/ANALYZEd
+        // (PG 13+); report null then rather than a bogus number.
         const total = await client.query(
-          'SELECT COUNT(*)::int AS n FROM Tests'
+          `SELECT reltuples::bigint AS n FROM pg_class WHERE oid = to_regclass('tests')`
         )
+        const estimate =
+          total.rows[0]?.n == null ? null : Number(total.rows[0].n)
         await writeIngestStatus({
           startedAt,
           finishedAt: new Date().toISOString(),
           durationMs: Date.now() - startedMs,
           success: true,
           newTests: 1,
-          totalTests: total.rows[0]?.n ?? null,
+          totalTests: estimate != null && estimate >= 0 ? estimate : null,
           exactMatches: 1,
           closestMatches: 0,
           unmatched: 0,
@@ -173,30 +195,9 @@ export async function processIngestPayload(
       const pgCode = (err as { code?: string })?.code
       const constraint = (err as { constraint?: string })?.constraint
       if (pgCode === '23505') {
-        const again = await findCompletedReceipt(client, payload.idempotencyKey)
-        if (again) {
-          return {
-            ok: true,
-            testId: again.testId,
-            idempotencyKey: payload.idempotencyKey,
-            duplicate: true,
-            overallStatus: again.overallStatus,
-            stationId: payload.stationId,
-          }
-        }
-        const byKey = await client.query(
-          `SELECT test_id, overall_status FROM Tests WHERE idempotency_key = $1`,
-          [payload.idempotencyKey]
-        )
-        if (byKey.rows.length > 0) {
-          return {
-            ok: true,
-            testId: byKey.rows[0].test_id as number,
-            idempotencyKey: payload.idempotencyKey,
-            duplicate: true,
-            overallStatus: byKey.rows[0].overall_status as string,
-            stationId: payload.stationId,
-          }
+        const winner = await findExistingByKey(client, payload.idempotencyKey)
+        if (winner) {
+          return duplicateResult(payload, winner)
         }
         // Violation of the cross-pipeline (inv_id, start_time_utc) index: the
         // winning row has a different (or null) idempotency key, so fall back to
@@ -218,14 +219,7 @@ export async function processIngestPayload(
                 validated.startTimeUtc
               )
               if (crossExisting) {
-                return {
-                  ok: true,
-                  testId: crossExisting.testId,
-                  idempotencyKey: payload.idempotencyKey,
-                  duplicate: true,
-                  overallStatus: crossExisting.overallStatus,
-                  stationId: payload.stationId,
-                }
+                return duplicateResult(payload, crossExisting)
               }
             }
           } catch {
@@ -236,6 +230,7 @@ export async function processIngestPayload(
       throw err
     }
   } catch (err) {
+    releaseAndDestroy = true
     const message = err instanceof Error ? err.message : String(err)
     console.error('processIngestPayload failed:', err)
     try {
@@ -253,10 +248,9 @@ export async function processIngestPayload(
     }
     return { ok: false, code: 'server_error', message }
   } finally {
-    await client.end().catch(() => undefined)
+    // On the error path destroy the connection instead of pooling it: an
+    // error escaping the transaction block (e.g. a failed ROLLBACK) could
+    // otherwise return a client with an open transaction to the pool.
+    poolClient?.release(releaseAndDestroy ? true : undefined)
   }
-}
-
-export function hashBody(buf: Buffer): string {
-  return sha256Hex(buf)
 }

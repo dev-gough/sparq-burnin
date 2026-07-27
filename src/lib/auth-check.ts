@@ -1,35 +1,9 @@
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
+import { loadConfig } from "@/lib/config";
 
 // Check if authentication should be skipped (for local development)
 const shouldSkipAuth = process.env.SKIP_AUTH === 'true';
-
-export function isAuthSkipped(): boolean {
-  return shouldSkipAuth;
-}
-
-/**
- * Hardcoded allowlist of email addresses authorized to perform privileged
- * data-recovery operations such as restoring TestAnnotations from a backup.
- *
- * To add users, append their @sparqsys.com email here OR set the
- * RESTORE_ALLOWLIST environment variable (comma-separated) to override.
- */
-const DEFAULT_RESTORE_ALLOWLIST: string[] = [
-  "tkulin@sparqsys.com",
-  "dgough@sparqsys.com",
-];
-
-function getRestoreAllowlist(): string[] {
-  const envList = process.env.RESTORE_ALLOWLIST;
-  if (envList && envList.trim().length > 0) {
-    return envList
-      .split(",")
-      .map((e) => e.trim().toLowerCase())
-      .filter(Boolean);
-  }
-  return DEFAULT_RESTORE_ALLOWLIST.map((e) => e.toLowerCase());
-}
 
 /**
  * Checks if the user is authenticated via NextAuth session
@@ -68,112 +42,129 @@ export async function requireAuth() {
 }
 
 /**
- * Requires the caller to be signed in AND on the restore allowlist.
- * Used to gate destructive/data-recovery endpoints (e.g. annotation restore).
+ * Default allowlists live in config.json (`auth` section), NOT in source:
  *
- * Unlike requireAuth, SKIP_AUTH does NOT bypass the allowlist check — even in
- * local dev, the session must exist and its email must be on the list.
+ *   "auth": {
+ *     "restore_allowlist": ["user@sparqsys.com"],
+ *     "station_admin_allowlist": ["user@sparqsys.com"]
+ *   }
+ *
+ * The corresponding env var (RESTORE_ALLOWLIST / STATION_ADMIN_ALLOWLIST,
+ * comma-separated) takes precedence over config.json when set. Missing env var
+ * AND missing config entry means an empty allowlist: everyone is denied
+ * (except under SKIP_AUTH — see below).
  */
-export async function requireRestoreAuth() {
-  const { error: authError, session } = await requireAuth();
-  if (authError) return { error: authError, session: null };
-
-  const email = session?.user?.email?.toLowerCase();
-  if (!email) {
-    return {
-      error: NextResponse.json(
-        { error: "Forbidden. Restore requires a signed-in user." },
-        { status: 403 }
-      ),
-      session: null,
+function configAllowlist(key: "restore_allowlist" | "station_admin_allowlist"): string[] {
+  try {
+    const config = loadConfig() as ReturnType<typeof loadConfig> & {
+      auth?: { restore_allowlist?: string[]; station_admin_allowlist?: string[] };
     };
+    const list = config.auth?.[key];
+    if (Array.isArray(list)) {
+      return list.map((e) => String(e).trim().toLowerCase()).filter(Boolean);
+    }
+  } catch {
+    /* config unavailable → fall through to empty */
   }
-
-  const allowlist = getRestoreAllowlist();
-  if (!allowlist.includes(email)) {
-    return {
-      error: NextResponse.json(
-        { error: "Forbidden. Your account is not authorized to restore annotations." },
-        { status: 403 }
-      ),
-      session: null,
-    };
-  }
-
-  return { error: null, session };
+  return [];
 }
+
+/**
+ * Factory for email-allowlist auth gates (privileged operations on top of the
+ * normal session requirement).
+ *
+ * SKIP_AUTH unification (plan 2.3): the restore gate used to enforce the
+ * allowlist even under SKIP_AUTH, while the station-admin gate bypassed it.
+ * We standardize on the station-admin behavior — SKIP_AUTH=true bypasses the
+ * allowlist entirely (local dev without Entra works for every gated UI/API).
+ * SKIP_AUTH is a dev-only escape hatch and must stay unset in production, so
+ * production behavior is unchanged.
+ */
+function makeAllowlistAuth(options: {
+  envVar: string;
+  configKey: "restore_allowlist" | "station_admin_allowlist";
+  noUserMessage: string;
+  notAllowedMessage: string;
+}) {
+  const getAllowlist = (): string[] => {
+    const envList = process.env[options.envVar];
+    if (envList && envList.trim().length > 0) {
+      return envList
+        .split(",")
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean);
+    }
+    return configAllowlist(options.configKey);
+  };
+
+  const isAllowed = (email: string | null | undefined): boolean => {
+    if (shouldSkipAuth) return true; // dev/local bypass
+    if (!email) return false;
+    return getAllowlist().includes(email.toLowerCase());
+  };
+
+  const require = async () => {
+    if (shouldSkipAuth) {
+      const session = (await auth()) ?? null;
+      return { error: null, session };
+    }
+
+    const { error: authError, session } = await requireAuth();
+    if (authError) return { error: authError, session: null };
+
+    const email = session?.user?.email?.toLowerCase();
+    if (!email) {
+      return {
+        error: NextResponse.json({ error: options.noUserMessage }, { status: 403 }),
+        session: null,
+      };
+    }
+
+    if (!getAllowlist().includes(email)) {
+      return {
+        error: NextResponse.json({ error: options.notAllowedMessage }, { status: 403 }),
+        session: null,
+      };
+    }
+
+    return { error: null, session };
+  };
+
+  return { require, isAllowed };
+}
+
+/**
+ * Restore gate: signed-in user on the restore allowlist
+ * (config.json auth.restore_allowlist, overridable via RESTORE_ALLOWLIST).
+ * Gates destructive/data-recovery endpoints (e.g. annotation restore).
+ */
+const restoreAuth = makeAllowlistAuth({
+  envVar: "RESTORE_ALLOWLIST",
+  configKey: "restore_allowlist",
+  noUserMessage: "Forbidden. Restore requires a signed-in user.",
+  notAllowedMessage:
+    "Forbidden. Your account is not authorized to restore annotations.",
+});
+
+export const requireRestoreAuth = restoreAuth.require;
 
 /**
  * Returns true if the given email is on the restore allowlist.
  * Used by the UI to conditionally render the restore controls.
  */
-export function isOnRestoreAllowlist(email: string | null | undefined): boolean {
-  if (!email) return false;
-  return getRestoreAllowlist().includes(email.toLowerCase());
-}
+export const isOnRestoreAllowlist = restoreAuth.isAllowed;
 
 /**
- * Env-only allowlist for remote station control (enable/disable testing).
- * STATION_ADMIN_ALLOWLIST=comma,separated,emails
- * Default: dgough@sparqsys.com only.
+ * Station-admin gate: signed-in user on the station admin allowlist
+ * (config.json auth.station_admin_allowlist, overridable via
+ * STATION_ADMIN_ALLOWLIST). Gates remote station enable/disable.
  */
-const DEFAULT_STATION_ADMIN_ALLOWLIST: string[] = ['dgough@sparqsys.com'];
+const stationAdminAuth = makeAllowlistAuth({
+  envVar: "STATION_ADMIN_ALLOWLIST",
+  configKey: "station_admin_allowlist",
+  noUserMessage: "Forbidden. Station admin requires a signed-in user.",
+  notAllowedMessage: "Forbidden. Your account is not authorized to manage stations.",
+});
 
-function getStationAdminAllowlist(): string[] {
-  const envList = process.env.STATION_ADMIN_ALLOWLIST;
-  if (envList && envList.trim().length > 0) {
-    return envList
-      .split(',')
-      .map((e) => e.trim().toLowerCase())
-      .filter(Boolean);
-  }
-  return DEFAULT_STATION_ADMIN_ALLOWLIST.map((e) => e.toLowerCase());
-}
-
-/**
- * Signed-in user on STATION_ADMIN_ALLOWLIST.
- *
- * Local/dev: when SKIP_AUTH=true, allow without a session (UI + APIs work
- * without Entra). Production must leave SKIP_AUTH unset/false.
- */
-export async function requireStationAdminAuth() {
-  if (shouldSkipAuth) {
-    const session = (await auth()) ?? null;
-    return { error: null, session };
-  }
-
-  const { error: authError, session } = await requireAuth();
-  if (authError) return { error: authError, session: null };
-
-  const email = session?.user?.email?.toLowerCase();
-  if (!email) {
-    return {
-      error: NextResponse.json(
-        { error: 'Forbidden. Station admin requires a signed-in user.' },
-        { status: 403 }
-      ),
-      session: null,
-    };
-  }
-
-  if (!getStationAdminAllowlist().includes(email)) {
-    return {
-      error: NextResponse.json(
-        { error: 'Forbidden. Your account is not authorized to manage stations.' },
-        { status: 403 }
-      ),
-      session: null,
-    };
-  }
-
-  return { error: null, session };
-}
-
-export function isOnStationAdminAllowlist(
-  email: string | null | undefined
-): boolean {
-  // Dev/local: show Stations UI without Entra
-  if (shouldSkipAuth) return true;
-  if (!email) return false;
-  return getStationAdminAllowlist().includes(email.toLowerCase());
-}
+export const requireStationAdminAuth = stationAdminAuth.require;
+export const isOnStationAdminAllowlist = stationAdminAuth.isAllowed;

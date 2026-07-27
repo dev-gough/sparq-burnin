@@ -6,14 +6,21 @@ Phase 1 is considered a ship blocker.
 
 ## Cross-repo coordination (read first)
 
-- **Error-code contract**: the station client marks an outbox entry `failed_permanent`
-  only for HTTP 400 + code in (`invalid_schema`, `too_large`, `station_mismatch`).
-  Any change to server error codes/classes must be mirrored in
-  `dashboard_ingest.try_upload_one`. Phase 1 items below deliberately move data
-  errors from 500 → 400 so the client stops retrying poison payloads.
-- **Golden auth vectors**: commit a shared fixture (canonical string, secret,
-  timestamp, nonce, body hash → expected signature) used by tests in BOTH repos so
-  the HMAC contract can never drift silently (see Phase 3 here and in the zigbee plan).
+- **Error-code contract** *(updated 2026-07-27 — station Phase 1 landed)*: the
+  station client now classifies by status class, not string matching:
+  any 4xx except 401/403/408/429 → `failed_permanent`; 401/403 → long backoff
+  (`retry_backoff_max_sec`, default 1 h) + loud operator alert; 408/429/5xx/
+  network → exponential backoff capped at `retry_backoff_max_sec`. The 400
+  `code` field is recorded for diagnostics but no longer gates permanence.
+- **Golden auth vectors** *(landed 2026-07-27)*: shared fixture committed as
+  `tests/fixtures/hmac_golden_vectors.json` in BOTH repos (identical file;
+  generated from the station's `sign_request`, verified against
+  `src/lib/ingestAuth.ts` canonical-string spec). Phase 3 HMAC tests here must
+  consume this file.
+- **Serial canonical form** *(station change 2026-07-27)*: the station no longer
+  zero-pads serials to 12 digits; `serialNumber` on the wire is the raw results-
+  CSV value (stripped), matching what the legacy CSV pipeline stores — so
+  cross-pipeline dedup and idempotency keys agree with existing DB rows.
 - **Rollout order**: server fixes deploy first; then stations. Disable pCloud
   FileSync per station only after its first confirmed HTTPS ingest (item 1.5).
 
@@ -102,70 +109,119 @@ Phase 1 is considered a ship blocker.
 
 ## Phase 2 — Consolidation & efficiency
 
-### 2.1 One ingest core, two transports (highest-leverage refactor)
-- [ ] `src/lib/ingest/timestamps.ts`, `validate.ts`, and the
-      insert/COPY/relink helpers in `dbInsert.ts` are verbatim forks of private
-      logic in `scripts/ingest.ts` (Delhi→UTC math, INVALID rules, 41-column COPY
-      list, `ensureInverter`, annotation relink). The script runs under tsx and
-      can import `src/lib/ingest/*` directly. Make `src/lib/ingest` the single
-      source and have `CSVIngester` consume it. Drift already happened once this
-      branch (AC-header alias patched in two places).
-- [ ] Include the multi-row priority-selection rules in the shared core so the
-      station client can reference one documented behavior (see zigbee plan 1.6).
+> **Status 2026-07-27: Phase 2 complete** (2.1–2.5) on feature/https-ingest.
+> Test infra landed early (vitest, `npm test`) because the pinning tests gate
+> these refactors — see Phase 3 notes. `tsc --noEmit`, `npm run lint`, and
+> `npm test` (70 tests) all clean.
 
-### 2.2 One HMAC verify core
-- [ ] `src/lib/ingestAuth.ts` re-implements `src/lib/opsAuth.ts` nearly
-      line-for-line (canonical builder, skew, nonce map, timingSafeEqual).
-      Extract a shared verify core parameterized by header prefix/canonical
-      fields/skew, used by both.
+### 2.1 One ingest core, two transports (highest-leverage refactor) — DONE
+- [x] `src/lib/ingest` is the single source; `scripts/ingest.ts` (CSVIngester)
+      imports `timestamps`/`validate`/`dbInsert`/`schema` relatively (not the
+      barrel — the barrel's runtime graph pulls Next-side `@/` deps). Shared:
+      Delhi→UTC math, INVALID rules (`evaluateResultRow`), multi-row selection
+      (`selectBestResult`), 41-column COPY (`insertSamplesCopy`),
+      `ensureInverter`, `insertTest`, cross-pipeline dedup, annotation relink
+      (`relinkAllAnnotations` + per-test variant). CSV-specific string→number
+      parsing stays in the script.
+- [x] Priority-selection rule documented on `evaluateResultRow` in
+      `src/lib/ingest/validate.ts` (4 valid > 3 INVALID > 2 short-duration >
+      1 start>end; single-row always processed; first-row-wins ties; all-P1
+      multi-row file skipped; debug-firmware demotion server-side only). The
+      station's `_row_priority` mirrors this — changes must be flagged in both
+      plan files.
 
-### 2.3 Auth helper + dead code removal
-- [ ] `src/lib/auth-check.ts` — factor a generic `makeAllowlistAuth(envVar,
-      defaults)`; restore + station-admin quartets currently diverge on
-      SKIP_AUTH handling. Move hardcoded personal emails out of source.
-- [ ] Delete: unused `HEAD /api/stations` handler (`src/app/api/stations/route.ts:27`,
-      UI uses `/api/stations/admin-status`), `bodyStationId` param + unreachable
-      `station_mismatch` branch in `ingestAuth.ts`/route, unused exports
-      `hashBody`, `truncateToSeconds`, `isAuthSkipped`.
-- [ ] `src/lib/ingest/processPayload.ts` — dedupe the copy-pasted idempotency
-      lookup + duplicate-result literal (appears pre-insert and in the 23505
-      handler): one `findExistingByKey` + one `duplicateResult` builder.
+### 2.2 One HMAC verify core — DONE
+- [x] `src/lib/hmacVerifyCore.ts`: `verifyHmacCore` parameterized by header
+      prefix, expected-signature closure, and nonce-claim function (sync/async
+      overloads). `ingestAuth.ts` keeps DB-backed nonces + fail-closed;
+      `opsAuth.ts` stays in-memory **deliberately** (low volume, 60 s skew,
+      must work when Postgres is down; documented in-file). Golden vectors
+      unchanged and green — wire behavior identical.
 
-### 2.4 Connection & query efficiency
-- [ ] Shared module-level `pg.Pool`; `processPayload.ts` and
-      `src/lib/stationControls.ts` `withClient` currently open a fresh Client
-      per call (2 connects per ingest POST, 1 per policy poll per 30 s).
-- [ ] Drop the per-ingest `SELECT COUNT(*) FROM Tests` (processPayload.ts:105) —
-      use `pg_class.reltuples` or remove the field.
-- [ ] Reuse `bodySha256Hex` from `verifyIngestRequest` instead of re-hashing
-      the raw body in route.ts:133; length-check `samples` count before full
-      zod parse.
-- [ ] `src/app/stations/page.tsx` — fetch admin-status once (not every 30 s
-      tick); narrow/cache the per-station historical aggregate query behind
-      `/api/stations`.
+### 2.3 Auth helper + dead code removal — DONE
+- [x] `makeAllowlistAuth({envVar, configKey, ...})` in auth-check.ts; both
+      gates are instances. SKIP_AUTH now bypasses allowlists for BOTH gates
+      (station-admin behavior; dev-only change). Allowlist defaults moved to
+      config.json `auth` section (env vars still win). **Deploy note:
+      production config.json needs the `auth` section (or env vars) — see
+      HANDOFF/deploy checklist.**
+- [x] Deleted with zero-caller grep evidence: `HEAD /api/stations`,
+      `bodyStationId` + `station_mismatch` auth branch (the post-schema
+      header≠body check in route.ts remains and still returns
+      `station_mismatch` — docs/INGEST_API.md stays accurate), `hashBody`
+      (2.4 wave), `truncateToSeconds`, `isAuthSkipped`.
+- [x] `processPayload.ts` idempotency-lookup + duplicate-literal dedupe
+      (folded into the 2.4 wave, same file).
 
-### 2.5 Simplifications
-- [ ] `parseTimestampFromDelhi` — replace the manual borrow ladder with
-      `new Date(Date.UTC(y, mo - 1, d, h - 5, min - 30, sec, ms))` (Date.UTC
-      normalizes out-of-range components). Verify against existing data first
-      (Phase 3 round-trip test).
-- [ ] `src/middleware.ts` — export a single `PUBLIC_API_PREFIXES` constant that
-      drives both the runtime check and the matcher, so the route list lives in
-      one place (currently three).
+### 2.4 Connection & query efficiency — DONE
+- [x] Shared lazy `pg.Pool` in `src/lib/db.ts` (max 10, idle-error handler);
+      `stationControls.withClient` (signature unchanged) and `processPayload`
+      both check out of it — 0 fresh connects per ingest POST / policy poll
+      after warmup. Error paths destroy the client (`release(true)`) so a
+      dirty/open-transaction client never re-enters the pool. Scripts keep
+      their own Clients (they never import `db.ts`).
+- [x] Per-ingest `COUNT(*)` replaced with `pg_class.reltuples` estimate
+      (`-1`/missing → null); `totalTests` only feeds the best-effort
+      ops-status file and `/api/health` prefers the live exact count.
+- [x] Route reuses `bodySha256Hex` from the auth success result (hash still
+      computed lazily post-skew-check inside verification); over-limit
+      `samples` short-circuits post-JSON.parse/pre-zod with the same 400
+      `too_large` contract.
+- [x] Stations page fetches admin-status once per mount; the per-station
+      historical aggregate is one grouped Tests scan cached 30 s (matches the
+      page poll interval). Control state (enabled/reason/revision) is never
+      cached; stats/new-station appearance may lag ≤30 s.
+
+### 2.5 Simplifications — DONE
+- [x] `parseTimestampFromDelhi` borrow ladder replaced with a single
+      `Date.UTC(...)` — gated by the exhaustive boundary sweep in
+      `tests/timestamps.test.ts` (every hour of the first/last two days of
+      every month 2023–2026), written and passing against the OLD
+      implementation first.
+- [x] `src/middleware.ts` — **deviation from plan**: Next.js requires
+      `config.matcher` values to be static literals (dynamic values are
+      silently ignored by the build-time analyzer), so one constant cannot
+      drive the matcher. Landed instead: `PUBLIC_PREFIXES`/`PUBLIC_EXACT`
+      drive the runtime check via `isPublicPath()`, and
+      `tests/middleware.test.ts` pins the matcher literals against the
+      constants so the route list can't drift (route list now lives in one
+      authoritative place + one pinned mirror, down from three unpinned).
 
 ## Phase 3 — Tests (feature ships with these, not after)
 
-No test infrastructure exists in this repo today. Add vitest (or `node:test`).
+Infra: **vitest** (`npm test`, `vitest.config.ts` with the `@` alias, tests
+under `tests/`). Landed 2026-07-27 ahead of the Phase 2 refactors to pin
+behavior first.
 
-- [ ] **HMAC contract test**: verify the shared golden vectors (same fixture file
-      as the zigbee repo) against `verifyIngestRequest` — signature, skew
-      rejection, nonce reuse rejection.
-- [ ] **Schema tests**: `ingestPayloadSchema` — accepts a real captured station
-      payload; rejects `runId: null`, bare `NaN` (invalid JSON path), overlong
-      idempotencyKey/firmware/status; sample timestamp format enforcement.
-- [ ] **Timestamp round-trip**: Delhi→UTC across month/year/leap boundaries;
-      lock behavior before the Date.UTC simplification (2.5).
-- [ ] **processPayload integration** (against a scratch DB): happy path,
-      duplicate (idempotency), INVALID-but-stored result, cross-pipeline dedup.
-- [ ] **Route-level**: gzip-bomb body → 400 `too_large`; oversized compressed
-      body → 413/400.
+- [x] **HMAC contract test** (`tests/hmac.test.ts`): all 4 shared golden
+      vectors (fixture `tests/fixtures/hmac_golden_vectors.json`, byte-
+      identical with the station repo) + canonical layout, skew rejection,
+      nonce replay rejection, bad-signature-doesn't-consume-nonce, fail-closed
+      on nonce-store loss (mocked `withClient`).
+- [x] **Schema tests** (`tests/schema.test.ts`): realistic payload accepted;
+      `runId: null` rejected / omitted accepted; overlong + at-limit bounded
+      fields; sample timestamp format with `samples.<i>.timestamp` in the
+      error path; passthrough of unknown sample keys. (Bare `NaN` is an
+      invalid-JSON case, covered at route level, not in zod.)
+- [x] **Timestamp round-trip** (`tests/timestamps.test.ts`): boundary cases +
+      exhaustive sweep; written against the old borrow ladder BEFORE 2.5.
+- [x] **processPayload integration** (`tests/processPayload.test.ts`):
+      happy path, duplicate via receipt AND via `Tests.idempotency_key`,
+      INVALID-but-stored, cross-pipeline dedup (sub-second drift), 23505
+      race resolution, server_error + connection-destroy. **Deviation:** runs
+      against a scripted in-memory fake pg client, not a scratch DB (schema/
+      migration scripts resolve their target from config.json = the live DB,
+      so a real scratch DB wasn't safely reachable — see the file's header
+      for exactly what is and isn't covered; the fake throws on unrecognized
+      SQL so flow changes fail loudly).
+- [x] **Route-level** (`tests/ingestRoute.test.ts`): gzip bomb → 400
+      `too_large` (capped inflate); oversized compressed body → 400
+      `too_large`; corrupt gzip / non-JSON / schema violation → 400
+      `invalid_schema`; over-maxSamples → 400 `too_large`; bad signature →
+      401; disabled station → 403; happy path asserts the verified body hash
+      is what processing receives; processing failure → 500. Pins the
+      status-class contract the station's retry policy classifies on.
+- [x] **Bonus — selection-rule pin** (`tests/validate.test.ts`): the shared
+      MULTI-ROW PRIORITY-SELECTION RULE (mirrored by the station's
+      `_row_priority`) — priorities 4/3/2/1, single-row-always, first-wins
+      ties, all-P1 skip.

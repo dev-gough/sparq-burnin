@@ -3,7 +3,7 @@ import { promisify } from 'util'
 import zlib from 'zlib'
 
 const gunzipAsync = promisify(zlib.gunzip)
-import { verifyIngestRequest, sha256Hex } from '@/lib/ingestAuth'
+import { verifyIngestRequest } from '@/lib/ingestAuth'
 import {
   getStation,
   ingestPayloadSchema,
@@ -55,7 +55,6 @@ export async function POST(request: NextRequest) {
       request,
       rawBody,
       stationIdHeader,
-      bodyStationId: undefined,
       getStation: (id) => {
         const s = getStation(id)
         if (!s) return undefined
@@ -68,9 +67,6 @@ export async function POST(request: NextRequest) {
     return errorJson(500, 'server_error', 'Failed to verify request')
   }
   if (!earlyAuth.ok) {
-    if (earlyAuth.reason === 'station_mismatch') {
-      return errorJson(400, 'station_mismatch', 'Station id mismatch')
-    }
     return errorJson(401, 'auth', `Unauthorized (${earlyAuth.reason})`)
   }
 
@@ -134,6 +130,25 @@ export async function POST(request: NextRequest) {
     return errorJson(400, 'invalid_schema', 'Body is not valid JSON')
   }
 
+  // Cheap pre-zod guard: an over-limit samples array short-circuits here
+  // instead of paying for a full zod parse of up to maxSamples*N fields first.
+  // Same 400 `too_large` contract as before. This check is exhaustive for any
+  // payload zod would accept (zod parses the same array), so it is not
+  // repeated post-parse.
+  if (parsed !== null && typeof parsed === 'object') {
+    const rawSamples = (parsed as { samples?: unknown }).samples
+    if (
+      Array.isArray(rawSamples) &&
+      rawSamples.length > ingestConfig.maxSamples
+    ) {
+      return errorJson(
+        400,
+        'too_large',
+        `samples length exceeds maxSamples (${ingestConfig.maxSamples})`
+      )
+    }
+  }
+
   const schemaResult = ingestPayloadSchema.safeParse(parsed)
   if (!schemaResult.success) {
     return errorJson(
@@ -156,16 +171,9 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (payload.samples.length > ingestConfig.maxSamples) {
-    return errorJson(
-      400,
-      'too_large',
-      `samples length exceeds maxSamples (${ingestConfig.maxSamples})`
-    )
-  }
-
-  const bodyHash = sha256Hex(rawBody)
-  const result = await processIngestPayload(payload, bodyHash)
+  // Reuse the body hash computed during HMAC verification (it hashed this
+  // exact rawBody) instead of hashing the body a second time.
+  const result = await processIngestPayload(payload, earlyAuth.bodySha256Hex)
 
   if (!result.ok) {
     return errorJson(500, result.code, result.message)

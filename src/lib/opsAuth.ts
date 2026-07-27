@@ -1,4 +1,10 @@
-import { createHmac, timingSafeEqual, randomBytes } from 'crypto'
+import {
+  hmacSha256Hex,
+  randomHexNonce,
+  readSignedHeaders,
+  verifyHmacCore,
+  type HmacCoreFailure,
+} from '@/lib/hmacVerifyCore'
 
 /**
  * HMAC request auth for ops endpoints (log fetch, etc.)
@@ -14,6 +20,20 @@ import { createHmac, timingSafeEqual, randomBytes } from 'crypto'
  * path is pathname only (e.g. /api/ops/logs). rawQuery is the query
  * string without leading `?` (empty string if none), sorted is NOT required —
  * client must sign the exact query it sends.
+ *
+ * Verification mechanics live in @/lib/hmacVerifyCore (shared with
+ * ingestAuth).
+ *
+ * NONCE STORE DECISION (plan 2.2): ops replay protection deliberately stays
+ * in-memory rather than moving to the DB-backed IngestNonces table:
+ *   - ops endpoints are a low-volume operator tool behind a single shared
+ *     secret with a tight skew window (60 s); losing the nonce set on process
+ *     restart is bounded by that window.
+ *   - the ops log endpoint is exactly what you want reachable when the DB is
+ *     degraded — coupling its auth to Postgres would fail it closed at the
+ *     worst time (ingest, by contrast, MUST fail closed on DB loss).
+ *   - keeping the store sync keeps verifyOpsRequest's synchronous signature,
+ *     so callers are untouched.
  */
 
 const DEFAULT_SKEW_SEC = 60
@@ -27,6 +47,14 @@ function pruneNonces(now = Date.now()) {
   for (const [k, v] of usedNonces) {
     if (v.expiresAt <= now) usedNonces.delete(k)
   }
+}
+
+/** Record a nonce; true on first use, false on replay. */
+function claimOpsNonce(nonce: string): boolean {
+  pruneNonces()
+  if (usedNonces.has(nonce)) return false
+  usedNonces.set(nonce, { expiresAt: Date.now() + NONCE_TTL_MS })
+  return true
 }
 
 export function getOpsHmacSecret(): string | undefined {
@@ -60,21 +88,14 @@ export function signOpsRequest(
     rawQuery: string
   }
 ): string {
-  const canonical = buildOpsCanonical(params)
-  return createHmac('sha256', secret).update(canonical, 'utf8').digest('hex')
+  return hmacSha256Hex(secret, buildOpsCanonical(params))
 }
 
 export function createOpsNonce(): string {
-  return randomBytes(16).toString('hex')
+  return randomHexNonce()
 }
 
-export type OpsAuthFailure =
-  | 'not_configured'
-  | 'missing_headers'
-  | 'bad_timestamp'
-  | 'skew'
-  | 'replay'
-  | 'bad_signature'
+export type OpsAuthFailure = 'not_configured' | HmacCoreFailure
 
 export type OpsAuthResult =
   | { ok: true }
@@ -93,51 +114,27 @@ export function verifyOpsRequest(
     return { ok: false, reason: 'not_configured' }
   }
 
-  const timestamp = request.headers.get('x-ops-timestamp')?.trim() || ''
-  const nonce = request.headers.get('x-ops-nonce')?.trim() || ''
-  const signature = request.headers.get('x-ops-signature')?.trim() || ''
+  const { timestamp, nonce, signature } = readSignedHeaders(request, 'x-ops')
 
-  if (!timestamp || !nonce || !signature) {
-    return { ok: false, reason: 'missing_headers' }
-  }
-
-  if (!/^\d+$/.test(timestamp)) {
-    return { ok: false, reason: 'bad_timestamp' }
-  }
-
-  const skewSec = opts?.skewSec ?? Number(process.env.OPS_HMAC_SKEW_SEC || DEFAULT_SKEW_SEC)
-  const ts = Number(timestamp)
-  const nowSec = Math.floor(Date.now() / 1000)
-  if (Math.abs(nowSec - ts) > skewSec) {
-    return { ok: false, reason: 'skew' }
-  }
-
-  pruneNonces()
-  if (usedNonces.has(nonce)) {
-    return { ok: false, reason: 'replay' }
-  }
-
+  const skewSec =
+    opts?.skewSec ?? Number(process.env.OPS_HMAC_SKEW_SEC || DEFAULT_SKEW_SEC)
   const url = new URL(request.url)
-  const expected = signOpsRequest(secret, {
+
+  return verifyHmacCore({
     timestamp,
     nonce,
-    method: request.method,
-    path: url.pathname,
-    rawQuery: url.search.startsWith('?') ? url.search.slice(1) : url.search,
+    signature,
+    skewSec,
+    computeExpectedSignature: () =>
+      signOpsRequest(secret, {
+        timestamp,
+        nonce,
+        method: request.method,
+        path: url.pathname,
+        rawQuery: url.search.startsWith('?') ? url.search.slice(1) : url.search,
+      }),
+    claimNonce: claimOpsNonce,
   })
-
-  try {
-    const a = Buffer.from(expected, 'utf8')
-    const b = Buffer.from(signature, 'utf8')
-    if (a.length !== b.length || !timingSafeEqual(a, b)) {
-      return { ok: false, reason: 'bad_signature' }
-    }
-  } catch {
-    return { ok: false, reason: 'bad_signature' }
-  }
-
-  usedNonces.set(nonce, { expiresAt: Date.now() + NONCE_TTL_MS })
-  return { ok: true }
 }
 
 /** Soft 404 — never reveal whether the route exists or why auth failed. */

@@ -141,19 +141,10 @@ export default function StationsPage() {
     else setLoading(true);
     setError(null);
     try {
-      const adminRes = await fetch("/api/stations/admin-status");
-      const adminBody = await adminRes.json().catch(() => ({}));
-      if (!adminBody.isStationAdmin) {
-        setIsAdmin(false);
-        setStations([]);
-        return;
-      }
-
       const res = await fetch("/api/stations");
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setError(body.error || `Failed to load (${res.status})`);
-        setIsAdmin(true);
         return;
       }
       const data = await res.json();
@@ -169,7 +160,6 @@ export default function StationsPage() {
         return next;
       });
       setLastFetchedAt(new Date());
-      setIsAdmin(true);
     } catch (e) {
       console.error(e);
       setError("Failed to load stations");
@@ -179,18 +169,34 @@ export default function StationsPage() {
     }
   }, []);
 
+  // Admin membership is stable for a session — check it once, not on every
+  // 30 s refresh tick.
   React.useEffect(() => {
     if (sessionStatus === "loading") return;
-    load();
-  }, [sessionStatus, load]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const adminRes = await fetch("/api/stations/admin-status");
+        const adminBody = await adminRes.json().catch(() => ({}));
+        if (!cancelled) setIsAdmin(Boolean(adminBody.isStationAdmin));
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setIsAdmin(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionStatus]);
 
   React.useEffect(() => {
-    if (sessionStatus === "loading" || isAdmin === false) return;
+    if (isAdmin !== true) return;
+    load();
     const id = window.setInterval(() => {
       load({ silent: true });
     }, 30_000);
     return () => window.clearInterval(id);
-  }, [sessionStatus, isAdmin, load]);
+  }, [isAdmin, load]);
 
   const setEnabled = async (stationId: string, enabled: boolean) => {
     setBusyId(stationId);

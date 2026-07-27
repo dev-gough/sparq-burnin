@@ -55,5 +55,9 @@
         "secret": "replace-with-station-2-hmac-secret"
       }
     }
+  },
+  "auth": {
+    "restore_allowlist": ["admin@sparqsys.com"],
+    "station_admin_allowlist": ["admin@sparqsys.com"]
   }
 }

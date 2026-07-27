@@ -1,0 +1,54 @@
+{
+  "description": "Golden HMAC vectors for the burn-in dashboard ingest auth contract. Shared verbatim between Zigbee_UART_Interface (station, Python) and burnin (dashboard, TypeScript) test suites.",
+  "algorithm": "signature = HMAC-SHA256(secret, canonical) hex; canonical = timestamp + '\\n' + nonce + '\\n' + METHOD(uppercase) + '\\n' + path + '\\n' + stationId + '\\n' + sha256hex(bodyBytes); bodyBytes = UTF-8 of bodyUtf8 (the raw request body: for gzip uploads this is the gzipped bytes — these vectors use plain text bodies since the algorithm is byte-agnostic)",
+  "vectors": [
+    {
+      "name": "post_ingest_simple",
+      "secret": "test-secret-1",
+      "stationId": "BurnInTest-1",
+      "method": "POST",
+      "path": "/api/ingest/v1/tests",
+      "timestamp": "1750000000",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "bodyUtf8": "{\"schemaVersion\":1,\"stationId\":\"BurnInTest-1\"}",
+      "bodySha256": "4899daaec52d2a96a91ca446c4b143969be96abf14f091de9a3e339bf1d9fa97",
+      "expectedSignature": "e7b8042feae1342e7efe57710e1741b3d5836c27a2293ada95405656e87a2817"
+    },
+    {
+      "name": "get_policy_empty_body",
+      "secret": "test-secret-1",
+      "stationId": "BurnInTest-1",
+      "method": "GET",
+      "path": "/api/stations/v1/config",
+      "timestamp": "1750000060",
+      "nonce": "fedcba9876543210fedcba9876543210",
+      "bodyUtf8": "",
+      "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "expectedSignature": "c1fd65fedceae865fcde22cd33578915a445230828e99baf63b04f3b8a9965f4"
+    },
+    {
+      "name": "post_unicode_body",
+      "secret": "another secret with spaces",
+      "stationId": "Station-ÅB-2",
+      "method": "POST",
+      "path": "/api/ingest/v1/tests",
+      "timestamp": "1999999999",
+      "nonce": "deadbeefdeadbeefdeadbeefdeadbeef",
+      "bodyUtf8": "{\"result\":{\"failureDescription\":\"температура — überhöht\"}}",
+      "bodySha256": "b2b07a7a82646f0af5c32f114d69676b7840c89d375eb57246a9c8bf273e9f9d",
+      "expectedSignature": "115d6142a86b54d72d9087adcec3e255b8d454e97d1a33d3472db40670ca56bd"
+    },
+    {
+      "name": "post_case_lower_method_normalized",
+      "secret": "s3",
+      "stationId": "BurnInTest-9",
+      "method": "POST",
+      "path": "/api/ingest/v1/tests",
+      "timestamp": "1750001234",
+      "nonce": "00000000000000000000000000000001",
+      "bodyUtf8": "{}",
+      "bodySha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "expectedSignature": "5db8cfb84d3b80ebdbd4cdb5244c3c5cd2782017d5bd3a653ccbae65208b4bea"
+    }
+  ]
+}
