@@ -37,6 +37,12 @@ describe("inclusiveDayLength / previousAbsoluteWindow", () => {
       dateTo: "2024-12-31",
     });
   });
+
+  it("throws when dateFrom > dateTo (L <= 0)", () => {
+    expect(() => previousAbsoluteWindow("2024-01-20", "2024-01-11")).toThrow(
+      /dateFrom <= dateTo/
+    );
+  });
 });
 
 describe("parseYmdUtc / formatYmdUtc", () => {
@@ -206,5 +212,31 @@ describe("buildWindowTimeFilter", () => {
     expect(
       buildWindowTimeFilter({ type: "none" }, col, 1)
     ).toEqual({ sql: "", params: [] });
+  });
+
+  it("throws fail-closed on invalid relative_open", () => {
+    expect(() =>
+      buildWindowTimeFilter({ type: "relative_open", days: 0 }, col, 1)
+    ).toThrow(/Invalid relative_open/);
+    expect(() =>
+      buildWindowTimeFilter({ type: "relative_open", days: -7 }, col, 1)
+    ).toThrow(/Invalid relative_open/);
+  });
+
+  it("throws fail-closed on invalid relative_half_open", () => {
+    expect(() =>
+      buildWindowTimeFilter(
+        { type: "relative_half_open", startDaysAgo: 7, endDaysAgo: 14 },
+        col,
+        1
+      )
+    ).toThrow(/Invalid relative_half_open/);
+    expect(() =>
+      buildWindowTimeFilter(
+        { type: "relative_half_open", startDaysAgo: 30, endDaysAgo: 30 },
+        col,
+        1
+      )
+    ).toThrow(/Invalid relative_half_open/);
   });
 });

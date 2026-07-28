@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { Client } from "pg";
 import { getDatabaseConfig } from '@/lib/config';
 import { requireAuth } from '@/lib/auth-check';
-import { validateDateRange, validateTimeRange, getTimeRangeDays } from '@/lib/validation';
+import {
+  validateDateRange,
+  validateTimeRange,
+  validateChartMode,
+  getTimeRangeDays,
+} from '@/lib/validation';
 import {
   getCompareWindows,
   getCurrentWindow,
@@ -248,7 +253,16 @@ async function querySummaryStats(
   return summaryStats;
 }
 
-function buildSummaryDelta(
+/** Raw failure rate % from counts (0 when total is 0). */
+function rawFailureRate(stats: SummaryStats): number {
+  return stats.total > 0 ? (stats.failed / stats.total) * 100 : 0;
+}
+
+/**
+ * Delta between current and previous summary windows.
+ * failureRatePp is computed from raw counts (not already-rounded failureRate).
+ */
+export function buildSummaryDelta(
   current: SummaryStats,
   previous: SummaryStats
 ): SummaryDelta {
@@ -257,7 +271,7 @@ function buildSummaryDelta(
     passed: current.passed - previous.passed,
     failed: current.failed - previous.failed,
     failureRatePp:
-      Math.round((current.failureRate - previous.failureRate) * 10) / 10,
+      Math.round((rawFailureRate(current) - rawFailureRate(previous)) * 10) / 10,
   };
 }
 
@@ -277,7 +291,7 @@ export async function GET(request: NextRequest) {
 
     if (view === "summary") {
       // Get summary statistics
-      const summaryChartMode = searchParams.get("chartMode") || "recent"; // Default to 'recent' for summary
+      const summaryChartMode = validateChartMode(searchParams.get("chartMode"));
       const summaryTimeRange = searchParams.get("timeRange");
       const summaryAnnotationFilter = searchParams.get("annotation");
       const rawSummaryDateFrom = searchParams.get("dateFrom");
@@ -307,45 +321,61 @@ export async function GET(request: NextRequest) {
       };
 
       const currentWindow = getCurrentWindow(windowInput);
+      const compareWindows = wantCompare ? getCompareWindows(windowInput) : null;
 
-      const currentStats = await querySummaryStats(client, {
+      const queryOpts = {
         chartMode: summaryChartMode,
-        window: currentWindow,
         annotationFilter: summaryAnnotationFilter,
         isGroupFilter: isSummaryGroupFilter,
         filterValue: summaryFilterValue,
-      });
+      };
+
+      let currentStats: SummaryStats;
+      let previous: SummaryStats | null = null;
+      let delta: SummaryDelta | null = null;
+      let labels: { current: string; previous: string } | null = null;
+
+      if (wantCompare && compareWindows) {
+        // Parallel current + previous on separate clients — pg Client does not
+        // allow concurrent queries on one connection.
+        const prevClient = new Client(getDatabaseConfig());
+        try {
+          await prevClient.connect();
+          await prevClient.query("SET timezone = 'UTC'");
+          const [cur, prev] = await Promise.all([
+            querySummaryStats(client, { ...queryOpts, window: currentWindow }),
+            querySummaryStats(prevClient, {
+              ...queryOpts,
+              window: compareWindows.previous,
+            }),
+          ]);
+          currentStats = cur;
+          previous = prev;
+          delta = buildSummaryDelta(cur, prev);
+          labels = compareWindows.labels;
+        } finally {
+          await prevClient.end();
+        }
+      } else {
+        currentStats = await querySummaryStats(client, {
+          ...queryOpts,
+          window: currentWindow,
+        });
+      }
 
       // Backward-compatible flat response when compare is not requested
       if (!wantCompare) {
         return NextResponse.json(currentStats);
       }
 
-      const compareWindows = getCompareWindows(windowInput);
       const annotationLabel =
         summaryAnnotationFilter && summaryAnnotationFilter !== ""
           ? summaryAnnotationFilter
           : "all";
 
-      let previous: SummaryStats | null = null;
-      let delta: SummaryDelta | null = null;
-      let labels: { current: string; previous: string } | null = null;
-
-      if (compareWindows) {
-        previous = await querySummaryStats(client, {
-          chartMode: summaryChartMode,
-          window: compareWindows.previous,
-          annotationFilter: summaryAnnotationFilter,
-          isGroupFilter: isSummaryGroupFilter,
-          filterValue: summaryFilterValue,
-        });
-        delta = buildSummaryDelta(currentStats, previous);
-        labels = compareWindows.labels;
-      }
-
       const compareResponse: SummaryCompareResponse = {
         chartMode: summaryChartMode,
-        timeRange: validatedTimeRange ?? summaryTimeRange,
+        timeRange: validatedTimeRange,
         annotation: annotationLabel,
         current: currentStats,
         previous,

@@ -9,7 +9,12 @@
  * Custom ranges use equal calendar-day length immediately before dateFrom,
  * with the same inclusive end predicate as the summary API
  * (`dateTo + 1 day - 1 second`).
+ *
+ * Day counts for fixed ranges come from `getTimeRangeDays` in validation.ts
+ * (single source of truth with chart/summary filters).
  */
+
+import { getTimeRangeDays } from "./validation";
 
 export type RelativeOpenWindow = {
   type: "relative_open";
@@ -61,12 +66,6 @@ export interface GetCompareWindowsInput {
   dateTo: string | null;
 }
 
-const FIXED_RANGE_DAYS: Record<"7d" | "30d" | "90d", number> = {
-  "7d": 7,
-  "30d": 30,
-  "90d": 90,
-};
-
 /**
  * Parse YYYY-MM-DD as UTC midnight.
  */
@@ -95,12 +94,19 @@ export function inclusiveDayLength(dateFrom: string, dateTo: string): number {
 /**
  * Equal-length prior window immediately before an inclusive custom range.
  * previous.to = dateFrom - 1 day; previous.from = previous.to - (L - 1) days.
+ *
+ * Requires dateFrom <= dateTo (inclusive ordered YMD). Throws if L <= 0.
  */
 export function previousAbsoluteWindow(
   dateFrom: string,
   dateTo: string
 ): { dateFrom: string; dateTo: string } {
   const L = inclusiveDayLength(dateFrom, dateTo);
+  if (L <= 0) {
+    throw new Error(
+      `previousAbsoluteWindow requires dateFrom <= dateTo (got ${dateFrom}, ${dateTo})`
+    );
+  }
   const prevTo = parseYmdUtc(dateFrom);
   prevTo.setUTCDate(prevTo.getUTCDate() - 1);
   const prevFrom = new Date(prevTo.getTime());
@@ -109,6 +115,17 @@ export function previousAbsoluteWindow(
     dateFrom: formatYmdUtc(prevFrom),
     dateTo: formatYmdUtc(prevTo),
   };
+}
+
+/**
+ * Resolve fixed-range day count from the shared validation whitelist.
+ * Returns null for `all` / unknown.
+ */
+function fixedRangeDays(
+  timeRange: GetCompareWindowsInput["timeRange"]
+): number | null {
+  if (!timeRange || timeRange === "all") return null;
+  return getTimeRangeDays(timeRange);
 }
 
 /**
@@ -143,8 +160,8 @@ export function getCompareWindows(
     };
   }
 
-  if (timeRange && timeRange !== "all" && timeRange in FIXED_RANGE_DAYS) {
-    const days = FIXED_RANGE_DAYS[timeRange as "7d" | "30d" | "90d"];
+  const days = fixedRangeDays(timeRange);
+  if (days !== null) {
     return {
       current: { type: "relative_open", days },
       previous: {
@@ -167,6 +184,10 @@ export function getCompareWindows(
  * Build a SQL time-filter clause (without leading AND) and bound params for a
  * StatsWindow. Uses the same predicates as the summary API.
  *
+ * Fail-closed: invalid relative windows throw rather than emitting an empty
+ * filter (which would silently become all-time). Trusted callers should only
+ * pass windows from getCurrentWindow / getCompareWindows.
+ *
  * @param window - Window descriptor from getCompareWindows / current filter
  * @param column - Timestamp column, e.g. `t.start_time_utc`
  * @param startParamIndex - Next 1-based `$N` placeholder index
@@ -181,10 +202,11 @@ export function buildWindowTimeFilter(
       return { sql: "", params: [] };
 
     case "relative_open": {
-      // days is always from FIXED_RANGE_DAYS whitelist when produced by getCompareWindows
       const days = Math.trunc(window.days);
       if (!Number.isFinite(days) || days <= 0) {
-        return { sql: "", params: [] };
+        throw new Error(
+          `Invalid relative_open window: days must be a positive integer (got ${window.days})`
+        );
       }
       return {
         sql: `${column} >= CURRENT_DATE - INTERVAL '${days} days'`,
@@ -202,7 +224,9 @@ export function buildWindowTimeFilter(
         endDays < 0 ||
         startDays <= endDays
       ) {
-        return { sql: "", params: [] };
+        throw new Error(
+          `Invalid relative_half_open window: need startDaysAgo > endDaysAgo >= 0 (got start=${window.startDaysAgo}, end=${window.endDaysAgo})`
+        );
       }
       return {
         sql: `${column} >= CURRENT_DATE - INTERVAL '${startDays} days' AND ${column} < CURRENT_DATE - INTERVAL '${endDays} days'`,
@@ -232,7 +256,7 @@ export function buildWindowTimeFilter(
       // Exhaustiveness
       const _exhaustive: never = window;
       void _exhaustive;
-      return { sql: "", params: [] };
+      throw new Error("Unreachable StatsWindow variant");
     }
   }
 }
@@ -248,11 +272,9 @@ export function getCurrentWindow(input: GetCompareWindowsInput): StatsWindow {
     return { type: "absolute", dateFrom, dateTo };
   }
 
-  if (timeRange && timeRange !== "all" && timeRange in FIXED_RANGE_DAYS) {
-    return {
-      type: "relative_open",
-      days: FIXED_RANGE_DAYS[timeRange as "7d" | "30d" | "90d"],
-    };
+  const days = fixedRangeDays(timeRange);
+  if (days !== null) {
+    return { type: "relative_open", days };
   }
 
   return { type: "none" };
