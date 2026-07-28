@@ -170,22 +170,37 @@ test ends but never uploads; master UI unaware.
 
 ### LT-04 — Power cut to station PC
 
-**Purpose:** durable-outbox guarantees. Three distinct cut windows:
+**Purpose:** durable-outbox guarantees AND the app's run-recovery feature
+(`run_state.py` manifests + heartbeat + worker checkpoints: an unfinished run
+resumes on relaunch with its ORIGINAL run_id, start time, and planned end —
+the manifest deadline is authoritative). Recovery is exactly-once-friendly by
+construction: the idempotency key derives from the manifest start time, which
+survives the reboot. Three distinct cut windows:
 
-- **(a) Mid-test:** cut power while a test runs. Expected: in-flight test is
-  lost (no result existed — acceptable and known); after boot the app starts
-  clean and any older unsent outbox entries upload normally.
+- **(a) Mid-test:** cut power while a test runs. Expected: on boot +
+  relaunch, the app detects the unfinished manifest and RESUMES the run —
+  same run_id and start time, sampling gap during the outage — then runs to
+  the original planned end, finalizes, and uploads ONE result whose
+  dashboard row carries the original start time. If the PC comes back only
+  AFTER the planned end passed: workers enter RECOVERING, wait out
+  `[Reliability] recovery_reconnect_timeout_seconds` (default 300 s), then
+  finalize AT the original deadline — the result is still written and
+  uploaded, not lost. Any older unsent outbox entries drain normally too.
 - **(b) Ack window (the critical one):** cut power right after a test
   completes (result enqueued, not yet acked). Expected: after boot the
   outbox resumes from meta files and redelivers with a fresh nonce; server
   dedups via idempotency key/receipt if it had already stored it. Exactly
-  one dashboard row either way. No lost test.
+  one dashboard row either way. No lost test. If the cut lands between
+  result-write and manifest finalization, recovery may re-finalize and
+  re-enqueue — same key (same serial + manifest start) → outbox/receipt
+  dedup still yields exactly one row.
 - **(c) Mid-write:** cut during heavy outbox/policy-cache writing. Expected:
   tmp files are discarded on scan; no crash, no corrupt meta aborting the
   outbox loop.
 
-**Fail signals:** test present in outbox but never delivered; duplicate rows;
-startup crash parsing a partial file.
+**Fail signals:** resumed run restarts the clock (new start time / new
+idempotency key → would double-ingest); test present in outbox but never
+delivered; duplicate rows; startup crash parsing a partial file or manifest.
 
 ### LT-05 — Very long duration test
 
