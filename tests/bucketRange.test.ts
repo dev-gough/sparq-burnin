@@ -41,6 +41,14 @@ describe("bucketRange", () => {
     });
   });
 
+  it("week spans year boundary (Mon–Sun)", () => {
+    // 2024-12-30 is a Monday
+    expect(bucketRange("2024-12-30", "week")).toEqual({
+      from: "2024-12-30",
+      to: "2025-01-05",
+    });
+  });
+
   it("month uses inclusive calendar month end", () => {
     expect(bucketRange("2024-01-01", "month")).toEqual({
       from: "2024-01-01",
@@ -49,6 +57,10 @@ describe("bucketRange", () => {
     expect(bucketRange("2024-04-01", "month")).toEqual({
       from: "2024-04-01",
       to: "2024-04-30",
+    });
+    expect(bucketRange("2024-12-01", "month")).toEqual({
+      from: "2024-12-01",
+      to: "2024-12-31",
     });
   });
 

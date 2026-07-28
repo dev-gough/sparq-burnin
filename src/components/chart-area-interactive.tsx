@@ -28,7 +28,6 @@ import {
   burninChartColors,
   formatBucketLabel,
   defaultBucketForTimeRange,
-  parseUtcDateOnly,
   type ChartBucket,
 } from "@/lib/chart-theme";
 
@@ -78,7 +77,6 @@ export function ChartAreaInteractive({
   const [bucket, setBucket] = React.useState<ChartBucket>(() =>
     defaultBucketForTimeRange(timeRange),
   );
-  const [userOverrodeBucket, setUserOverrodeBucket] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [isGeneratingReport, setIsGeneratingReport] = React.useState(false);
   const [isGeneratingFailedData, setIsGeneratingFailedData] =
@@ -109,38 +107,24 @@ export function ChartAreaInteractive({
     }
   }, [isMobile, timeRange, onTimeRangeChange]);
 
-  // Smart bucket: keep granularity readable for the selected period.
-  // Manual bucket choice sticks for the session until period change re-applies defaults.
+  // Smart bucket: re-apply defaults whenever timeRange changes (chart-local
+  // control, parent, or mobile 90d→30d force). Manual bucket choice sticks
+  // only until the next period change. all→month covers the >2y readability goal.
+  React.useEffect(() => {
+    setBucket(defaultBucketForTimeRange(timeRange));
+  }, [timeRange]);
+
   const handleTimeRangeChange = React.useCallback(
     (range: string) => {
       onTimeRangeChange(range);
-      setUserOverrodeBucket(false);
-      setBucket(defaultBucketForTimeRange(range));
+      // Bucket sync happens in the timeRange effect above.
     },
     [onTimeRangeChange],
   );
 
-  const handleBucketChange = React.useCallback((value: ChartBucket) => {
-    setUserOverrodeBucket(true);
-    setBucket(value);
-  }, []);
-
-  // All-time span > 2 years → prefer month if still on day/week (user-approved).
   React.useEffect(() => {
-    if (userOverrodeBucket) return;
-    if (timeRange !== "all") return;
-    if (chartData.length < 2) return;
-    if (bucket !== "day" && bucket !== "week") return;
+    const abortController = new AbortController();
 
-    const first = parseUtcDateOnly(chartData[0].date).getTime();
-    const last = parseUtcDateOnly(chartData[chartData.length - 1].date).getTime();
-    const twoYearsMs = 2 * 365.25 * 24 * 60 * 60 * 1000;
-    if (last - first > twoYearsMs) {
-      setBucket("month");
-    }
-  }, [chartData, timeRange, bucket, userOverrodeBucket]);
-
-  React.useEffect(() => {
     const fetchTestStats = async () => {
       try {
         setLoading(true);
@@ -153,21 +137,33 @@ export function ChartAreaInteractive({
         if (dateFrom) params.append("dateFrom", dateFrom);
         if (dateTo) params.append("dateTo", dateTo);
 
-        const response = await fetch(`/api/test-stats?${params}`);
+        const response = await fetch(`/api/test-stats?${params}`, {
+          signal: abortController.signal,
+        });
+        if (abortController.signal.aborted) return;
+
         if (response.ok) {
           const data = await response.json();
+          if (abortController.signal.aborted) return;
           setChartData(data);
         } else {
           console.error("Failed to fetch test statistics");
+          // Avoid showing stale series under a new bucket/period selection.
+          setChartData([]);
         }
       } catch (error) {
+        if (abortController.signal.aborted) return;
         console.error("Error fetching test statistics:", error);
+        setChartData([]);
       } finally {
-        setLoading(false);
+        if (!abortController.signal.aborted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchTestStats();
+    return () => abortController.abort();
   }, [chartMode, timeRange, annotationFilter, dateFrom, dateTo, bucket]);
 
   const getTimeRangeDescription = () => {
@@ -367,6 +363,7 @@ export function ChartAreaInteractive({
       yAxis: [
         {
           type: "value",
+          min: 0,
           minInterval: 1,
           alignTicks: true,
           axisLine: { show: false },
@@ -741,7 +738,7 @@ export function ChartAreaInteractive({
                 type="single"
                 value={bucket}
                 onValueChange={(value) => {
-                  if (value) handleBucketChange(value as ChartBucket);
+                  if (value) setBucket(value as ChartBucket);
                 }}
                 variant="outline"
                 size="sm"
