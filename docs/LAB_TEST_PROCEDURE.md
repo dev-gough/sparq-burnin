@@ -18,7 +18,7 @@ pytest tests (station); do not re-test those by hand.
 | LT-02 | Data fidelity: HTTPS vs CSV | 0 | PASS | |
 | LT-03 | Coordinator removed mid-test | 1 | PASS | auto-reconnect recovered cleanly |
 | LT-03 | Coordinator removed mid-test auto=false| 1 | PASS | FATAL surfaced, test ended + uploaded |
-| LT-04 | Power cut to station PC (3 windows) | 1 | a+b PASS | (a) run resumed w/ original start; (b) outbox survived hard cut, redelivered, exactly-once; (c) pending |
+| LT-04 | Power cut to station PC (3 windows) | 1 | PASS | (a) run resumed w/ original start; (b) outbox survived hard cut, redelivered; (c) mid-burst cut: 28 pre/9 post + 2 receipt-dedup duplicate:true — exactly-once held throughout |
 | LT-05 | Very long duration test | 1 | | |
 | LT-06 | Dashboard unreachable / backlog drain / GUI | 2 | | |
 | LT-07 | Remote disable mid-test | 2 | | |
