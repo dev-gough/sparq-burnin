@@ -89,6 +89,8 @@ lab tests will be ALL INVALID and that is correct behavior, not a failure.
 Server response classes the station acts on: 200 (ack, possibly
 `duplicate:true`), 400 (permanent — payload dropped), 401/403 (long backoff +
 operator alert, NOT dropped), 5xx/network (exponential backoff, NOT dropped).
+As of 2026-07-28 the server never emits 403 (disable gates test starts, not
+ingest) — the station keeps the 403 classification for older servers.
 
 ---
 
@@ -240,19 +242,27 @@ backlog entries, station wedged in stale-policy state after reconnect.
 
 ### LT-07 — Remote disable mid-test
 
-**Purpose:** disable semantics = block *new* starts, never lose data.
+**Purpose:** disable semantics = block *new* starts, never block data.
+
+> **Semantics ratified mid-acceptance (2026-07-28):** the ingest endpoint no
+> longer rejects disabled stations — "disabled" gates test STARTS only
+> (server-side check removed; policy endpoint unchanged). Stations keep the
+> 403-retryable classification for compatibility with older servers.
 
 1. Start a test; disable `LabBurnIn-1` in `/stations` while it runs.
-2. Let the test complete while disabled; try to start a new test.
+2. Confirm the readiness text shows the block (with the reason you set)
+   within ~30 s. Let the test complete while disabled; try to start a new
+   test → refused.
 3. Re-enable.
 
-**Expected:** running test completes; its upload gets 403
-`station_disabled` → polite backoff, entry stays retryable (NOT
-`failed_permanent`); new test starts blocked within ~30 s with an operator
-message; after re-enable the held result delivers on the next retry, and
-Start Test unblocks within ~30 s.
-**Fail signals:** payload dropped on 403; running test killed by disable;
-station never notices re-enable.
+**Expected:** running test completes and its upload is ACCEPTED while the
+station is disabled — the batch appears on the dashboard normally; new test
+starts blocked within ~30 s with an operator message carrying the disable
+reason; after re-enable, Start Test unblocks within ~30 s. `/stations`
+last-seen keeps updating throughout (polling continues while disabled).
+**Fail signals:** upload rejected/held while disabled (old behavior); running
+test killed by disable; station never notices re-enable; a new test starting
+while disabled.
 
 ### LT-08 — Clock skew + wrong secret
 

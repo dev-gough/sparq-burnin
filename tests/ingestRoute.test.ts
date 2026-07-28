@@ -186,11 +186,23 @@ describe('POST /api/ingest/v1/tests', () => {
     expect(await body(response)).toMatchObject({ code: 'auth' })
   })
 
-  it('disabled station → 403 station_disabled (retryable class for the client)', async () => {
+  it('disabled station still ingests (enablement gates test STARTS, not data)', async () => {
+    // Ratified 2026-07-28: StationControls "disabled" stops the station from
+    // starting new tests (via the policy endpoint); data the software already
+    // produced is always accepted. Rejecting here would turn an admin toggle
+    // into silent data loss once the outbox retention lapses.
     stationEnabled = false
+    processMock.mockResolvedValue({
+      ok: true,
+      testId: 9,
+      idempotencyKey: 'k1',
+      duplicate: false,
+      overallStatus: 'PASS',
+      stationId: STATION,
+    })
     const response = await POST(signedRequest(gz(validPayload())))
-    expect(response.status).toBe(403)
-    expect(await body(response)).toMatchObject({ code: 'station_disabled' })
+    expect(response.status).toBe(200)
+    expect(processMock).toHaveBeenCalledTimes(1)
   })
 
   it('happy path: 200, and processIngestPayload gets the verified body hash', async () => {

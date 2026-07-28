@@ -30,6 +30,14 @@ Phase 1 is considered a ship blocker.
   idempotency key stays derived from the RAW CSV start time — offsets never
   change keys. Deploy order is safe either way: old servers ignore the suffix
   (unanchored regex), old stations keep the Delhi fallback.
+- **Enablement semantics** *(re-ratified 2026-07-28 during lab acceptance)*:
+  StationControls "disabled" gates test STARTS only (via the policy endpoint);
+  the ingest endpoint accepts any authenticated payload — the server-side 403
+  `station_disabled` gate was removed (Devon+Thomas: no scenario where
+  produced data should be refused; blocking delivery converts an admin toggle
+  into silent data loss after outbox retention). Auth (secret rotation) is the
+  delivery gate; enablement is the scheduling gate. Station keeps 403 in the
+  retryable class for older servers.
 - **Rollout order**: server fixes deploy first; then stations. Disable pCloud
   FileSync per station only after its first confirmed HTTPS ingest (item 1.5).
 

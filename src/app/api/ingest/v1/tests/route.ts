@@ -10,8 +10,6 @@ import {
   loadIngestConfig,
   processIngestPayload,
 } from '@/lib/ingest'
-import { isStationEnabled } from '@/lib/stationControls'
-
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 /** Allow long-running COPY for large sample payloads (seconds). */
@@ -70,19 +68,13 @@ export async function POST(request: NextRequest) {
     return errorJson(401, 'auth', `Unauthorized (${earlyAuth.reason})`)
   }
 
-  try {
-    const allowed = await isStationEnabled(earlyAuth.stationId)
-    if (!allowed) {
-      return errorJson(
-        403,
-        'station_disabled',
-        'Station is disabled (remote control)'
-      )
-    }
-  } catch (err) {
-    console.error('station enable check failed:', err)
-    return errorJson(500, 'server_error', 'Failed to check station policy')
-  }
+  // NOTE (ratified 2026-07-28): StationControls enablement deliberately does
+  // NOT gate ingest. "Disabled" means "do not START new tests" — enforced on
+  // the station via /api/stations/v1/config — never "reject data". Any test
+  // the software produced is accepted here as long as it authenticates;
+  // blocking delivery would only convert an admin toggle into silent data
+  // loss (the outbox would age the payload out after failed_retention_hours).
+  // Quarantining a compromised station is the secret's job, not this flag's.
 
   // Cap decompressed output to bound the gzip-bomb amplification factor.
   // maxBodyBytes only limits the compressed body; without an inflated-size cap a

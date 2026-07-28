@@ -56,7 +56,6 @@ Default ±300 seconds (`INGEST_HMAC_SKEW_SEC`). Nonces are rejected if reused wi
 | HTTP | `code` | Meaning |
 |------|--------|---------|
 | 401 | `auth` | Missing/invalid signature, skew, replay, unknown station |
-| 403 | `station_disabled` | Station disabled via the Stations admin UI (`StationControls`) |
 | 400 | `invalid_schema` | JSON/schema validation failed |
 | 400 | `too_large` | Body or sample count exceeds limits |
 | 400 | `station_mismatch` | Header station id ≠ body `stationId` |
@@ -201,7 +200,7 @@ In `config.json`:
 }
 ```
 
-Each station entry supplies the HMAC **secret** only. To stop accepting POSTs from a station (403 `station_disabled`) without revoking its secret, disable it in the **Stations** admin UI (`/stations`), which writes to the `StationControls` table. A station with no `StationControls` row defaults to enabled.
+Each station entry supplies the HMAC **secret** only. Disabling a station in the **Stations** admin UI (`/stations`, writes `StationControls`) tells the station — via `GET /api/stations/v1/config` — to stop STARTING new tests; it does NOT block ingest (ratified 2026-07-28: data the software already produced is always accepted, because rejecting it would turn an admin toggle into silent data loss once the station outbox retention lapses). A station with no `StationControls` row defaults to enabled. To cut off a station entirely (e.g. compromised secret), rotate/remove its secret in config.json — auth is the delivery gate, enablement is the scheduling gate. Historical note: before 2026-07-28 the ingest endpoint returned 403 `station_disabled`; station clients keep classifying 403 as retryable-with-long-backoff for compatibility with older servers.
 
 ## Deployment notes
 
