@@ -150,6 +150,8 @@ const columnGroups = {
   }
 }
 
+// Prefer shared `burninChartColors` from `@/lib/chart-theme` when that file
+// exists (PR2). Local fallback keeps this PR independent until theme merges.
 const seriesPalette = [
   "#6366f1", // indigo
   "#10b981", // emerald
@@ -1527,7 +1529,7 @@ export default function TestPage() {
           </div>
 
           {/* Charts Grid Skeleton */}
-          <div className="grid grid-cols-[1fr_320px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px] gap-6 4xl:gap-8 5xl:gap-12">
+          <div className="grid grid-cols-[1fr_360px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px] gap-6 4xl:gap-8 5xl:gap-12">
             {/* Charts Column */}
             <div className="min-w-0 space-y-6 4xl:space-y-8 5xl:space-y-10">
               {/* Chart 1 Skeleton */}
@@ -1796,7 +1798,7 @@ export default function TestPage() {
         <div
           className={`grid transition-[grid-template-columns,gap] duration-300 ease-in-out ${
             sidebarVisible
-              ? 'gap-6 4xl:gap-8 5xl:gap-12 grid-cols-[1fr_320px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px]'
+              ? 'gap-6 4xl:gap-8 5xl:gap-12 grid-cols-[1fr_360px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px]'
               : 'gap-0 grid-cols-[1fr_0px] 4xl:grid-cols-[1fr_0px] 5xl:grid-cols-[1fr_0px]'
           }`}
         >
@@ -1832,7 +1834,7 @@ export default function TestPage() {
               sidebarVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
             }`}
           >
-            <div className="w-[320px] 4xl:w-[400px] 5xl:w-[480px]">
+            <div className="w-[360px] 4xl:w-[400px] 5xl:w-[480px]">
               <TestAnnotations
                 testId={testData.test_id}
                 serialNumber={testData.serial_number}
