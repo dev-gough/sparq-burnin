@@ -1529,7 +1529,7 @@ export default function TestPage() {
           {/* Charts Grid Skeleton */}
           <div className="grid grid-cols-[1fr_320px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px] gap-6 4xl:gap-8 5xl:gap-12">
             {/* Charts Column */}
-            <div className="space-y-6 4xl:space-y-8 5xl:space-y-10">
+            <div className="min-w-0 space-y-6 4xl:space-y-8 5xl:space-y-10">
               {/* Chart 1 Skeleton */}
               <Card>
                 <CardHeader>
@@ -1789,12 +1789,19 @@ export default function TestPage() {
           </div>
         </div>
 
+        {/* No key here: remounting would destroy the ECharts instances (blank
+            redraw, lost zoom) and refetch annotations. The column collapse is
+            animated instead; charts follow along via their container resize
+            observer. */}
         <div
-          key={`layout-${sidebarVisible}`}
-          className={`grid gap-6 4xl:gap-8 5xl:gap-12 ${sidebarVisible ? 'grid-cols-[1fr_320px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px]' : 'grid-cols-1'}`}
+          className={`grid transition-[grid-template-columns,gap] duration-300 ease-in-out ${
+            sidebarVisible
+              ? 'gap-6 4xl:gap-8 5xl:gap-12 grid-cols-[1fr_320px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px]'
+              : 'gap-0 grid-cols-[1fr_0px] 4xl:grid-cols-[1fr_0px] 5xl:grid-cols-[1fr_0px]'
+          }`}
         >
           {/* Charts Column */}
-          <div className="space-y-6 4xl:space-y-8 5xl:space-y-10">
+          <div className="min-w-0 space-y-6 4xl:space-y-8 5xl:space-y-10">
             <ConfigurableChart
               title="PV Data"
               data={testData.data_points}
@@ -1817,16 +1824,22 @@ export default function TestPage() {
             />
           </div>
 
-          {/* Annotations Sidebar */}
-          {sidebarVisible && (
-            <div className="sticky top-6 h-fit">
+          {/* Annotations Sidebar — stays mounted while hidden so reopening is
+              instant (no refetch) and the column width can animate closed */}
+          <div
+            aria-hidden={!sidebarVisible}
+            className={`sticky top-6 h-fit min-w-0 overflow-hidden transition-opacity duration-300 ${
+              sidebarVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+            }`}
+          >
+            <div className="w-[320px] 4xl:w-[400px] 5xl:w-[480px]">
               <TestAnnotations
                 testId={testData.test_id}
                 serialNumber={testData.serial_number}
                 startTime={testData.start_time}
               />
             </div>
-          )}
+          </div>
         </div>
 
         {/* Full Screen Modal */}
