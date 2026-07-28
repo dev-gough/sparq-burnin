@@ -25,7 +25,7 @@ pytest tests (station); do not re-test those by hand.
 | LT-08 | Clock skew + wrong secret | 2 | | |
 | LT-09 | Server deploy/restart mid-upload | 2 | | |
 | LT-10 | RETEST multi-row results CSV | 2 | | |
-| LT-11 | Nonce replay rejection | 2 | | |
+| LT-11 | Nonce replay rejection | 2 | PASS | signed request replayed from labserver: 400 invalid_schema then 401 replay; nonce consumed pre-processing |
 | LT-12 | `npm run reprocess` with HTTPS rows | 3 | | |
 | LT-13 | pCloud FileSync cutover rehearsal | 3 | | |
 
