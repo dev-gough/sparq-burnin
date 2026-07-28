@@ -139,7 +139,14 @@ mismatch.
 **Purpose:** the P1 fix for the silent-idle bug (slave used to idle forever
 with reconnect disabled while the master never learned).
 
-Run twice, once per `coordinator_auto_reconnect` setting:
+Run twice, once per `coordinator_auto_reconnect` setting. The key is
+OPTIONAL and absent from config.ini by design — absence means `true`
+(`burnin_slave.py` `_gateway_reconnect_enabled`, fallback=True). For the
+disabled run, add `coordinator_auto_reconnect = false` to the `[Gateway]`
+section of the station's config.ini and restart the app; delete the line
+(or set true) to restore. Backoff knobs (also optional):
+`coordinator_reconnect_initial_seconds` (2.0) /
+`coordinator_reconnect_max_seconds` (60.0).
 
 1. Start a test; a few minutes in, physically unplug the Zigbee coordinator.
 2. Observe the slave and master UI.
@@ -147,8 +154,11 @@ Run twice, once per `coordinator_auto_reconnect` setting:
 **Expected (`auto_reconnect=false`):** slave emits a FATAL, stops, master
 records the failure and ends the test; result uploads with the failure
 description; dashboard shows the test with samples up to the rip point.
-**Expected (`auto_reconnect=true`):** visible reconnect attempts; on
-sustained failure, same terminal path (attempts exhausted → fatal).
+**Expected (`auto_reconnect=true`):** visible reconnect attempts as error
+events, retrying indefinitely with backoff (2 s doubling to a 60 s cap —
+this path never goes fatal by design). Re-plug the coordinator after a few
+minutes: connection recovers and sampling resumes (gap in samples during
+the outage is expected).
 **Fail signals:** a worker that looks alive but never reports (the old bug);
 test ends but never uploads; master UI unaware.
 
