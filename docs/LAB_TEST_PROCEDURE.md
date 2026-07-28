@@ -14,8 +14,8 @@ pytest tests (station); do not re-test those by hand.
 
 | # | Case | Tier | Status | Notes |
 |---|------|------|--------|-------|
-| LT-01 | Happy-path E2E + cross-pipeline dedup | 0 | | |
-| LT-02 | Data fidelity: HTTPS vs CSV | 0 | | |
+| LT-01 | Happy-path E2E + cross-pipeline dedup | 0 | PASS | |
+| LT-02 | Data fidelity: HTTPS vs CSV | 0 | PASS | |
 | LT-03 | Coordinator removed mid-test | 1 | | |
 | LT-04 | Power cut to station PC (3 windows) | 1 | | |
 | LT-05 | Very long duration test | 1 | | |
@@ -120,9 +120,15 @@ Annotations placed on the HTTPS test (add one) survive and stay linked.
    field-by-field the HTTPS row/samples against the raw CSV values by eye
    for ~10 sample rows + the result row.
 
-**Expected:** identical values: sample count, `timestamp_utc` (Delhi−5:30),
-statuses, latch fields, failure time. **Fail signals:** off-by-5:30 h
-timestamps, null columns that the CSV populates, sample-count mismatch.
+**Expected:** identical values: sample count, statuses, latch fields, failure
+time/description, all numeric columns. `timestamp_utc` differs from the raw
+CSV wall clock by exactly the station's UTC offset (lab EDT: +4 h; Delhi:
+−5:30) — that constant shift is the conversion working. The station's written
+CSV itself stays byte-identical to the legacy format (naive wall clock, no
+offset — the offset exists only in the wire payload, so MES/pCloud consumers
+are unaffected). **Fail signals:** a NON-constant timestamp shift or one that
+isn't the station offset, null columns that the CSV populates, sample-count
+mismatch.
 
 ---
 
