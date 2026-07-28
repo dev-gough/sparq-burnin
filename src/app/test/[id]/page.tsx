@@ -182,7 +182,7 @@ function FailedTestNavigation({
   onNavigate: (testId: number) => void
 }) {
   const { navigation } = testData
-  const { formatDateInTimezone, formatInTimezone } = useTimezone()
+  const { formatDateInTimezone, formatTimeInTimezone } = useTimezone()
 
   // Don't show if navigation info is missing (from cached batch data)
   if (!navigation) {
@@ -194,23 +194,22 @@ function FailedTestNavigation({
     return null
   }
 
-  const formatDate = (dateString: string) => {
-    return formatDateInTimezone(dateString)
-  }
-
-  const formatTime = (dateString: string) => {
-    return formatInTimezone(dateString)
-  }
-
   const describe = (info?: FailureInfo) => {
     if (!info) return undefined
     const desc = info.failure_description ? ` — ${info.failure_description}` : ''
-    return `${formatDate(info.start_time)} ${formatTime(info.start_time)}${desc}`
+    return `${formatDateInTimezone(info.start_time)} ${formatTimeInTimezone(info.start_time)}${desc}`
   }
+
+  const prevLabel = navigation.previous_failed_test
+    ? `Previous failure: ${describe(navigation.previous_failed_test)}`
+    : 'No previous failures'
+  const nextLabel = navigation.next_failed_test
+    ? `Next failure: ${describe(navigation.next_failed_test)}`
+    : 'No next failures'
 
   return (
     <div className="flex items-center gap-2 rounded-lg border border-amber-300/70 bg-amber-50 py-1.5 pr-1.5 pl-3 dark:border-amber-700/60 dark:bg-amber-950/40">
-      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
       <span className="whitespace-nowrap text-sm font-medium text-amber-800 dark:text-amber-200">
         {navigation.current_failure_index
           ? `Failure ${navigation.current_failure_index} of ${navigation.total_failed_tests} for this S/N`
@@ -218,26 +217,24 @@ function FailedTestNavigation({
       </span>
       <div className="ml-1 flex items-center gap-1">
         <Button
-          size="sm"
+          size="icon"
           variant="outline"
           onClick={() => navigation.previous_failed_test && onNavigate(navigation.previous_failed_test.test_id)}
           disabled={!navigation.previous_failed_test}
-          title={navigation.previous_failed_test
-            ? `Previous failure: ${describe(navigation.previous_failed_test)}`
-            : 'No previous failures'}
-          className="h-7 w-7 p-0"
+          title={prevLabel}
+          aria-label={prevLabel}
+          className="h-7 w-7"
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
         <Button
-          size="sm"
+          size="icon"
           variant="outline"
           onClick={() => navigation.next_failed_test && onNavigate(navigation.next_failed_test.test_id)}
           disabled={!navigation.next_failed_test}
-          title={navigation.next_failed_test
-            ? `Next failure: ${describe(navigation.next_failed_test)}`
-            : 'No next failures'}
-          className="h-7 w-7 p-0"
+          title={nextLabel}
+          aria-label={nextLabel}
+          className="h-7 w-7"
         >
           <ChevronRight className="h-4 w-4" />
         </Button>
@@ -247,11 +244,20 @@ function FailedTestNavigation({
 }
 
 // Label-over-value item for the dense test metadata band
-function MetaItem({ label, value }: { label: string; value: string }) {
+function MetaItem({
+  label,
+  value,
+  valueClassName = "tabular-nums",
+}: {
+  label: string
+  value: string
+  /** Override value styling (e.g. drop tabular-nums for non-numeric strings). */
+  valueClassName?: string
+}) {
   return (
     <div className="flex flex-col">
       <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className="font-medium tabular-nums">{value}</dd>
+      <dd className={`font-medium ${valueClassName}`}>{value}</dd>
     </div>
   )
 }
@@ -1333,9 +1339,20 @@ export default function TestPage() {
   const [fullScreenState, setFullScreenState] = useState<FullScreenState | null>(null)
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const { formatInTimezone } = useTimezone()
+  const chartsLayoutRef = useRef<HTMLDivElement>(null)
 
   // Cache hook
   const { getTest, setTest } = useTestDataCache()
+
+  // Nudge ECharts to match the animating charts column. echarts-for-react
+  // observes element resize, but intermediate CSS grid frames can lag the
+  // canvas; a final window resize after the transition settles the size.
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      window.dispatchEvent(new Event("resize"))
+    }, 320)
+    return () => window.clearTimeout(id)
+  }, [sidebarVisible])
 
   const openFullScreen = useCallback((state: FullScreenState) => {
     setFullScreenState(state)
@@ -1504,27 +1521,26 @@ export default function TestPage() {
         </div>
 
         <div className="space-y-4 4xl:space-y-6 5xl:space-y-8">
-          {/* Test Info Header Skeleton */}
-          <div className="grid grid-cols-2 gap-6 4xl:gap-8 5xl:gap-12">
-            {/* Left Column - Test Information */}
-            <div className="space-y-2">
-              <Skeleton className="h-10 w-96" />
-              <Skeleton className="h-7 w-32" />
-              <Skeleton className="h-6 w-64" />
-              <Skeleton className="h-6 w-64" />
-              <div className="flex items-center gap-4 mt-2">
-                <div className="flex items-center gap-2">
-                  <Skeleton className="h-6 w-16" />
-                  <Skeleton className="h-10 w-32" />
-                </div>
+          {/* Test Info Header Skeleton — mirrors dense flex header + meta row */}
+          <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+            <div className="min-w-0 space-y-3">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <Skeleton className="h-8 w-56 4xl:h-9 4xl:w-72" />
+                <Skeleton className="h-6 w-14 rounded-full" />
+                <Skeleton className="h-8 w-28" />
+              </div>
+              <div className="flex flex-wrap gap-x-8 gap-y-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="flex flex-col gap-1">
+                    <Skeleton className="h-3 w-14" />
+                    <Skeleton className="h-5 w-24" />
+                  </div>
+                ))}
               </div>
             </div>
-
-            {/* Right Column - Navigation & Toggle */}
-            <div className="flex flex-col gap-2">
-              <div className="flex justify-end">
-                <Skeleton className="h-9 w-9" />
-              </div>
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-9 w-52 rounded-lg" />
+              <Skeleton className="h-9 w-9" />
             </div>
           </div>
 
@@ -1653,9 +1669,14 @@ export default function TestPage() {
   const startDate = formatInTimezone(testData.start_time)
   const endDate = formatInTimezone(testData.end_time)
   const durationMs = new Date(testData.end_time).getTime() - new Date(testData.start_time).getTime()
-  const durationLabel = Number.isFinite(durationMs) && durationMs > 0
-    ? `${Math.floor(durationMs / 3600000)}h ${Math.floor((durationMs % 3600000) / 60000)}m`
-    : '—'
+  const durationLabel = (() => {
+    if (!Number.isFinite(durationMs) || durationMs <= 0) return '—'
+    if (durationMs < 60_000) return `${Math.floor(durationMs / 1000)}s`
+    const hours = Math.floor(durationMs / 3_600_000)
+    const minutes = Math.floor((durationMs % 3_600_000) / 60_000)
+    if (hours === 0) return `${minutes}m`
+    return `${hours}h ${minutes}m`
+  })()
   const totalPoints = testData._metadata?.total_points ?? testData.data_points.length
 
   const downloadCSV = () => {
@@ -1750,7 +1771,7 @@ export default function TestPage() {
                 onValueChange={updateTestStatus}
                 disabled={updatingStatus}
               >
-                <SelectTrigger size="sm" className="w-28">
+                <SelectTrigger size="sm" className="w-28" aria-label="Test status">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1763,7 +1784,11 @@ export default function TestPage() {
             </div>
             <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
               <MetaItem label="Test" value={`#${testData.test_id}`} />
-              <MetaItem label="Firmware" value={testData.firmware_version || '—'} />
+              <MetaItem
+                label="Firmware"
+                value={testData.firmware_version || '—'}
+                valueClassName=""
+              />
               <MetaItem label="Started" value={startDate} />
               <MetaItem label="Ended" value={endDate} />
               <MetaItem label="Duration" value={durationLabel} />
@@ -1771,7 +1796,7 @@ export default function TestPage() {
             </dl>
             {testData.failure_description && (
               <div className="flex items-start gap-2 rounded-lg border border-rose-300/70 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-200">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                 <span className="min-w-0">{testData.failure_description}</span>
               </div>
             )}
@@ -1782,9 +1807,13 @@ export default function TestPage() {
             <FailedTestNavigation testData={testData} onNavigate={navigateToTest} />
             <Button
               variant="outline"
-              size="sm"
+              size="icon"
               onClick={() => setSidebarVisible(!sidebarVisible)}
               title={sidebarVisible ? "Hide annotations" : "Show annotations"}
+              aria-label={sidebarVisible ? "Hide annotations" : "Show annotations"}
+              aria-expanded={sidebarVisible}
+              aria-controls="test-annotations-panel"
+              className="h-8 w-8"
             >
               {sidebarVisible ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
             </Button>
@@ -1794,8 +1823,14 @@ export default function TestPage() {
         {/* No key here: remounting would destroy the ECharts instances (blank
             redraw, lost zoom) and refetch annotations. The column collapse is
             animated instead; charts follow along via their container resize
-            observer. */}
+            observer, plus a post-transition window resize nudge. */}
         <div
+          ref={chartsLayoutRef}
+          onTransitionEnd={(e) => {
+            if (e.target === chartsLayoutRef.current && e.propertyName.includes("grid")) {
+              window.dispatchEvent(new Event("resize"))
+            }
+          }}
           className={`grid transition-[grid-template-columns,gap] duration-300 ease-in-out ${
             sidebarVisible
               ? 'gap-6 4xl:gap-8 5xl:gap-12 grid-cols-[1fr_360px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px]'
@@ -1827,9 +1862,12 @@ export default function TestPage() {
           </div>
 
           {/* Annotations Sidebar — stays mounted while hidden so reopening is
-              instant (no refetch) and the column width can animate closed */}
+              instant (no refetch) and the column width can animate closed.
+              inert removes focusable children from the tab order when collapsed. */}
           <div
+            id="test-annotations-panel"
             aria-hidden={!sidebarVisible}
+            inert={!sidebarVisible ? true : undefined}
             className={`sticky top-6 h-fit min-w-0 overflow-hidden transition-opacity duration-300 ${
               sidebarVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
             }`}
