@@ -2,7 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { Client } from "pg";
 import { getDatabaseConfig } from '@/lib/config';
 import { requireAuth } from '@/lib/auth-check';
-import { validateDateRange, validateTimeRange, getTimeRangeDays, validateBucket } from '@/lib/validation';
+import {
+  validateDateRange,
+  validateTimeRange,
+  validateChartMode,
+  getTimeRangeDays,
+  validateBucket,
+} from '@/lib/validation';
+import {
+  getCompareWindows,
+  getCurrentWindow,
+  buildWindowTimeFilter,
+  type StatsWindow,
+} from '@/lib/stats-windows';
 
 interface TestStats {
   date: string;
@@ -18,6 +30,26 @@ interface SummaryStats {
   failurePercentageOfTotal?: number; // Only present when annotation filter is active - % of total failures
 }
 
+interface SummaryDelta {
+  total: number;
+  passed: number;
+  failed: number;
+  /** Percentage-point change in failure rate (1 decimal) */
+  failureRatePp: number;
+}
+
+interface SummaryCompareResponse {
+  chartMode: string;
+  timeRange: string | null;
+  annotation: string;
+  current: SummaryStats;
+  previous: SummaryStats | null;
+  delta: SummaryDelta | null;
+  labels: { current: string; previous: string } | null;
+  /** Top-level mirror of current.failurePercentageOfTotal when annotation filter active */
+  failurePercentageOfTotal: number | null;
+}
+
 interface TestRecord {
   test_id: number;
   inv_id: number;
@@ -31,6 +63,218 @@ interface TestRecord {
   annotations: string | null;
 }
 
+/**
+ * Query summary stats for one time window.
+ * Preserves annotation split semantics: total/passed unfiltered, failed filtered,
+ * failureRate = filtered failures / all tests.
+ */
+async function querySummaryStats(
+  client: Client,
+  opts: {
+    chartMode: string;
+    window: StatsWindow;
+    annotationFilter: string | null;
+    isGroupFilter: boolean;
+    filterValue: string | null;
+  }
+): Promise<SummaryStats> {
+  const { chartMode, window, annotationFilter, isGroupFilter, filterValue } = opts;
+
+  const { sql: windowSql, params: timeParams } = buildWindowTimeFilter(
+    window,
+    "t.start_time_utc",
+    1
+  );
+  const timeFilter = windowSql ? `AND ${windowSql}` : "";
+
+  const annotationActive =
+    !!annotationFilter && annotationFilter !== "all";
+
+  let summaryAnnotationFilterClause = "";
+  if (annotationActive) {
+    const annotationParamIndex = timeParams.length + 1;
+    if (isGroupFilter) {
+      summaryAnnotationFilterClause = `
+            AND EXISTS (
+              SELECT 1 FROM TestAnnotations ta
+              JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
+              WHERE ta.current_test_id = t.test_id
+              AND aqo.group_name = $${annotationParamIndex}
+            )`;
+    } else {
+      summaryAnnotationFilterClause = `
+            AND EXISTS (
+              SELECT 1 FROM TestAnnotations ta
+              WHERE ta.current_test_id = t.test_id
+              AND ta.annotation_text = $${annotationParamIndex}
+            )`;
+    }
+  }
+
+  let total: number;
+  let passed: number;
+  let failed: number;
+  let totalFailed: number | undefined;
+
+  if (annotationActive) {
+    // Query 1: total, passed, and ALL failed WITHOUT annotation filter
+    let totalPassedQuery: string;
+    if (chartMode === "recent") {
+      totalPassedQuery = `
+            WITH latest_tests AS (
+              SELECT t.*, i.serial_number,
+                ROW_NUMBER() OVER (
+                  PARTITION BY i.serial_number
+                  ORDER BY t.start_time_utc DESC
+                ) as rn
+              FROM Tests t
+              JOIN Inverters i ON t.inv_id = i.inv_id
+              WHERE t.overall_status != 'INVALID' ${timeFilter}
+            )
+            SELECT
+              COUNT(*) as total,
+              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
+              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as total_failed
+            FROM latest_tests
+            WHERE rn = 1
+          `;
+    } else {
+      totalPassedQuery = `
+            SELECT
+              COUNT(*) as total,
+              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
+              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as total_failed
+            FROM Tests t
+            JOIN Inverters i ON t.inv_id = i.inv_id
+            WHERE t.overall_status != 'INVALID' ${timeFilter}
+          `;
+    }
+
+    const totalPassedResult =
+      timeParams.length > 0
+        ? await client.query(totalPassedQuery, timeParams)
+        : await client.query(totalPassedQuery);
+
+    total = parseInt(totalPassedResult.rows[0].total) || 0;
+    passed = parseInt(totalPassedResult.rows[0].passed) || 0;
+    totalFailed = parseInt(totalPassedResult.rows[0].total_failed) || 0;
+
+    // Query 2: failed count WITH annotation filter
+    let failedQuery: string;
+    if (chartMode === "recent") {
+      failedQuery = `
+            WITH latest_tests AS (
+              SELECT t.test_id, t.overall_status, i.serial_number,
+                ROW_NUMBER() OVER (
+                  PARTITION BY i.serial_number
+                  ORDER BY t.start_time_utc DESC
+                ) as rn
+              FROM Tests t
+              JOIN Inverters i ON t.inv_id = i.inv_id
+              WHERE t.overall_status != 'INVALID' ${timeFilter}
+            )
+            SELECT
+              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
+            FROM latest_tests
+            WHERE rn = 1
+              ${summaryAnnotationFilterClause.replace("t.test_id", "latest_tests.test_id")}
+          `;
+    } else {
+      failedQuery = `
+            SELECT
+              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
+            FROM Tests t
+            JOIN Inverters i ON t.inv_id = i.inv_id
+            WHERE t.overall_status != 'INVALID' ${timeFilter} ${summaryAnnotationFilterClause}
+          `;
+    }
+
+    const failedParams = [...timeParams, filterValue!];
+    const failedResult = await client.query(failedQuery, failedParams);
+    failed = parseInt(failedResult.rows[0].failed) || 0;
+  } else {
+    let summaryQuery: string;
+    if (chartMode === "recent") {
+      summaryQuery = `
+            WITH latest_tests AS (
+              SELECT t.*, i.serial_number,
+                ROW_NUMBER() OVER (
+                  PARTITION BY i.serial_number
+                  ORDER BY t.start_time_utc DESC
+                ) as rn
+              FROM Tests t
+              JOIN Inverters i ON t.inv_id = i.inv_id
+              WHERE t.overall_status != 'INVALID' ${timeFilter}
+            )
+            SELECT
+              COUNT(*) as total,
+              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
+              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
+            FROM latest_tests
+            WHERE rn = 1
+          `;
+    } else {
+      summaryQuery = `
+            SELECT
+              COUNT(*) as total,
+              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
+              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
+            FROM Tests t
+            JOIN Inverters i ON t.inv_id = i.inv_id
+            WHERE t.overall_status != 'INVALID' ${timeFilter}
+          `;
+    }
+
+    const summaryResult =
+      timeParams.length > 0
+        ? await client.query(summaryQuery, timeParams)
+        : await client.query(summaryQuery);
+    const row = summaryResult.rows[0];
+
+    total = parseInt(row.total) || 0;
+    passed = parseInt(row.passed) || 0;
+    failed = parseInt(row.failed) || 0;
+  }
+
+  const failureRate = total > 0 ? (failed / total) * 100 : 0;
+
+  const summaryStats: SummaryStats = {
+    total,
+    passed,
+    failed,
+    failureRate: Math.round(failureRate * 100) / 100,
+  };
+
+  if (totalFailed !== undefined && totalFailed > 0) {
+    const failurePercentageOfTotal = (failed / totalFailed) * 100;
+    summaryStats.failurePercentageOfTotal =
+      Math.round(failurePercentageOfTotal * 100) / 100;
+  }
+
+  return summaryStats;
+}
+
+/** Raw failure rate % from counts (0 when total is 0). */
+function rawFailureRate(stats: SummaryStats): number {
+  return stats.total > 0 ? (stats.failed / stats.total) * 100 : 0;
+}
+
+/**
+ * Delta between current and previous summary windows.
+ * failureRatePp is computed from raw counts (not already-rounded failureRate).
+ */
+export function buildSummaryDelta(
+  current: SummaryStats,
+  previous: SummaryStats
+): SummaryDelta {
+  return {
+    total: current.total - previous.total,
+    passed: current.passed - previous.passed,
+    failed: current.failed - previous.failed,
+    failureRatePp:
+      Math.round((rawFailureRate(current) - rawFailureRate(previous)) * 10) / 10,
+  };
+}
 
 export async function GET(request: NextRequest) {
   const { error: authError } = await requireAuth();
@@ -48,11 +292,12 @@ export async function GET(request: NextRequest) {
 
     if (view === "summary") {
       // Get summary statistics
-      const summaryChartMode = searchParams.get("chartMode") || "recent"; // Default to 'recent' for summary
+      const summaryChartMode = validateChartMode(searchParams.get("chartMode"));
       const summaryTimeRange = searchParams.get("timeRange");
       const summaryAnnotationFilter = searchParams.get("annotation");
       const rawSummaryDateFrom = searchParams.get("dateFrom");
       const rawSummaryDateTo = searchParams.get("dateTo");
+      const wantCompare = searchParams.get("compare") === "1";
 
       // Validate date inputs
       const { dateFrom: summaryDateFrom, dateTo: summaryDateTo, error: dateError } = validateDateRange(
@@ -70,199 +315,78 @@ export async function GET(request: NextRequest) {
       const isSummaryGroupFilter = summaryAnnotationFilter?.startsWith("group:") ?? false;
       const summaryFilterValue = isSummaryGroupFilter && summaryAnnotationFilter ? summaryAnnotationFilter.substring(6) : summaryAnnotationFilter;
 
-      let summaryQuery: string;
-      let timeFilter = "";
-      const timeParams: string[] = [];
-
-      // Build time filter based on custom dates or timeRange parameter
-      if (summaryDateFrom || summaryDateTo) {
-        // Custom date range takes precedence
-        const conditions = [];
-        if (summaryDateFrom) {
-          timeParams.push(summaryDateFrom);
-          conditions.push(`t.start_time_utc >= $${timeParams.length}::date`);
-        }
-        if (summaryDateTo) {
-          timeParams.push(summaryDateTo);
-          conditions.push(`t.start_time_utc <= $${timeParams.length}::date + INTERVAL '1 day' - INTERVAL '1 second'`);
-        }
-        timeFilter = 'AND ' + conditions.join(' AND ');
-      } else if (validatedTimeRange && validatedTimeRange !== "all") {
-        // Use predefined time range if no custom dates
-        const days = getTimeRangeDays(validatedTimeRange);
-        if (days !== null) {
-          timeFilter = `AND t.start_time_utc >= CURRENT_DATE - INTERVAL '${days} days'`;
-        }
-      }
-
-      // Build annotation filter for summary
-      let summaryAnnotationFilterClause = "";
-      if (summaryAnnotationFilter && summaryAnnotationFilter !== 'all') {
-        const annotationParamIndex = timeParams.length + 1;
-        if (isSummaryGroupFilter) {
-          summaryAnnotationFilterClause = `
-            AND EXISTS (
-              SELECT 1 FROM TestAnnotations ta
-              JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
-              WHERE ta.current_test_id = t.test_id
-              AND aqo.group_name = $${annotationParamIndex}
-            )`;
-        } else {
-          summaryAnnotationFilterClause = `
-            AND EXISTS (
-              SELECT 1 FROM TestAnnotations ta
-              WHERE ta.current_test_id = t.test_id
-              AND ta.annotation_text = $${annotationParamIndex}
-            )`;
-        }
-      }
-
-      // When annotation filter is applied, we need different logic:
-      // - total and passed should count ALL tests (ignore annotation filter)
-      // - failed should count ONLY failures with that annotation
-      // - failureRate = (filtered failures) / (all tests)
-      // - failurePercentageOfTotal = (filtered failures) / (all failures) - shown in brackets
-
-      let total: number, passed: number, failed: number, totalFailed: number | undefined;
-
-      if (summaryAnnotationFilter && summaryAnnotationFilter !== 'all') {
-        // Annotation filter is active - use split query approach
-
-        // Query 1: Get total, passed, and ALL failed counts WITHOUT annotation filter
-        let totalPassedQuery: string;
-        if (summaryChartMode === "recent") {
-          totalPassedQuery = `
-            WITH latest_tests AS (
-              SELECT t.*, i.serial_number,
-                ROW_NUMBER() OVER (
-                  PARTITION BY i.serial_number
-                  ORDER BY t.start_time_utc DESC
-                ) as rn
-              FROM Tests t
-              JOIN Inverters i ON t.inv_id = i.inv_id
-              WHERE t.overall_status != 'INVALID' ${timeFilter}
-            )
-            SELECT
-              COUNT(*) as total,
-              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
-              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as total_failed
-            FROM latest_tests
-            WHERE rn = 1
-          `;
-        } else {
-          totalPassedQuery = `
-            SELECT
-              COUNT(*) as total,
-              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
-              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as total_failed
-            FROM Tests t
-            JOIN Inverters i ON t.inv_id = i.inv_id
-            WHERE t.overall_status != 'INVALID' ${timeFilter}
-          `;
-        }
-
-        const totalPassedResult = timeParams.length > 0
-          ? await client.query(totalPassedQuery, timeParams)
-          : await client.query(totalPassedQuery);
-
-        total = parseInt(totalPassedResult.rows[0].total) || 0;
-        passed = parseInt(totalPassedResult.rows[0].passed) || 0;
-        totalFailed = parseInt(totalPassedResult.rows[0].total_failed) || 0;
-
-        // Query 2: Get failed count WITH annotation filter
-        let failedQuery: string;
-        if (summaryChartMode === "recent") {
-          // For "Most Recent" mode: First get most recent tests, THEN filter by annotation
-          failedQuery = `
-            WITH latest_tests AS (
-              SELECT t.test_id, t.overall_status, i.serial_number,
-                ROW_NUMBER() OVER (
-                  PARTITION BY i.serial_number
-                  ORDER BY t.start_time_utc DESC
-                ) as rn
-              FROM Tests t
-              JOIN Inverters i ON t.inv_id = i.inv_id
-              WHERE t.overall_status != 'INVALID' ${timeFilter}
-            )
-            SELECT
-              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
-            FROM latest_tests
-            WHERE rn = 1
-              ${summaryAnnotationFilterClause.replace('t.test_id', 'latest_tests.test_id')}
-          `;
-        } else {
-          failedQuery = `
-            SELECT
-              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
-            FROM Tests t
-            JOIN Inverters i ON t.inv_id = i.inv_id
-            WHERE t.overall_status != 'INVALID' ${timeFilter} ${summaryAnnotationFilterClause}
-          `;
-        }
-
-        const failedParams = [...timeParams, summaryFilterValue!];
-        const failedResult = await client.query(failedQuery, failedParams);
-        failed = parseInt(failedResult.rows[0].failed) || 0;
-
-      } else {
-        // No annotation filter - use original single query approach
-        if (summaryChartMode === "recent") {
-          summaryQuery = `
-            WITH latest_tests AS (
-              SELECT t.*, i.serial_number,
-                ROW_NUMBER() OVER (
-                  PARTITION BY i.serial_number
-                  ORDER BY t.start_time_utc DESC
-                ) as rn
-              FROM Tests t
-              JOIN Inverters i ON t.inv_id = i.inv_id
-              WHERE t.overall_status != 'INVALID' ${timeFilter}
-            )
-            SELECT
-              COUNT(*) as total,
-              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
-              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
-            FROM latest_tests
-            WHERE rn = 1
-          `;
-        } else {
-          summaryQuery = `
-            SELECT
-              COUNT(*) as total,
-              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
-              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
-            FROM Tests t
-            JOIN Inverters i ON t.inv_id = i.inv_id
-            WHERE t.overall_status != 'INVALID' ${timeFilter}
-          `;
-        }
-
-        const summaryResult = timeParams.length > 0
-          ? await client.query(summaryQuery, timeParams)
-          : await client.query(summaryQuery);
-        const row = summaryResult.rows[0];
-
-        total = parseInt(row.total) || 0;
-        passed = parseInt(row.passed) || 0;
-        failed = parseInt(row.failed) || 0;
-      }
-
-      const failureRate = total > 0 ? (failed / total) * 100 : 0;
-
-      const summaryStats: SummaryStats = {
-        total,
-        passed,
-        failed,
-        failureRate: Math.round(failureRate * 100) / 100,
+      const windowInput = {
+        timeRange: validatedTimeRange,
+        dateFrom: summaryDateFrom,
+        dateTo: summaryDateTo,
       };
 
-      // Add percentage of total failures if annotation filter is active
-      if (totalFailed !== undefined && totalFailed > 0) {
-        const failurePercentageOfTotal = (failed / totalFailed) * 100;
-        summaryStats.failurePercentageOfTotal = Math.round(failurePercentageOfTotal * 100) / 100;
+      const currentWindow = getCurrentWindow(windowInput);
+      const compareWindows = wantCompare ? getCompareWindows(windowInput) : null;
+
+      const queryOpts = {
+        chartMode: summaryChartMode,
+        annotationFilter: summaryAnnotationFilter,
+        isGroupFilter: isSummaryGroupFilter,
+        filterValue: summaryFilterValue,
+      };
+
+      let currentStats: SummaryStats;
+      let previous: SummaryStats | null = null;
+      let delta: SummaryDelta | null = null;
+      let labels: { current: string; previous: string } | null = null;
+
+      if (wantCompare && compareWindows) {
+        // Parallel current + previous on separate clients — pg Client does not
+        // allow concurrent queries on one connection.
+        const prevClient = new Client(getDatabaseConfig());
+        try {
+          await prevClient.connect();
+          await prevClient.query("SET timezone = 'UTC'");
+          const [cur, prev] = await Promise.all([
+            querySummaryStats(client, { ...queryOpts, window: currentWindow }),
+            querySummaryStats(prevClient, {
+              ...queryOpts,
+              window: compareWindows.previous,
+            }),
+          ]);
+          currentStats = cur;
+          previous = prev;
+          delta = buildSummaryDelta(cur, prev);
+          labels = compareWindows.labels;
+        } finally {
+          await prevClient.end();
+        }
+      } else {
+        currentStats = await querySummaryStats(client, {
+          ...queryOpts,
+          window: currentWindow,
+        });
       }
 
-      return NextResponse.json(summaryStats);
+      // Backward-compatible flat response when compare is not requested
+      if (!wantCompare) {
+        return NextResponse.json(currentStats);
+      }
+
+      const annotationLabel =
+        summaryAnnotationFilter && summaryAnnotationFilter !== ""
+          ? summaryAnnotationFilter
+          : "all";
+
+      const compareResponse: SummaryCompareResponse = {
+        chartMode: summaryChartMode,
+        timeRange: validatedTimeRange,
+        annotation: annotationLabel,
+        current: currentStats,
+        previous,
+        delta,
+        labels,
+        failurePercentageOfTotal:
+          currentStats.failurePercentageOfTotal ?? null,
+      };
+
+      return NextResponse.json(compareResponse);
     }
 
     if (view === "tests") {
