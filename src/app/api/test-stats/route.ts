@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Client } from "pg";
 import { getDatabaseConfig } from '@/lib/config';
 import { requireAuth } from '@/lib/auth-check';
-import { validateDateRange, validateTimeRange, getTimeRangeDays } from '@/lib/validation';
+import { validateDateRange, validateTimeRange, getTimeRangeDays, validateBucket } from '@/lib/validation';
 
 interface TestStats {
   date: string;
@@ -452,8 +452,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(annotations);
     }
 
-    // Default: return daily statistics
+    // Default: return bucketed statistics (daily by default)
     const chartMode = searchParams.get("chartMode") || "all"; // 'all' or 'recent'
+    const bucket = validateBucket(searchParams.get("bucket")); // day/week/month/quarter/year
     const rawTimeRange = searchParams.get("timeRange");
     const chartAnnotationFilter = searchParams.get("annotation");
     const rawDateFrom = searchParams.get("dateFrom");
@@ -517,18 +518,21 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Bucket expression — `bucket` is whitelisted by validateBucket, safe to interpolate
+    const bucketExpr = `DATE_TRUNC('${bucket}', t.start_time_utc)::date`;
+
     let query: string;
     if (chartMode === "recent") {
-      // Show daily statistics for most recent valid test per serial number (excluding INVALID)
+      // Show bucketed statistics for most recent valid test per serial number (excluding INVALID)
       query = `
-        WITH daily_latest_tests AS (
+        WITH bucket_latest_tests AS (
           SELECT
-            DATE(t.start_time_utc) as test_date,
+            ${bucketExpr} as test_date,
             t.overall_status,
             i.serial_number,
             t.test_id,
             ROW_NUMBER() OVER (
-              PARTITION BY i.serial_number, DATE(t.start_time_utc)
+              PARTITION BY i.serial_number, ${bucketExpr}
               ORDER BY t.start_time_utc DESC
             ) as rn
           FROM Tests t
@@ -541,24 +545,24 @@ export async function GET(request: NextRequest) {
           to_char(test_date, 'YYYY-MM-DD') as test_date,
           COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
           COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
-        FROM daily_latest_tests
+        FROM bucket_latest_tests
         WHERE rn = 1
         GROUP BY test_date
         ORDER BY test_date ASC
       `;
     } else {
-      // Show daily statistics for all tests
+      // Show bucketed statistics for all tests
       query = `
         SELECT
-          to_char(DATE(t.start_time_utc), 'YYYY-MM-DD') as test_date,
+          to_char(${bucketExpr}, 'YYYY-MM-DD') as test_date,
           COUNT(CASE WHEN t.overall_status = 'PASS' THEN 1 END) as passed,
           COUNT(CASE WHEN t.overall_status = 'FAIL' THEN 1 END) as failed
         FROM Tests t
         WHERE ${timeFilter}
           t.overall_status != 'INVALID'
           ${annotationFilter}
-        GROUP BY DATE(t.start_time_utc)
-        ORDER BY DATE(t.start_time_utc) ASC
+        GROUP BY ${bucketExpr}
+        ORDER BY ${bucketExpr} ASC
       `;
     }
 
