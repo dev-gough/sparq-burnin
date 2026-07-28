@@ -16,7 +16,8 @@ pytest tests (station); do not re-test those by hand.
 |---|------|------|--------|-------|
 | LT-01 | Happy-path E2E + cross-pipeline dedup | 0 | PASS | |
 | LT-02 | Data fidelity: HTTPS vs CSV | 0 | PASS | |
-| LT-03 | Coordinator removed mid-test | 1 | | |
+| LT-03 | Coordinator removed mid-test | 1 | PASS | auto-reconnect recovered cleanly |
+| LT-03 | Coordinator removed mid-test auto=false| 1 | PASS | FATAL surfaced, test ended + uploaded |
 | LT-04 | Power cut to station PC (3 windows) | 1 | | |
 | LT-05 | Very long duration test | 1 | | |
 | LT-06 | Dashboard unreachable / backlog drain / GUI | 2 | | |
