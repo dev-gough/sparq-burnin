@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTheme } from 'next-themes'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
@@ -243,6 +243,13 @@ export default function TestAnnotations({
   const { formatInTimezone } = useTimezone()
   const { quickOptions, groups, refetchOptions, refetchGroups } = useAnnotationCache()
 
+  // Race guards: scope optimistic rows to the test they belong to, ignore stale fetches,
+  // and protect just-confirmed ids until a server response includes them.
+  const testIdRef = useRef(testId)
+  const fetchGenRef = useRef(0)
+  /** annotation_id → testId that owns the local row until server list includes it */
+  const protectedIdsRef = useRef(new Map<number | string, number>())
+
   // Configure drag sensors
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -253,34 +260,69 @@ export default function TestAnnotations({
   )
 
   const fetchAnnotations = useCallback(async () => {
+    const forTestId = testId
+    const gen = ++fetchGenRef.current
+
     try {
-      const response = await fetch(`/api/test/${testId}/annotations`)
-      if (response.ok) {
-        const data = await response.json()
-        // Preserve in-flight optimistic rows so a concurrent refetch does not wipe them
-        setAnnotations((prev) => {
-          const pending = prev.filter((a) => a.pending)
-          const serverIds = new Set(data.map((a: Annotation) => a.annotation_id))
-          const stillPending = pending.filter((a) => !serverIds.has(a.annotation_id))
-          return [...stillPending, ...data]
-        })
+      const response = await fetch(`/api/test/${forTestId}/annotations`)
+      if (!response.ok) return
+
+      const data: Annotation[] = await response.json()
+
+      // Ignore stale responses after a newer fetch or test navigation
+      if (gen !== fetchGenRef.current || testIdRef.current !== forTestId) {
+        return
       }
+
+      setAnnotations((prev) => {
+        for (const row of data) {
+          protectedIdsRef.current.delete(row.annotation_id)
+        }
+        const serverIds = new Set(data.map((a) => a.annotation_id))
+        // Keep only local rows for this test that the server snapshot does not yet include:
+        // in-flight pending temps, or just-confirmed ids protected until a fetch sees them.
+        const localKeep = prev.filter((a) => {
+          if (a.current_test_id !== forTestId) return false
+          if (serverIds.has(a.annotation_id)) return false
+          if (a.pending) return true
+          return protectedIdsRef.current.get(a.annotation_id) === forTestId
+        })
+        return [...localKeep, ...data]
+      })
     } catch (error) {
       console.error('Failed to fetch annotations:', error)
     }
   }, [testId])
 
   useEffect(() => {
+    testIdRef.current = testId
+    // Drop local state immediately so pending/saved rows never leak across tests
+    setAnnotations([])
+    setAnnotationsLoading(true)
+    setEditingId(null)
+    setEditText('')
+    setShowCustomForm(false)
+    setCustomText('')
+
+    for (const [id, tid] of [...protectedIdsRef.current.entries()]) {
+      if (tid !== testId) protectedIdsRef.current.delete(id)
+    }
+
+    let cancelled = false
     const loadData = async () => {
-      setAnnotationsLoading(true)
       await fetchAnnotations()
-      setAnnotationsLoading(false)
+      if (!cancelled && testIdRef.current === testId) {
+        setAnnotationsLoading(false)
+      }
     }
     loadData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [testId]) // Only refetch when testId changes, not when fetchAnnotations reference changes
+    return () => {
+      cancelled = true
+    }
+  }, [testId, fetchAnnotations])
 
-  // FAIL + zero annotations: keep top quick-annotate groups expanded
+  // FAIL + empty: ensure top-3 groups are open. All groups start expanded (collapsedGroups
+  // is empty); this only re-opens top groups if the user previously collapsed them.
   useEffect(() => {
     if (
       annotationsLoading ||
@@ -309,6 +351,7 @@ export default function TestAnnotations({
     groupName: string | null = null,
     groupColor: string | null = null
   ) => {
+    const targetTestId = testId
     const tempId = `temp-${crypto.randomUUID()}`
     const now = new Date().toISOString()
     const optimistic: Annotation = {
@@ -323,14 +366,18 @@ export default function TestAnnotations({
       author_email: session?.user?.email || undefined,
       created_at: now,
       updated_at: now,
-      current_test_id: testId,
+      current_test_id: targetTestId,
       pending: true,
     }
 
-    setAnnotations((prev) => [optimistic, ...prev])
+    protectedIdsRef.current.set(tempId, targetTestId)
+    // Only surface optimistic row if we are still on the same test
+    if (testIdRef.current === targetTestId) {
+      setAnnotations((prev) => [optimistic, ...prev])
+    }
 
     try {
-      const response = await fetch(`/api/test/${testId}/annotations`, {
+      const response = await fetch(`/api/test/${targetTestId}/annotations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -341,16 +388,40 @@ export default function TestAnnotations({
 
       if (response.ok) {
         const created: Annotation = await response.json()
-        setAnnotations((prev) =>
-          prev.map((a) => (a.annotation_id === tempId ? { ...created, pending: false } : a))
-        )
+        protectedIdsRef.current.delete(tempId)
+
+        // Navigated away — POST may have succeeded on the original test; do not inject into B
+        if (testIdRef.current !== targetTestId) {
+          return
+        }
+
+        // Protect the real id until a subsequent fetch includes it (avoids stale-GET drop)
+        protectedIdsRef.current.set(created.annotation_id, targetTestId)
+        setAnnotations((prev) => {
+          const hasTemp = prev.some((a) => a.annotation_id === tempId)
+          if (!hasTemp) {
+            // Temp was cleared by navigation/reset — do not re-inject
+            return prev
+          }
+          return prev.map((a) =>
+            a.annotation_id === tempId
+              ? { ...created, pending: false, current_test_id: targetTestId }
+              : a
+          )
+        })
       } else {
-        setAnnotations((prev) => prev.filter((a) => a.annotation_id !== tempId))
+        protectedIdsRef.current.delete(tempId)
+        if (testIdRef.current === targetTestId) {
+          setAnnotations((prev) => prev.filter((a) => a.annotation_id !== tempId))
+        }
         toast.error('Failed to add annotation')
         console.error('Failed to add annotation')
       }
     } catch (error) {
-      setAnnotations((prev) => prev.filter((a) => a.annotation_id !== tempId))
+      protectedIdsRef.current.delete(tempId)
+      if (testIdRef.current === targetTestId) {
+        setAnnotations((prev) => prev.filter((a) => a.annotation_id !== tempId))
+      }
       toast.error('Failed to add annotation')
       console.error('Error adding annotation:', error)
     }
@@ -448,14 +519,16 @@ export default function TestAnnotations({
         setNewOptionGroup('')
         await refetchOptions()
       } else {
-        const errorData = await response.json()
+        const errorData = await response.json().catch(() => ({}))
         if (response.status === 409) {
-          alert('This option already exists')
+          toast.error('This option already exists')
         } else {
+          toast.error('Failed to add quick option')
           console.error('Failed to add quick option:', errorData)
         }
       }
     } catch (error) {
+      toast.error('Failed to add quick option')
       console.error('Error adding quick option:', error)
     }
   }
@@ -477,14 +550,16 @@ export default function TestAnnotations({
         setShowNewGroupForm(false)
         await refetchGroups()
       } else {
-        const errorData = await response.json()
+        const errorData = await response.json().catch(() => ({}))
         if (response.status === 409) {
-          alert('A group with this name already exists')
+          toast.error('A group with this name already exists')
         } else {
+          toast.error('Failed to add group')
           console.error('Failed to add group:', errorData)
         }
       }
     } catch (error) {
+      toast.error('Failed to add group')
       console.error('Error adding group:', error)
     }
   }
@@ -544,11 +619,11 @@ export default function TestAnnotations({
         await refetchOptions()
       } else {
         console.error('Failed to update option group')
-        alert('Failed to reassign option to new group')
+        toast.error('Failed to reassign option to new group')
       }
     } catch (error) {
       console.error('Error updating option group:', error)
-      alert('Error reassigning option to new group')
+      toast.error('Error reassigning option to new group')
     }
   }
 
@@ -565,16 +640,16 @@ export default function TestAnnotations({
       if (response.ok) {
         await refetchGroups()
       } else {
-        const errorData = await response.json()
+        const errorData = await response.json().catch(() => ({} as { message?: string }))
         if (response.status === 409) {
-          alert(errorData.message || 'Cannot delete group with existing options')
+          toast.error(errorData.message || 'Cannot delete group with existing options')
         } else {
-          alert('Failed to delete group')
+          toast.error('Failed to delete group')
         }
       }
     } catch (error) {
       console.error('Error deleting group:', error)
-      alert('Error deleting group')
+      toast.error('Error deleting group')
     }
   }
 
@@ -683,7 +758,7 @@ export default function TestAnnotations({
                       )}
                     </div>
                     {!annotation.pending && (
-                      <div className="flex gap-0.5 opacity-0 transition-opacity group-hover/annotation:opacity-100 focus-within:opacity-100">
+                      <div className="flex gap-0.5 opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/annotation:opacity-100 focus-within:opacity-100">
                         <Button
                           size="sm"
                           variant="ghost"
@@ -901,7 +976,7 @@ export default function TestAnnotations({
                       onChange={(e) => setNewGroupName(e.target.value)}
                       placeholder="Group name..."
                       className="h-7 flex-1 rounded border border-input bg-background px-2 text-xs"
-                      onKeyPress={(e) => e.key === 'Enter' && addNewGroup()}
+                      onKeyDown={(e) => e.key === 'Enter' && addNewGroup()}
                     />
                     <Button
                       size="sm"
@@ -934,7 +1009,7 @@ export default function TestAnnotations({
                       onChange={(e) => setNewOptionText(e.target.value)}
                       placeholder="New quick option..."
                       className="h-7 flex-1 rounded border border-input bg-background px-2 text-xs"
-                      onKeyPress={(e) => e.key === 'Enter' && addNewQuickOption()}
+                      onKeyDown={(e) => e.key === 'Enter' && addNewQuickOption()}
                     />
                     <Button
                       size="sm"
