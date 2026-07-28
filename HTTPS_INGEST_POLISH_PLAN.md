@@ -21,6 +21,15 @@ Phase 1 is considered a ship blocker.
   zero-pads serials to 12 digits; `serialNumber` on the wire is the raw results-
   CSV value (stripped), matching what the legacy CSV pipeline stores — so
   cross-pipeline dedup and idempotency keys agree with existing DB rows.
+- **Timestamp timezone contract** *(added 2026-07-28 — lab found EDT wall clock
+  misread as IST)*: the station attaches its local UTC offset to every wire
+  timestamp (result start/end, failure time as ISO-T form, sample timestamps):
+  `2026-07-28T12:25:36-04:00`. The server (`src/lib/ingest/timestamps.ts`)
+  honors an explicit `Z`/`±hh:mm` suffix and assumes Delhi (IST) ONLY for
+  offset-less timestamps (legacy pCloud CSVs, old station versions). The
+  idempotency key stays derived from the RAW CSV start time — offsets never
+  change keys. Deploy order is safe either way: old servers ignore the suffix
+  (unanchored regex), old stations keep the Delhi fallback.
 - **Rollout order**: server fixes deploy first; then stations. Disable pCloud
   FileSync per station only after its first confirmed HTTPS ingest (item 1.5).
 

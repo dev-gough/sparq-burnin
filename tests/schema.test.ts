@@ -124,6 +124,23 @@ describe('ingestPayloadSchema', () => {
     }
   })
 
+  it('accepts offset-suffixed timestamps (non-IST stations attach local offset)', () => {
+    for (const ts of [
+      '2026-07-28T12:25:36-04:00',
+      '2026-07-28T12:25:36+05:30',
+      '2026-07-28T12:25:36Z',
+      '2026-07-28T12:25:36.123-04:00',
+    ]) {
+      const sample = { ...validPayload().samples[0], timestamp: ts }
+      expect(sampleSchema.safeParse(sample).success).toBe(true)
+      const payload = {
+        ...validPayload(),
+        result: { ...validPayload().result, startTime: ts, endTime: ts },
+      }
+      expect(ingestPayloadSchema.safeParse(payload).success).toBe(true)
+    }
+  })
+
   it('passes through unknown sample keys (forward compatibility)', () => {
     const sample = { ...validPayload().samples[0], futureField: 1.23 }
     const parsed = sampleSchema.safeParse(sample)

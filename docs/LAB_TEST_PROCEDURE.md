@@ -38,7 +38,19 @@ only after everything else passes).
   `url = http://192.168.20.12:9001` (explicit `http://`), `hmac_secret` =
   the `LabBurnIn-1` secret from the server's config.json.
 - Station PC clock NTP-synced (HMAC skew window is ±300 s).
-- pCloud FileSync ON (stays on until LT-13).
+- **Timezone contract**: the station attaches its local UTC offset to every
+  wire timestamp (`2026-07-28T12:25:36-04:00`); the server honors it, and only
+  offset-less timestamps fall back to the Delhi (IST) assumption. Both repos
+  must be at or past the timezone-fix commit. Verify with LT-01 step 3a below.
+  NOTE: the legacy pCloud/watchdog CSV path still assumes Delhi wall clock —
+  correct for production stations, but a LAB CSV twin ingests 9 h 30 m off
+  (EDT read as IST) and therefore will NOT cross-pipeline dedup against the
+  correct HTTPS row. In the lab, either disable pCloud sync for the lab
+  station from the start, or expect (and clean up) offset duplicate rows with
+  `source_file NOT LIKE 'https:%'`.
+- pCloud FileSync ON (stays on until LT-13) — subject to the timezone note
+  above; cross-pipeline dedup itself can only be truly exercised on a station
+  whose wall clock is IST.
 - For faster observation during failure cases, optionally shrink station
   knobs: `retry_interval_sec = 15`, `policy_stale_sec = 600`. Restore
   defaults afterwards.
@@ -83,13 +95,20 @@ operator alert, NOT dropped), 5xx/network (exponential backoff, NOT dropped).
 1. Run one normal (short is fine) test to completion.
 2. Watch the outbox entry: `pending` → `acked` within one retry interval.
 3. Confirm the dashboard row exists with `source_file = 'https:<key>'`.
-4. Wait for pCloud/watchdog to deliver the same test's CSV.
+3a. **Timezone check**: with the dashboard timezone selector on Local Time,
+   the test's start/end must match the station PC's wall clock (e.g. a test
+   started 12:25 EDT shows 12:25 EDT — not 12:25 IST). In the DB,
+   `start_time_utc` must equal station wall clock + 4 h (EDT).
+4. Wait for pCloud/watchdog to deliver the same test's CSV (only if pCloud is
+   left on — see the timezone note in Prerequisites).
 
-**Expected:** exactly ONE Tests row for the test (CSV arrival logs a
-duplicate-skip in the ingest log; no second row). Annotations placed on the
-test (add one) survive and stay linked.
-**Fail signals:** two rows for one physical test; outbox stuck `pending`;
-401/400 in meta.
+**Expected:** the HTTPS row has correct times (step 3a). If pCloud is on, the
+CSV twin will appear as a SECOND row 9 h 30 m earlier (legacy path assumes
+Delhi) — this is the documented lab limitation, not a dedup bug; delete the
+CSV twin. True cross-pipeline dedup is only verifiable on an IST station.
+Annotations placed on the HTTPS test (add one) survive and stay linked.
+**Fail signals:** HTTPS row times wrong under step 3a; outbox stuck
+`pending`; 401/400 in meta.
 
 ### LT-02 — Data fidelity: HTTPS vs CSV (one-time)
 

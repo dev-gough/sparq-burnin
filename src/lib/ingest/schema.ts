@@ -7,11 +7,15 @@ const nullableString = z.union([z.string(), z.null()]).optional()
 
 // A wall-clock timestamp that parseTimestampFromDelhi can consume without throwing.
 // Enforced here so malformed timestamps yield a 400 invalid_schema at parse time
-// rather than a mid-transaction 500 in dbInsert.
+// rather than a mid-transaction 500 in dbInsert. An explicit Z/±hh:mm offset is
+// honored; offset-less timestamps are assumed to be Delhi (IST) wall clock.
 const delhiTimestamp = z
   .string()
   .min(1)
-  .regex(DELHI_TIMESTAMP_REGEX, 'Invalid timestamp format (expected YYYY-MM-DDThh:mm[:ss][.SSS])')
+  .regex(
+    DELHI_TIMESTAMP_REGEX,
+    'Invalid timestamp format (expected YYYY-MM-DDThh:mm[:ss][.SSS][Z|±hh:mm])'
+  )
 
 // Optional free-string column bounded by its DB VARCHAR width.
 const nullableStringMax = (max: number) =>

@@ -40,6 +40,19 @@ describe('parseTimestampFromDelhi', () => {
     // exact IST offset boundary (05:30 → midnight UTC)
     ['2025-06-15T05:30:00', '2025-06-15T00:00:00.000Z'],
     ['2025-06-15T05:29:59', '2025-06-14T23:59:59.000Z'],
+    // explicit offset is honored instead of the Delhi assumption:
+    // lab station in EDT (UTC-4)
+    ['2026-07-28T12:25:36-04:00', '2026-07-28T16:25:36.000Z'],
+    // explicit IST offset ≡ the offset-less Delhi assumption
+    ['2025-06-15T12:00:00+05:30', '2025-06-15T06:30:00.000Z'],
+    // explicit UTC
+    ['2025-06-15T12:00:00Z', '2025-06-15T12:00:00.000Z'],
+    // negative offset borrowing across midnight
+    ['2026-01-01T20:30:00-05:00', '2026-01-02T01:30:00.000Z'],
+    // milliseconds + offset
+    ['2026-07-28T12:25:36.123-04:00', '2026-07-28T16:25:36.123Z'],
+    // seconds-less + offset
+    ['2026-07-28T12:25-04:00', '2026-07-28T16:25:00.000Z'],
   ]
 
   for (const [input, expected] of cases) {
@@ -87,6 +100,18 @@ describe('parseTimestampFromDelhi', () => {
 describe('parseFailureTime', () => {
   it('parses the station underscore format as Delhi wall clock', () => {
     expect(parseFailureTime('2025-06-15_12-00-00')).toBe(
+      '2025-06-15T06:30:00.000Z'
+    )
+  })
+
+  it('honors an explicit offset in ISO-form failure times', () => {
+    expect(parseFailureTime('2026-07-28T12:25:36-04:00')).toBe(
+      '2026-07-28T16:25:36.000Z'
+    )
+  })
+
+  it('parses offset-less ISO-form failure times as Delhi wall clock', () => {
+    expect(parseFailureTime('2025-06-15T12:00:00')).toBe(
       '2025-06-15T06:30:00.000Z'
     )
   })
