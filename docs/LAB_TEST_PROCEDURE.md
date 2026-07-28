@@ -68,8 +68,13 @@ only after everything else passes).
   ```sql
   SELECT test_id, overall_status, start_time_utc, source_file
   FROM Tests ORDER BY test_id DESC LIMIT 10;
-  SELECT * FROM IngestReceipts ORDER BY received_at DESC LIMIT 5;
+  SELECT * FROM IngestReceipts ORDER BY created_at DESC LIMIT 5;
   ```
+
+- **Helper on the labserver**: `/home/server/bin/lab-ack-window.sh
+  open|close|status|verify` — holds the ack window open (stops the dashboard;
+  interactive sudo), restores it (passwordless restart + health check), and
+  runs the DB exactly-once check. Used by LT-04/06/09.
 
 - **Station outbox** (`burnin/outbox/` on the station): one `*.json.gz` +
   `*.meta.json` per result. `meta.status` ∈ `pending` → `acked` (or
