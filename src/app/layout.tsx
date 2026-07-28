@@ -8,6 +8,7 @@ import { SettingsProvider } from "@/contexts/settings-context";
 import { TestDataCacheProvider } from "@/contexts/TestDataCacheContext";
 import { AnnotationCacheProvider } from "@/contexts/AnnotationCacheContext";
 import { HoverSidebar } from "@/components/hover-sidebar";
+import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -48,6 +49,7 @@ export default function RootLayout({
                   <AnnotationCacheProvider>
                     <HoverSidebar />
                     {children}
+                    <Toaster />
                   </AnnotationCacheProvider>
                 </TestDataCacheProvider>
               </TimezoneProvider>

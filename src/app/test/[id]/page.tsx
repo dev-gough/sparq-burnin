@@ -1877,6 +1877,7 @@ export default function TestPage() {
                 testId={testData.test_id}
                 serialNumber={testData.serial_number}
                 startTime={testData.start_time}
+                overallStatus={testData.overall_status}
               />
             </div>
           </div>
