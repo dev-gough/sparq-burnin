@@ -23,6 +23,7 @@ import {
 import { bucketRange, type ChartBucket } from "@/lib/chart-theme";
 import { useBucketStats } from "@/hooks/useBucketStats";
 import { usePeriodHasData } from "@/hooks/usePeriodHasData";
+import { cn } from "@/lib/utils";
 
 /**
  * SSR-safe defaults (no localStorage). Prefs are applied once after mount
@@ -375,8 +376,9 @@ export default function Page() {
     selectedDate || (isSingleDayFilter ? tableDateFrom : "");
   const dayDrillActive = Boolean(selectedDate);
 
-  // Show skeleton shell immediately (with header). Only swap to empty once
-  // the fast EXISTS probe confirms no rows — never wait on a blank main area.
+  // Skeleton shell as soon as we are not confirmed-empty. Do NOT remount this
+  // shell when period/annotation changes (no key) — remounting restarts the
+  // enter animation and caused a mid-fade blank flash.
   const showEmpty = filtersReady && hasData === false;
   const showDashboardShell = !showEmpty;
 
@@ -384,6 +386,24 @@ export default function Page() {
     dashboardRange.kind === "custom"
       ? `custom-${dashboardRange.from}-${dashboardRange.to}`
       : dashboardRange.kind;
+
+  // One-shot enter animation for the main shell (not on every soft period update)
+  const shellAnimatedRef = React.useRef(false);
+  const [shellEnterClass, setShellEnterClass] = React.useState(
+    "dashboard-skeleton-enter",
+  );
+  React.useEffect(() => {
+    if (showDashboardShell && !shellAnimatedRef.current) {
+      shellAnimatedRef.current = true;
+      setShellEnterClass("dashboard-skeleton-enter");
+      const t = window.setTimeout(() => setShellEnterClass(""), 200);
+      return () => window.clearTimeout(t);
+    }
+    if (showEmpty) {
+      // Allow a fresh shell fade if we leave empty → populated later
+      shellAnimatedRef.current = false;
+    }
+  }, [showDashboardShell, showEmpty]);
 
   return (
     <div className="ml-10 flex min-h-dvh flex-col">
@@ -413,8 +433,10 @@ export default function Page() {
 
           {showDashboardShell && (
             <div
-              key={`dash-${periodKey}-${annotationFilter}`}
-              className="dashboard-skeleton-enter mx-auto flex w-full flex-col gap-4 px-4 py-4 md:gap-6 md:py-6 lg:px-6 4xl:gap-8 4xl:px-8 5xl:gap-10 5xl:px-12"
+              className={cn(
+                "mx-auto flex w-full flex-col gap-4 px-4 py-4 md:gap-6 md:py-6 lg:px-6 4xl:gap-8 4xl:px-8 5xl:gap-10 5xl:px-12",
+                shellEnterClass,
+              )}
             >
               {/* Day-drill chip: linked stays on, but table dates ≠ dashboard period */}
               {dayDrillActive && (

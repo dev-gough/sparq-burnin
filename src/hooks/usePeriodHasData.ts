@@ -36,7 +36,6 @@ export function usePeriodHasData(opts: {
 
   React.useEffect(() => {
     if (!enabled) {
-      setHasData(null);
       setProbing(true);
       return;
     }
@@ -44,8 +43,8 @@ export function usePeriodHasData(opts: {
     const abort = new AbortController();
     const epochAtStart = requestEpoch;
 
-    // Reset immediately so we don't flash the previous period's empty/full UI
-    setHasData(null);
+    // Keep previous hasData while probing (stale-while-revalidate) so the
+    // dashboard shell does not unmount / re-animate mid-transition.
     setProbing(true);
 
     async function probe() {
