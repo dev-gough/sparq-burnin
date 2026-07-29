@@ -13,6 +13,8 @@ export const burninChartColors = {
     base: "#f43f5e",
     soft: (alpha: number) => `rgba(244, 63, 94, ${alpha})`,
   },
+  /** Neutral / activity accent (volume bars, MA lines) — not pass/fail */
+  accent: { indigo: "#6366f1" },
   grid: {
     light: "rgba(100, 116, 139, 0.14)",
     dark: "rgba(148, 163, 184, 0.14)",
@@ -20,6 +22,27 @@ export const burninChartColors = {
   text: { light: "#4b5563", dark: "#d1d5db" },
   muted: { light: "#9ca3af", dark: "#6b7280" },
 } as const;
+
+/**
+ * Multi-series categorical palette for pies / stacked timelines.
+ * Intentionally omits failure-red (`failed.base`) so rose stays reserved
+ * for failure-rate series on the same page.
+ */
+export const burninSeriesPalette = [
+  "#6366f1",
+  "#10b981",
+  "#f59e0b",
+  "#8b5cf6",
+  "#06b6d4",
+  "#d946ef",
+  "#84cc16",
+  "#f97316",
+  "#0ea5e9",
+  "#a855f7",
+  "#14b8a6",
+  "#eab308",
+  "#64748b",
+] as const;
 
 /** Parse API date as UTC calendar day (not local midnight). */
 export function parseUtcDateOnly(dateStr: string): Date {
