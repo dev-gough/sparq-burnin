@@ -250,7 +250,7 @@ export function FailureRateStrip({
 
   return (
     <Card className="@container/card gap-0 overflow-hidden py-0 shadow-sm">
-      <CardHeader className="flex shrink-0 flex-row items-center justify-between gap-0 space-y-0 px-4 pb-0 pt-2">
+      <CardHeader className="flex shrink-0 flex-row items-center justify-between gap-0 space-y-0 px-4 pb-1 pt-2">
         <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Failure rate over time
         </CardTitle>
