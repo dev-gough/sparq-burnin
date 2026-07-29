@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 type RollingNumberProps = {
   /** Numeric value to show; null while waiting for first payload. */
   value: number | null;
-  /** While true, reels sit on zeros; when false, they roll to `value`. */
+  /** While true, show a single 0; when false, roll to `value`. */
   pending: boolean;
   /** Format the number into display characters (digits, commas, decimal). */
   format: (n: number) => string;
@@ -16,10 +16,33 @@ type RollingNumberProps = {
   className?: string;
 };
 
+type DisplayPart =
+  | { kind: "digit"; digit: number; place: number }
+  | { kind: "sep"; char: string };
+
 /**
- * Odometer-style digit reel: always shows digits (starting at zeros — no
- * skeleton bar). When data arrives or the period changes, columns roll
- * to the new value with a light left-to-right cascade.
+ * Build display parts from a formatted string. Digit `place` is counted from
+ * the right (ones=0) so columns stay stable as the number gains digits.
+ */
+function partsFromFormatted(formatted: string): DisplayPart[] {
+  const chars = formatted.split("");
+  let place = 0;
+  const parts: DisplayPart[] = new Array(chars.length);
+  for (let i = chars.length - 1; i >= 0; i--) {
+    const ch = chars[i];
+    if (/\d/.test(ch)) {
+      parts[i] = { kind: "digit", digit: Number(ch), place };
+      place += 1;
+    } else {
+      parts[i] = { kind: "sep", char: ch };
+    }
+  }
+  return parts;
+}
+
+/**
+ * Odometer-style digit reel without a padded "00000" intermediate frame.
+ * Parks on format(0) while pending, then rolls place-by-place (ones first).
  */
 export function RollingNumber({
   value,
@@ -35,90 +58,72 @@ export function RollingNumber({
       : "flex h-[1.875rem] shrink-0 items-center sm:h-9";
 
   const zeroStr = format(0);
-
-  // What the reels currently show (drives CSS transform)
-  const [display, setDisplay] = React.useState(zeroStr);
-  const prevTarget = React.useRef<string | null>(null);
-
-  React.useEffect(() => {
-    // Pending / no value → park on zeros
-    if (pending || value === null) {
-      setDisplay(zeroStr);
-      prevTarget.current = zeroStr;
-      return;
-    }
-
-    const next = format(value);
-
-    // First real value, or width/shape change: zeros of new shape → roll
-    if (
-      prevTarget.current === null ||
-      prevTarget.current === zeroStr ||
-      prevTarget.current.replace(/\d/g, "0") !== next.replace(/\d/g, "0")
-    ) {
-      const zeros = next.replace(/\d/g, "0");
-      setDisplay(zeros);
-      prevTarget.current = next;
-      const id = requestAnimationFrame(() => {
-        requestAnimationFrame(() => setDisplay(next));
-      });
-      return () => cancelAnimationFrame(id);
-    }
-
-    // Same digit width — roll in place
-    if (prevTarget.current !== next) {
-      prevTarget.current = next;
-      setDisplay(next);
-    }
-  }, [value, pending, format, zeroStr]);
-
-  const chars = display.split("");
-  const a11y = pending || value === null ? zeroStr : format(value);
-
-  // Cascade ones → tens → hundreds (right-to-left), matching odometer feel.
-  // Only digit columns count toward stagger; commas/decimals stay fixed.
-  let digitIndexFromRight = 0;
-  const digitDelays: number[] = new Array(chars.length).fill(0);
-  for (let i = chars.length - 1; i >= 0; i--) {
-    if (/\d/.test(chars[i])) {
-      digitDelays[i] = digitIndexFromRight * 35;
-      digitIndexFromRight += 1;
-    }
-  }
+  const displayStr =
+    pending || value === null ? zeroStr : format(value);
+  const parts = partsFromFormatted(displayStr);
 
   return (
-    <div className={cn(shell, "tabular-nums", className)} aria-label={a11y}>
+    <div
+      className={cn(shell, "tabular-nums", className)}
+      aria-label={displayStr}
+    >
       <span className="inline-flex items-center leading-none" aria-hidden>
-        {chars.map((ch, i) =>
-          /\d/.test(ch) ? (
+        {parts.map((part, i) =>
+          part.kind === "digit" ? (
             <DigitReel
-              key={`col-${i}-${chars.length}`}
-              digit={Number(ch)}
-              delayMs={digitDelays[i]}
+              key={`place-${part.place}`}
+              digit={part.digit}
+              delayMs={part.place * 35}
             />
           ) : (
             <span
-              key={`s-${i}-${ch}`}
+              key={`sep-${i}-${part.char}`}
               className="inline-block shrink-0 leading-none"
             >
-              {ch}
+              {part.char}
             </span>
           ),
         )}
         {suffix}
       </span>
-      <span className="sr-only">{a11y}</span>
+      <span className="sr-only">{displayStr}</span>
     </div>
   );
 }
 
+/**
+ * Single digit column. Mounts / resets at 0 then transitions to `digit`
+ * so we never need a full-string "00000" paint — new higher places simply
+ * appear and roll from 0 to their value.
+ */
 function DigitReel({ digit, delayMs }: { digit: number; delayMs: number }) {
+  const [pos, setPos] = React.useState(0);
+  const prevDigit = React.useRef<number | null>(null);
+
+  React.useEffect(() => {
+    // First paint for this place column, or digit change: ensure we animate
+    if (prevDigit.current === null) {
+      // Mount at 0, then roll to target (double rAF so the 0 frame paints)
+      setPos(0);
+      const id = requestAnimationFrame(() => {
+        requestAnimationFrame(() => setPos(digit));
+      });
+      prevDigit.current = digit;
+      return () => cancelAnimationFrame(id);
+    }
+
+    if (prevDigit.current !== digit) {
+      prevDigit.current = digit;
+      setPos(digit);
+    }
+  }, [digit]);
+
   return (
     <span className="relative inline-block h-[1em] w-[0.62em] shrink-0 overflow-hidden align-bottom leading-none">
       <span
         className="absolute left-0 top-0 flex w-full flex-col will-change-transform"
         style={{
-          transform: `translate3d(0, ${-digit}em, 0)`,
+          transform: `translate3d(0, ${-pos}em, 0)`,
           transitionProperty: "transform",
           transitionDuration: "700ms",
           transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
