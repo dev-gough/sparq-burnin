@@ -53,9 +53,9 @@ import {
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Toggle } from "@/components/ui/toggle";
 
-const FILTER_COOKIE_KEY = "burnin-data-table-filters";
+import { loadDashboardPrefs, patchDashboardPrefs } from "@/lib/dashboard-prefs";
 
-type FilterState = {
+type TableFilterPrefs = {
   serialSearch: string;
   statusFilter: string;
   firmwareFilter: string;
@@ -63,34 +63,6 @@ type FilterState = {
   dateFromFilter: string;
   dateToFilter: string;
   latestOnly: boolean;
-};
-
-const saveFiltersToCookie = (filters: FilterState) => {
-  try {
-    document.cookie = `${FILTER_COOKIE_KEY}=${encodeURIComponent(JSON.stringify(filters))}; path=/; max-age=${60 * 60 * 24 * 30}`; // 30 days
-  } catch (error) {
-    console.warn("Failed to save filters to cookie:", error);
-  }
-};
-
-const loadFiltersFromCookie = (): Partial<FilterState> => {
-  try {
-    if (typeof document === "undefined") return {};
-
-    const cookies = document.cookie.split(";");
-    const filterCookie = cookies.find((cookie) =>
-      cookie.trim().startsWith(`${FILTER_COOKIE_KEY}=`),
-    );
-
-    if (!filterCookie) return {};
-
-    const cookieValue = filterCookie.split("=")[1];
-    const decodedValue = decodeURIComponent(cookieValue);
-    return JSON.parse(decodedValue);
-  } catch (error) {
-    console.warn("Failed to load filters from cookie:", error);
-    return {};
-  }
 };
 
 export const testSchema = z.object({
@@ -317,18 +289,15 @@ export function DataTable({
     pageIndex: 0,
     pageSize: 30,
   });
-  // Initialize filter states from cookies (status is controlled by parent)
+  // Table-only prefs from localStorage (status/dates/annotation owned by parent page)
   const [serialSearch, setSerialSearch] = React.useState(() => {
-    const savedFilters = loadFiltersFromCookie();
-    return savedFilters.serialSearch || "";
+    return loadDashboardPrefs().serialSearch || "";
   });
   const [firmwareFilter, setFirmwareFilter] = React.useState(() => {
-    const savedFilters = loadFiltersFromCookie();
-    return savedFilters.firmwareFilter || "all";
+    return loadDashboardPrefs().firmwareFilter || "all";
   });
   const [latestOnly, setLatestOnly] = React.useState(() => {
-    const savedFilters = loadFiltersFromCookie();
-    return savedFilters.latestOnly || false;
+    return loadDashboardPrefs().latestOnly || false;
   });
   const [firmwareVersions, setFirmwareVersions] = React.useState<string[]>([]);
   const [annotationGroups, setAnnotationGroups] = React.useState<Array<{
@@ -481,18 +450,20 @@ export function DataTable({
     }
   }, [cachedGroups, cachedQuickOptions]);
 
-  // Save filters to cookies when they change
+  // Persist table-owned filters to localStorage (merge — keep dashboard fields)
   React.useEffect(() => {
-    const filterState: FilterState = {
+    const patch: Partial<TableFilterPrefs> = {
       serialSearch,
-      statusFilter,
       firmwareFilter,
+      latestOnly,
+      // Shared fields also written so a lone table update does not wipe them
+      // when page effect has not run yet; page is source of truth for these.
+      statusFilter,
       annotationFilter,
       dateFromFilter,
       dateToFilter,
-      latestOnly,
     };
-    saveFiltersToCookie(filterState);
+    patchDashboardPrefs(patch);
   }, [
     serialSearch,
     statusFilter,

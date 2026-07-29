@@ -45,7 +45,7 @@ interface HeroMetricsProps {
   annotationFilter: string;
   requestEpoch: number;
   onFailuresClick: () => void;
-  /** Skip fetch until parent cookie filters are ready. Default true. */
+  /** Skip fetch until parent localStorage prefs are ready. Default true. */
   enabled?: boolean;
 }
 

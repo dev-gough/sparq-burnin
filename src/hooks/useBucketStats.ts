@@ -25,7 +25,7 @@ export function useBucketStats(opts: {
   annotationFilter: string;
   bucket: ChartBucket;
   requestEpoch: number;
-  /** When false, skip fetch (e.g. until cookie filters hydrate). Default true. */
+  /** When false, skip fetch (e.g. until localStorage prefs hydrate). Default true. */
   enabled?: boolean;
 }): {
   data: BucketStats[];

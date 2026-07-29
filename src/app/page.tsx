@@ -14,38 +14,29 @@ import {
   resolveLinkedInitState,
   tableDatesForPill,
 } from "@/lib/dashboard-range";
+import {
+  loadDashboardPrefs,
+  patchDashboardPrefs,
+  prefsFromDashboardState,
+} from "@/lib/dashboard-prefs";
 import { bucketRange, type ChartBucket } from "@/lib/chart-theme";
 import { useBucketStats } from "@/hooks/useBucketStats";
 
-const FILTER_COOKIE_KEY = "burnin-data-table-filters";
-
-const loadFiltersFromCookie = (): Record<string, unknown> => {
-  try {
-    if (typeof document === "undefined") return {};
-
-    const cookies = document.cookie.split(";");
-    const filterCookie = cookies.find((cookie) =>
-      cookie.trim().startsWith(`${FILTER_COOKIE_KEY}=`),
-    );
-
-    if (!filterCookie) return {};
-
-    const cookieValue = filterCookie.split("=")[1];
-    const decodedValue = decodeURIComponent(cookieValue);
-    return JSON.parse(decodedValue);
-  } catch (error) {
-    console.warn("Failed to load filters from cookie:", error);
-    return {};
-  }
-};
-
 /**
- * SSR-safe defaults (no document.cookie). Cookies are applied once after mount
- * so server HTML and the first client render match (avoids hydration mismatches
- * when annotation filter / dates are cookie-persisted).
+ * SSR-safe defaults (no localStorage). Prefs are applied once after mount
+ * so server HTML and the first client render match (avoids hydration mismatches).
  */
 const SSR_DEFAULT_PILL: DashboardPill = "30d";
 const SSR_DEFAULT_RANGE: DashboardRange = { kind: SSR_DEFAULT_PILL };
+
+const PILL_KINDS: DashboardPill[] = ["7d", "30d", "90d", "all"];
+
+function isDashboardPill(value: unknown): value is DashboardPill {
+  return (
+    typeof value === "string" &&
+    (PILL_KINDS as string[]).includes(value)
+  );
+}
 
 export default function Page() {
   const [dashboardRange, setDashboardRange] =
@@ -60,35 +51,116 @@ export default function Page() {
   const [filterLinked, setFilterLinked] = React.useState(true);
   const [requestEpoch, setRequestEpoch] = React.useState(0);
 
-  // Defaults match SSR; cookie restore runs in useEffect below
+  // Defaults match SSR; localStorage restore runs in useEffect below
   const [annotationFilter, setAnnotationFilter] = React.useState<string>("all");
   const [statusFilter, setStatusFilter] = React.useState<string>("valid");
 
-  // Empty until mount so server/client first paint match; then pill span or cookies
+  // Empty until mount so server/client first paint match; then pill span or prefs
   const [tableDateFrom, setTableDateFrom] = React.useState<string>("");
   const [tableDateTo, setTableDateTo] = React.useState<string>("");
   /** True after unlinked multi-day chart drill (dashboard period unchanged). */
   const [bucketDrillUnlinked, setBucketDrillUnlinked] = React.useState(false);
-  /** False until cookie/local defaults applied — gates stats fetch. */
+  /** False until localStorage prefs applied — gates stats fetch. */
   const [filtersReady, setFiltersReady] = React.useState(false);
 
-  // Apply persisted filters after mount (client-only)
+  // Apply persisted filters after mount (client-only localStorage)
   React.useEffect(() => {
-    const saved = loadFiltersFromCookie();
-    const init = resolveLinkedInitState(
-      (saved.dateFromFilter as string) || "",
-      (saved.dateToFilter as string) || "",
-      SSR_DEFAULT_PILL,
+    const saved = loadDashboardPrefs();
+    const linked = saved.filterLinked !== false; // default true
+
+    let nextRange: DashboardRange;
+    let nextLastPill: DashboardPill = isDashboardPill(saved.lastPill)
+      ? saved.lastPill
+      : SSR_DEFAULT_PILL;
+
+    if (
+      saved.period === "custom" &&
+      saved.customFrom &&
+      saved.customTo &&
+      saved.customFrom <= saved.customTo
+    ) {
+      nextRange = {
+        kind: "custom",
+        from: saved.customFrom,
+        to: saved.customTo,
+      };
+    } else if (isDashboardPill(saved.period)) {
+      nextRange = { kind: saved.period };
+      nextLastPill = saved.period;
+    } else {
+      const init = resolveLinkedInitState(
+        saved.dateFromFilter || "",
+        saved.dateToFilter || "",
+        SSR_DEFAULT_PILL,
+      );
+      nextRange = init.dashboardRange;
+      nextLastPill = init.lastPill;
+    }
+
+    setDashboardRange(nextRange);
+    setLastPill(nextLastPill);
+    setFilterLinked(linked);
+
+    if (nextRange.kind === "custom") {
+      setTableDateFrom(
+        linked ? nextRange.from : saved.dateFromFilter || nextRange.from,
+      );
+      setTableDateTo(
+        linked ? nextRange.to : saved.dateToFilter || nextRange.to,
+      );
+    } else if (linked) {
+      const span = tableDatesForPill(nextRange.kind);
+      setTableDateFrom(span.from);
+      setTableDateTo(span.to);
+    } else {
+      setTableDateFrom(saved.dateFromFilter || "");
+      setTableDateTo(saved.dateToFilter || "");
+    }
+
+    setBucket(
+      saved.bucket &&
+        ["day", "week", "month", "quarter", "year"].includes(saved.bucket)
+        ? saved.bucket
+        : defaultBucketForDashboardRange(nextRange),
     );
-    setDashboardRange(init.dashboardRange);
-    setLastPill(init.lastPill);
-    setTableDateFrom(init.tableDateFrom);
-    setTableDateTo(init.tableDateTo);
-    setBucket(defaultBucketForDashboardRange(init.dashboardRange));
-    setAnnotationFilter((saved.annotationFilter as string) || "all");
-    setStatusFilter((saved.statusFilter as string) || "valid");
+    setChartMode(
+      saved.chartMode === "all" || saved.chartMode === "recent"
+        ? saved.chartMode
+        : "recent",
+    );
+    setAnnotationFilter(saved.annotationFilter || "all");
+    setStatusFilter(saved.statusFilter || "valid");
     setFiltersReady(true);
   }, []);
+
+  // Persist command-center + shared filters whenever they change (after hydrate)
+  React.useEffect(() => {
+    if (!filtersReady) return;
+    patchDashboardPrefs(
+      prefsFromDashboardState({
+        dashboardRange,
+        lastPill,
+        chartMode,
+        bucket,
+        filterLinked,
+        annotationFilter,
+        statusFilter,
+        tableDateFrom,
+        tableDateTo,
+      }),
+    );
+  }, [
+    filtersReady,
+    dashboardRange,
+    lastPill,
+    chartMode,
+    bucket,
+    filterLinked,
+    annotationFilter,
+    statusFilter,
+    tableDateFrom,
+    tableDateTo,
+  ]);
 
   // Shared bucket series for volume chart + rate strip (one API call)
   const {
