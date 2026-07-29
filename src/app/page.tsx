@@ -375,11 +375,10 @@ export default function Page() {
     selectedDate || (isSingleDayFilter ? tableDateFrom : "");
   const dayDrillActive = Boolean(selectedDate);
 
-  // Probe-first UI path: checking → empty | skeleton → content
-  const showEmpty = filtersReady && !probing && hasData === false;
-  const showDashboard = filtersReady && !probing && hasData === true;
-  // Brief blank while EXISTS runs — avoids skeleton flash on empty periods
-  const showProbing = !filtersReady || probing;
+  // Show skeleton shell immediately (with header). Only swap to empty once
+  // the fast EXISTS probe confirms no rows — never wait on a blank main area.
+  const showEmpty = filtersReady && hasData === false;
+  const showDashboardShell = !showEmpty;
 
   const periodKey =
     dashboardRange.kind === "custom"
@@ -400,15 +399,6 @@ export default function Page() {
       />
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
-          {/* Quiet while EXISTS probe runs — no skeleton pop on empty periods */}
-          {showProbing && (
-            <div
-              className="min-h-[calc(100dvh-7.5rem)]"
-              aria-busy="true"
-              aria-label="Checking for burn-in data"
-            />
-          )}
-
           {showEmpty && (
             <DashboardEmptyState
               key={`empty-${periodKey}-${annotationFilter}`}
@@ -421,7 +411,7 @@ export default function Page() {
             />
           )}
 
-          {showDashboard && (
+          {showDashboardShell && (
             <div
               key={`dash-${periodKey}-${annotationFilter}`}
               className="dashboard-skeleton-enter mx-auto flex w-full flex-col gap-4 px-4 py-4 md:gap-6 md:py-6 lg:px-6 4xl:gap-8 4xl:px-8 5xl:gap-10 5xl:px-12"

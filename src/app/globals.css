@@ -163,14 +163,15 @@
   }
 }
 
+/* Short fade so skeletons appear with chrome, not after a long blank */
 .dashboard-skeleton-enter {
   opacity: 0;
-  animation: dashboard-fade-in 300ms ease-out forwards;
+  animation: dashboard-fade-in 150ms ease-out forwards;
 }
 
 .dashboard-content-enter {
   opacity: 0;
-  animation: dashboard-fade-in 280ms ease-out forwards;
+  animation: dashboard-fade-in 150ms ease-out forwards;
 }
 
 .dashboard-empty-enter {
