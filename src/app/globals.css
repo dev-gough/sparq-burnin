@@ -141,3 +141,39 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Dashboard content transitions (period empty ↔ populated) */
+@keyframes dashboard-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dashboard-empty-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.dashboard-skeleton-enter {
+  opacity: 0;
+  animation: dashboard-fade-in 300ms ease-out forwards;
+}
+
+.dashboard-content-enter {
+  opacity: 0;
+  animation: dashboard-fade-in 280ms ease-out forwards;
+}
+
+.dashboard-empty-enter {
+  opacity: 0;
+  animation: dashboard-empty-in 380ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}

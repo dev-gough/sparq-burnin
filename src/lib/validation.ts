@@ -21,6 +21,8 @@ const ALLOWED_VIEWS = [
   'firmware-versions',
   'annotations',
   'annotation-summary',
+  /** Fast EXISTS probe for empty-period UI gating */
+  'has-data',
 ] as const;
 type ViewType = typeof ALLOWED_VIEWS[number];
 

@@ -32,7 +32,7 @@ export function DashboardEmptyState({
 
   return (
     <div
-      className="flex min-h-[calc(100dvh-7.5rem)] flex-col items-center justify-center px-4 py-10"
+      className="dashboard-empty-enter flex min-h-[calc(100dvh-7.5rem)] flex-col items-center justify-center px-4 py-10"
       role="status"
     >
       <div className="relative w-full max-w-lg rounded-2xl border bg-card px-8 py-12 text-center shadow-sm">

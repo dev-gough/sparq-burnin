@@ -22,6 +22,7 @@ import {
 } from "@/lib/dashboard-prefs";
 import { bucketRange, type ChartBucket } from "@/lib/chart-theme";
 import { useBucketStats } from "@/hooks/useBucketStats";
+import { usePeriodHasData } from "@/hooks/usePeriodHasData";
 
 /**
  * SSR-safe defaults (no localStorage). Prefs are applied once after mount
@@ -164,6 +165,20 @@ export default function Page() {
   ]);
 
   /**
+   * Fast EXISTS probe before mounting heavy KPI/chart fetches.
+   * Gates empty-state vs skeleton/content path.
+   */
+  const { hasData, probing } = usePeriodHasData({
+    dashboardRange,
+    annotationFilter,
+    requestEpoch,
+    enabled: filtersReady,
+  });
+
+  /** Full dashboard data loads only after we know the period is non-empty. */
+  const loadDashboardData = filtersReady && hasData === true;
+
+  /**
    * Failure-rate strip uses period-based bucketing only (smart default).
    * Volume "Group by" must not refetch/redraw the strip.
    */
@@ -182,7 +197,7 @@ export default function Page() {
     annotationFilter,
     bucket: stripBucket,
     requestEpoch,
-    enabled: filtersReady,
+    enabled: loadDashboardData,
   });
 
   const {
@@ -195,7 +210,7 @@ export default function Page() {
     annotationFilter,
     bucket,
     requestEpoch,
-    enabled: filtersReady,
+    enabled: loadDashboardData,
   });
 
   const bumpEpoch = React.useCallback(() => {
@@ -358,11 +373,16 @@ export default function Page() {
     selectedDate || (isSingleDayFilter ? tableDateFrom : "");
   const dayDrillActive = Boolean(selectedDate);
 
-  // Period has zero volume buckets → whole dashboard is empty (not partial load)
-  const periodStatsReady = filtersReady && !volumeLoading;
-  const isPeriodEmpty =
-    periodStatsReady &&
-    volumeStats.every((row) => (row.passed || 0) + (row.failed || 0) === 0);
+  // Probe-first UI path: checking → empty | skeleton → content
+  const showEmpty = filtersReady && !probing && hasData === false;
+  const showDashboard = filtersReady && !probing && hasData === true;
+  // Brief blank while EXISTS runs — avoids skeleton flash on empty periods
+  const showProbing = !filtersReady || probing;
+
+  const periodKey =
+    dashboardRange.kind === "custom"
+      ? `custom-${dashboardRange.from}-${dashboardRange.to}`
+      : dashboardRange.kind;
 
   return (
     <div className="ml-10 flex min-h-dvh flex-col">
@@ -377,8 +397,18 @@ export default function Page() {
       />
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
-          {isPeriodEmpty ? (
+          {/* Quiet while EXISTS probe runs — no skeleton pop on empty periods */}
+          {showProbing && (
+            <div
+              className="min-h-[calc(100dvh-7.5rem)]"
+              aria-busy="true"
+              aria-label="Checking for burn-in data"
+            />
+          )}
+
+          {showEmpty && (
             <DashboardEmptyState
+              key={`empty-${periodKey}-${annotationFilter}`}
               dashboardRange={dashboardRange}
               onShowAllTime={
                 dashboardRange.kind !== "all"
@@ -386,8 +416,13 @@ export default function Page() {
                   : undefined
               }
             />
-          ) : (
-            <div className="mx-auto flex w-full flex-col gap-4 px-4 py-4 md:gap-6 md:py-6 lg:px-6 4xl:gap-8 4xl:px-8 5xl:gap-10 5xl:px-12">
+          )}
+
+          {showDashboard && (
+            <div
+              key={`dash-${periodKey}-${annotationFilter}`}
+              className="dashboard-skeleton-enter mx-auto flex w-full flex-col gap-4 px-4 py-4 md:gap-6 md:py-6 lg:px-6 4xl:gap-8 4xl:px-8 5xl:gap-10 5xl:px-12"
+            >
               {/* Day-drill chip: linked stays on, but table dates ≠ dashboard period */}
               {dayDrillActive && (
                 <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
@@ -431,12 +466,12 @@ export default function Page() {
                 annotationFilter={annotationFilter}
                 requestEpoch={requestEpoch}
                 onFailuresClick={handleFailuresClick}
-                enabled={filtersReady}
+                enabled={loadDashboardData}
               />
 
               <FailureRateStrip
                 data={stripStats}
-                loading={stripLoading || !filtersReady}
+                loading={stripLoading || !loadDashboardData}
                 refreshing={stripRefreshing}
                 annotationFilter={annotationFilter}
                 bucket={stripBucket}
@@ -452,7 +487,7 @@ export default function Page() {
                 bucket={bucket}
                 onBucketChange={handleBucketChange}
                 data={volumeStats}
-                loading={volumeLoading || !filtersReady}
+                loading={volumeLoading || !loadDashboardData}
                 refreshing={volumeRefreshing}
               />
 
@@ -462,10 +497,10 @@ export default function Page() {
                 annotationFilter={annotationFilter}
                 onAnnotationFilterChange={setAnnotationFilter}
                 requestEpoch={requestEpoch}
-                enabled={filtersReady}
+                enabled={loadDashboardData}
               />
 
-              {filtersReady ? (
+              {loadDashboardData ? (
                 <DataTable
                   onClearDateFilter={handleClearDateFilter}
                   annotationFilter={annotationFilter}

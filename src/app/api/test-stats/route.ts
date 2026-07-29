@@ -649,6 +649,93 @@ export async function GET(request: NextRequest) {
     }
 
     /**
+     * Extremely cheap existence probe for empty-period UI gating.
+     * Single EXISTS on Tests (+ optional annotation) with the same time window
+     * as summary — no aggregation, no compare, no bucketing.
+     */
+    if (view === "has-data") {
+      const rawTimeRange = searchParams.get("timeRange");
+      const rawDateFrom = searchParams.get("dateFrom");
+      const rawDateTo = searchParams.get("dateTo");
+      const annotationFilter = searchParams.get("annotation");
+
+      const { dateFrom, dateTo, error: dateError } = validateDateRange(
+        rawDateFrom,
+        rawDateTo,
+      );
+      if (dateError) {
+        return NextResponse.json({ error: dateError }, { status: 400 });
+      }
+
+      const validatedTimeRange = validateTimeRange(rawTimeRange);
+      const window = getCurrentWindow({
+        timeRange: validatedTimeRange,
+        dateFrom,
+        dateTo,
+      });
+
+      const { sql: windowSql, params: timeParams } = buildWindowTimeFilter(
+        window,
+        "t.start_time_utc",
+        1,
+      );
+      const timeFilter = windowSql ? `AND ${windowSql}` : "";
+
+      const isGroupFilter = annotationFilter?.startsWith("group:") ?? false;
+      const filterValue =
+        isGroupFilter && annotationFilter
+          ? annotationFilter.substring(6)
+          : annotationFilter;
+      const annotationActive =
+        !!annotationFilter && annotationFilter !== "all";
+
+      let annotationSql = "";
+      const queryParams: string[] = [...timeParams];
+      if (annotationActive) {
+        const paramIndex = queryParams.length + 1;
+        if (isGroupFilter && filterValue) {
+          const g = annotationGroupExistsSql(
+            "t.test_id",
+            filterValue,
+            paramIndex,
+          );
+          annotationSql = `AND ${g.sql}`;
+          if (g.usesParam) queryParams.push(filterValue);
+        } else if (filterValue) {
+          annotationSql = `AND EXISTS (
+            SELECT 1 FROM TestAnnotations ta
+            WHERE ta.current_test_id = t.test_id
+              AND ta.annotation_text = $${paramIndex}
+          )`;
+          queryParams.push(filterValue);
+        }
+      }
+
+      // EXISTS short-circuits — typically sub-ms with the time index / sequential scan stop
+      const probe = `
+        SELECT EXISTS (
+          SELECT 1
+          FROM Tests t
+          WHERE t.overall_status != 'INVALID'
+            ${timeFilter}
+            ${annotationSql}
+          LIMIT 1
+        ) AS has_data
+      `;
+      const result = await client.query(probe, queryParams);
+      const hasData = Boolean(result.rows[0]?.has_data);
+
+      return NextResponse.json({
+        hasData,
+        timeRange: validatedTimeRange,
+        annotation:
+          annotationFilter && annotationFilter !== ""
+            ? annotationFilter
+            : "all",
+      });
+    }
+
+    /**
      * Lightweight top causes + untagged failed count for the command-center insights strip.
      * Same time / chartMode population rules as summary. Does NOT use failure-analytics timelines.
      */
