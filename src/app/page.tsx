@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ChartAreaInteractive } from "@/components/chart-area-interactive";
 import { DataTable } from "@/components/data-table";
+import { AnnotationInsights } from "@/components/dashboard/annotation-insights";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { FailureRateStrip } from "@/components/dashboard/failure-rate-strip";
 import { HeroMetrics } from "@/components/dashboard/hero-metrics";
@@ -13,7 +14,7 @@ import {
   resolveLinkedInitState,
   tableDatesForPill,
 } from "@/lib/dashboard-range";
-import type { ChartBucket } from "@/lib/chart-theme";
+import { bucketRange, type ChartBucket } from "@/lib/chart-theme";
 import { useBucketStats } from "@/hooks/useBucketStats";
 
 const FILTER_COOKIE_KEY = "burnin-data-table-filters";
@@ -175,12 +176,32 @@ export default function Page() {
     [promoteFromTableDates],
   );
 
-  /** Chart day click: table dates only; never promote dashboard (design). */
-  const handleDateClick = React.useCallback((date: string) => {
-    setSelectedDate(date);
-    setTableDateFrom(date);
-    setTableDateTo(date);
-  }, []);
+  /**
+   * Chart bar/point click:
+   * - day: table dates only (selectedDate); never promote dashboard
+   * - non-day: bucketRange() → table dates; if filterLinked also promote
+   *   dashboardRange to that custom span (unlinked: table only)
+   */
+  const handleDateClick = React.useCallback(
+    (date: string) => {
+      if (bucket === "day") {
+        setSelectedDate(date);
+        setTableDateFrom(date);
+        setTableDateTo(date);
+        return;
+      }
+      const { from, to } = bucketRange(date, bucket);
+      setSelectedDate("");
+      setTableDateFrom(from);
+      setTableDateTo(to);
+      if (filterLinked) {
+        setDashboardRange({ kind: "custom", from, to });
+        applySmartBucket({ kind: "custom", from, to });
+        bumpEpoch();
+      }
+    },
+    [bucket, filterLinked, applySmartBucket, bumpEpoch],
+  );
 
   const handleClearDateFilter = React.useCallback(() => {
     setSelectedDate("");
@@ -281,6 +302,14 @@ export default function Page() {
               onBucketChange={handleBucketChange}
               data={bucketStats}
               loading={bucketLoading}
+            />
+
+            <AnnotationInsights
+              dashboardRange={dashboardRange}
+              chartMode={chartMode}
+              annotationFilter={annotationFilter}
+              onAnnotationFilterChange={setAnnotationFilter}
+              requestEpoch={requestEpoch}
             />
 
             <DataTable

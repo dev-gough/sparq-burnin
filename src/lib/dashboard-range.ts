@@ -89,6 +89,22 @@ export function exportTimeRange(
   return range.kind;
 }
 
+/**
+ * Period-scoped link to /todo for the untagged-failures chip.
+ * Rolling pills map to the same UTC YMD window as tableDatesForPill;
+ * custom uses from/to; all-time links without dates (global list).
+ */
+export function todoHrefFromDashboardRange(range: DashboardRange): string {
+  if (range.kind === "custom") {
+    return `/todo?dateFrom=${encodeURIComponent(range.from)}&dateTo=${encodeURIComponent(range.to)}`;
+  }
+  if (range.kind === "all") {
+    return "/todo";
+  }
+  const { from, to } = tableDatesForPill(range.kind);
+  return `/todo?dateFrom=${encodeURIComponent(from)}&dateTo=${encodeURIComponent(to)}`;
+}
+
 /** Default bucket for a dashboard range (smart defaults). */
 export function defaultBucketForDashboardRange(
   range: DashboardRange,

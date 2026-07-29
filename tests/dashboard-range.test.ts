@@ -5,6 +5,7 @@ import {
   exportTimeRange,
   resolveLinkedInitState,
   tableDatesForPill,
+  todoHrefFromDashboardRange,
   utcDaysAgoYmd,
   utcTodayYmd,
 } from "@/lib/dashboard-range";
@@ -59,6 +60,37 @@ describe("dashboardRangeToApiParams", () => {
         to: "2026-01-31",
       }),
     ).toEqual({ dateFrom: "2026-01-01", dateTo: "2026-01-31" });
+  });
+});
+
+describe("todoHrefFromDashboardRange", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("uses custom from/to", () => {
+    expect(
+      todoHrefFromDashboardRange({
+        kind: "custom",
+        from: "2026-01-01",
+        to: "2026-01-31",
+      }),
+    ).toBe("/todo?dateFrom=2026-01-01&dateTo=2026-01-31");
+  });
+
+  it("all-time has no query params", () => {
+    expect(todoHrefFromDashboardRange({ kind: "all" })).toBe("/todo");
+  });
+
+  it("rolling pills map to UTC window ending today", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-28T15:00:00Z"));
+    expect(todoHrefFromDashboardRange({ kind: "30d" })).toBe(
+      "/todo?dateFrom=2026-06-28&dateTo=2026-07-28",
+    );
+    expect(todoHrefFromDashboardRange({ kind: "7d" })).toBe(
+      "/todo?dateFrom=2026-07-21&dateTo=2026-07-28",
+    );
   });
 });
 

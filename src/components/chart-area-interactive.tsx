@@ -327,10 +327,11 @@ export function ChartAreaInteractive({
     };
   }, [chartData, isDarkMode, highlightDate, bucket]);
 
+  // Day and multi-day buckets both drill via onDateClick; page uses bucketRange()
+  // for non-day spans (linked → promote dashboardRange; unlinked → table only).
   const onEvents = React.useMemo(
     () => ({
       click: (params: { componentType?: string; name?: string }) => {
-        if (bucket !== "day") return;
         if (
           (params.componentType === "series" ||
             params.componentType === "xAxis") &&
@@ -341,7 +342,7 @@ export function ChartAreaInteractive({
         }
       },
     }),
-    [onDateClick, bucket],
+    [onDateClick],
   );
 
   const modeCaption =

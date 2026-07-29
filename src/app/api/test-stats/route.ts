@@ -584,6 +584,177 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(annotations);
     }
 
+    /**
+     * Lightweight top causes + untagged failed count for the command-center insights strip.
+     * Same time / chartMode population rules as summary. Does NOT use failure-analytics timelines.
+     */
+    if (view === "annotation-summary") {
+      const chartMode = validateChartMode(searchParams.get("chartMode"));
+      const rawTimeRange = searchParams.get("timeRange");
+      const rawDateFrom = searchParams.get("dateFrom");
+      const rawDateTo = searchParams.get("dateTo");
+      const limitParam = parseInt(searchParams.get("limit") || "5", 10);
+      const limit =
+        Number.isFinite(limitParam) && limitParam > 0
+          ? Math.min(limitParam, 20)
+          : 5;
+
+      const { dateFrom, dateTo, error: dateError } = validateDateRange(
+        rawDateFrom,
+        rawDateTo
+      );
+      if (dateError) {
+        return NextResponse.json({ error: dateError }, { status: 400 });
+      }
+
+      const validatedTimeRange = validateTimeRange(rawTimeRange);
+      const window = getCurrentWindow({
+        timeRange: validatedTimeRange,
+        dateFrom,
+        dateTo,
+      });
+
+      const { sql: windowSql, params: timeParams } = buildWindowTimeFilter(
+        window,
+        "t.start_time_utc",
+        1
+      );
+      const timeFilter = windowSql ? `AND ${windowSql}` : "";
+
+      // Same population as summary: latest-per-serial when recent, else all valid tests
+      let baseTestsCte: string;
+      if (chartMode === "recent") {
+        baseTestsCte = `
+          latest_tests AS (
+            SELECT t.*, i.serial_number,
+              ROW_NUMBER() OVER (
+                PARTITION BY i.serial_number
+                ORDER BY t.start_time_utc DESC
+              ) as rn
+            FROM Tests t
+            JOIN Inverters i ON t.inv_id = i.inv_id
+            WHERE t.overall_status != 'INVALID' ${timeFilter}
+          ),
+          base_tests AS (
+            SELECT * FROM latest_tests WHERE rn = 1
+          )`;
+      } else {
+        baseTestsCte = `
+          base_tests AS (
+            SELECT t.*, i.serial_number
+            FROM Tests t
+            JOIN Inverters i ON t.inv_id = i.inv_id
+            WHERE t.overall_status != 'INVALID' ${timeFilter}
+          )`;
+      }
+
+      // Resolve inclusive YMD range label (for client /todo links & captions)
+      let rangeFrom: string | null = null;
+      let rangeTo: string | null = null;
+      if (window.type === "absolute") {
+        rangeFrom = window.dateFrom;
+        rangeTo = window.dateTo;
+      } else if (window.type === "relative_open") {
+        const rangeResult = await client.query(
+          `SELECT
+             TO_CHAR(CURRENT_DATE - $1::int, 'YYYY-MM-DD') AS range_from,
+             TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD') AS range_to`,
+          [window.days]
+        );
+        rangeFrom = rangeResult.rows[0]?.range_from ?? null;
+        rangeTo = rangeResult.rows[0]?.range_to ?? null;
+      }
+
+      // Total failed + untagged failed in population
+      const countsResult = await client.query(
+        `
+        WITH ${baseTestsCte}
+        SELECT
+          COUNT(*) FILTER (WHERE overall_status = 'FAIL') AS total_failed,
+          COUNT(*) FILTER (
+            WHERE overall_status = 'FAIL'
+              AND NOT EXISTS (
+                SELECT 1 FROM TestAnnotations ta
+                WHERE ta.current_test_id = base_tests.test_id
+              )
+          ) AS untagged_failed
+        FROM base_tests
+        `,
+        timeParams
+      );
+
+      const totalFailed = parseInt(countsResult.rows[0]?.total_failed ?? "0", 10);
+      const untaggedFailed = parseInt(
+        countsResult.rows[0]?.untagged_failed ?? "0",
+        10
+      );
+
+      // Top annotation groups among failed tests (count annotation rows, match failure-analytics)
+      const groupsResult = await client.query(
+        `
+        WITH ${baseTestsCte}
+        SELECT
+          COALESCE(aqo.group_name, 'Other') AS name,
+          COUNT(*)::int AS count
+        FROM TestAnnotations ta
+        LEFT JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
+        JOIN base_tests t ON ta.current_test_id = t.test_id
+        WHERE t.overall_status = 'FAIL'
+          AND ta.current_test_id IS NOT NULL
+        GROUP BY aqo.group_name
+        ORDER BY count DESC
+        LIMIT $${timeParams.length + 1}
+        `,
+        [...timeParams, limit]
+      );
+
+      // Top quick-option texts among failed tests
+      const optionsResult = await client.query(
+        `
+        WITH ${baseTestsCte}
+        SELECT
+          aqo.option_text AS name,
+          COALESCE(aqo.group_name, 'Other') AS group_name,
+          COUNT(*)::int AS count
+        FROM TestAnnotations ta
+        JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
+        JOIN base_tests t ON ta.current_test_id = t.test_id
+        WHERE t.overall_status = 'FAIL'
+          AND ta.current_test_id IS NOT NULL
+        GROUP BY aqo.option_text, aqo.group_name
+        ORDER BY count DESC
+        LIMIT $${timeParams.length + 1}
+        `,
+        [...timeParams, limit]
+      );
+
+      const pct = (count: number) =>
+        totalFailed > 0
+          ? Math.round((count / totalFailed) * 1000) / 10
+          : 0;
+
+      const groups = groupsResult.rows.map((row) => ({
+        name: row.name as string,
+        count: parseInt(String(row.count), 10),
+        percentageOfFailed: pct(parseInt(String(row.count), 10)),
+      }));
+
+      const options = optionsResult.rows.map((row) => ({
+        name: row.name as string,
+        group_name: row.group_name as string,
+        count: parseInt(String(row.count), 10),
+        percentageOfFailed: pct(parseInt(String(row.count), 10)),
+      }));
+
+      return NextResponse.json({
+        groups,
+        options,
+        untaggedFailed,
+        totalFailed,
+        range: { from: rangeFrom, to: rangeTo },
+      });
+    }
+
     // Default: return bucketed statistics (daily by default)
     const chartMode = searchParams.get("chartMode") || "all"; // 'all' or 'recent'
     const bucket = validateBucket(searchParams.get("bucket")); // day/week/month/quarter/year

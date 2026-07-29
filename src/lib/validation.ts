@@ -15,7 +15,13 @@ const ALLOWED_BUCKETS = ['day', 'week', 'month', 'quarter', 'year'] as const;
 export type ChartBucket = typeof ALLOWED_BUCKETS[number];
 
 // Allowed view types
-const ALLOWED_VIEWS = ['summary', 'tests', 'firmware-versions', 'annotations'] as const;
+const ALLOWED_VIEWS = [
+  'summary',
+  'tests',
+  'firmware-versions',
+  'annotations',
+  'annotation-summary',
+] as const;
 type ViewType = typeof ALLOWED_VIEWS[number];
 
 /**
