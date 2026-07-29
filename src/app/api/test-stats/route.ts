@@ -72,6 +72,45 @@ interface TestRecord {
 }
 
 /**
+ * Synthetic group label from COALESCE(aqo.group_name, 'Other') in
+ * annotation-summary / failure-analytics. Free-text annotations (no quick
+ * option) and options with NULL group_name both roll up here — filter must
+ * use LEFT JOIN + null-check, not INNER JOIN equality to 'Other'.
+ */
+const UNGROUPED_ANNOTATION_LABEL = "Other";
+
+/**
+ * EXISTS fragment for group: filter on a test-id expression.
+ * Returns whether the caller must bind `groupName` as $paramIndex.
+ */
+function annotationGroupExistsSql(
+  testIdExpr: string,
+  groupName: string,
+  paramIndex: number
+): { sql: string; usesParam: boolean } {
+  if (groupName === UNGROUPED_ANNOTATION_LABEL) {
+    return {
+      sql: `EXISTS (
+        SELECT 1 FROM TestAnnotations ta
+        LEFT JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
+        WHERE ta.current_test_id = ${testIdExpr}
+          AND (aqo.option_text IS NULL OR aqo.group_name IS NULL)
+      )`,
+      usesParam: false,
+    };
+  }
+  return {
+    sql: `EXISTS (
+      SELECT 1 FROM TestAnnotations ta
+      JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
+      WHERE ta.current_test_id = ${testIdExpr}
+        AND aqo.group_name = $${paramIndex}
+    )`,
+    usesParam: true,
+  };
+}
+
+/**
  * Query summary stats for one time window.
  * Preserves annotation split semantics: total/passed unfiltered, failed filtered,
  * failureRate = filtered failures / all tests.
@@ -99,16 +138,19 @@ async function querySummaryStats(
     !!annotationFilter && annotationFilter !== "all";
 
   let summaryAnnotationFilterClause = "";
+  /** When true, bind filterValue after timeParams for the annotation EXISTS. */
+  let annotationUsesParam = false;
   if (annotationActive) {
     const annotationParamIndex = timeParams.length + 1;
-    if (isGroupFilter) {
+    if (isGroupFilter && filterValue) {
+      const groupExists = annotationGroupExistsSql(
+        "t.test_id",
+        filterValue,
+        annotationParamIndex
+      );
       summaryAnnotationFilterClause = `
-            AND EXISTS (
-              SELECT 1 FROM TestAnnotations ta
-              JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
-              WHERE ta.current_test_id = t.test_id
-              AND aqo.group_name = $${annotationParamIndex}
-            )`;
+            AND ${groupExists.sql}`;
+      annotationUsesParam = groupExists.usesParam;
     } else {
       summaryAnnotationFilterClause = `
             AND EXISTS (
@@ -116,6 +158,7 @@ async function querySummaryStats(
               WHERE ta.current_test_id = t.test_id
               AND ta.annotation_text = $${annotationParamIndex}
             )`;
+      annotationUsesParam = true;
     }
   }
 
@@ -197,8 +240,13 @@ async function querySummaryStats(
           `;
     }
 
-    const failedParams = [...timeParams, filterValue!];
-    const failedResult = await client.query(failedQuery, failedParams);
+    const failedParams = annotationUsesParam
+      ? [...timeParams, filterValue!]
+      : [...timeParams];
+    const failedResult =
+      failedParams.length > 0
+        ? await client.query(failedQuery, failedParams)
+        : await client.query(failedQuery);
     failed = parseInt(failedResult.rows[0].failed) || 0;
   } else {
     let summaryQuery: string;
@@ -409,9 +457,39 @@ export async function GET(request: NextRequest) {
       // Check if filtering by group or individual annotation
       const isGroupFilter = annotationFilter?.startsWith("group:") ?? false;
       const filterValue = isGroupFilter && annotationFilter ? annotationFilter.substring(6) : annotationFilter;
+      const annotationActive =
+        !!annotationFilter && annotationFilter !== "all";
+
+      // Other group uses LEFT JOIN null-check (no bind param); named groups/options use $1
+      const testsAnnotationUsesParam =
+        annotationActive &&
+        !(isGroupFilter && filterValue === UNGROUPED_ANNOTATION_LABEL);
+
+      // Param layout: [filterValue?] limit offset
+      const limitParamIdx = testsAnnotationUsesParam ? 2 : 1;
+      const offsetParamIdx = limitParamIdx + 1;
+      const testsQueryParams: (string | number)[] = [];
+      if (testsAnnotationUsesParam) {
+        testsQueryParams.push(filterValue!);
+      }
+      testsQueryParams.push(limit, offset);
 
       let testsQuery: string;
       if (latestOnly) {
+        let annSql = "";
+        if (annotationActive) {
+          if (isGroupFilter && filterValue) {
+            const g = annotationGroupExistsSql("lt.test_id", filterValue, 1);
+            annSql = `\n            AND ${g.sql}`;
+          } else {
+            annSql = `
+            AND EXISTS (
+              SELECT 1 FROM TestAnnotations ta2
+              WHERE ta2.current_test_id = lt.test_id
+              AND ta2.annotation_text = $1
+            )`;
+          }
+        }
         // Show only the most recent valid test per serial number (excluding INVALID)
         testsQuery = `
           WITH latest_tests AS (
@@ -459,27 +537,28 @@ export async function GET(request: NextRequest) {
           LEFT JOIN TestAnnotations ta ON lt.test_id = ta.current_test_id
           LEFT JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
           WHERE lt.rn = 1
-            ${annotationFilter && annotationFilter !== 'all' ? (
-              isGroupFilter ? `
-            AND EXISTS (
-              SELECT 1 FROM TestAnnotations ta2
-              JOIN AnnotationQuickOptions aqo ON ta2.annotation_text = aqo.option_text
-              WHERE ta2.current_test_id = lt.test_id
-              AND aqo.group_name = $1
-            )` : `
-            AND EXISTS (
-              SELECT 1 FROM TestAnnotations ta2
-              WHERE ta2.current_test_id = lt.test_id
-              AND ta2.annotation_text = $1
-            )`
-            ) : ''}
+            ${annSql}
           GROUP BY lt.test_id, lt.inv_id, lt.serial_number, lt.firmware_version,
                    lt.duration, lt.non_zero_status_flags, lt.status, lt.failure_reason, lt.start_time
           ORDER BY lt.start_time DESC
-          LIMIT $${annotationFilter && annotationFilter !== 'all' ? 2 : 1}
-          OFFSET $${annotationFilter && annotationFilter !== 'all' ? 3 : 2}
+          LIMIT $${limitParamIdx}
+          OFFSET $${offsetParamIdx}
         `;
       } else {
+        let annWhere = "";
+        if (annotationActive) {
+          if (isGroupFilter && filterValue) {
+            const g = annotationGroupExistsSql("t.test_id", filterValue, 1);
+            annWhere = `\n          WHERE ${g.sql}`;
+          } else {
+            annWhere = `
+          WHERE EXISTS (
+            SELECT 1 FROM TestAnnotations ta2
+            WHERE ta2.current_test_id = t.test_id
+            AND ta2.annotation_text = $1
+          )`;
+          }
+        }
         // Show all tests
         testsQuery = `
           SELECT
@@ -515,32 +594,17 @@ export async function GET(request: NextRequest) {
           JOIN Inverters i ON t.inv_id = i.inv_id
           LEFT JOIN TestAnnotations ta ON t.test_id = ta.current_test_id
           LEFT JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
-          ${annotationFilter && annotationFilter !== 'all' ? (
-            isGroupFilter ? `
-          WHERE EXISTS (
-            SELECT 1 FROM TestAnnotations ta2
-            JOIN AnnotationQuickOptions aqo ON ta2.annotation_text = aqo.option_text
-            WHERE ta2.current_test_id = t.test_id
-            AND aqo.group_name = $1
-          )` : `
-          WHERE EXISTS (
-            SELECT 1 FROM TestAnnotations ta2
-            WHERE ta2.current_test_id = t.test_id
-            AND ta2.annotation_text = $1
-          )`
-          ) : ''}
+          ${annWhere}
           GROUP BY t.test_id, t.inv_id, i.serial_number, t.firmware_version,
                    t.overall_status, t.failure_description, t.start_time_utc, t.end_time,
                    t.ac_status, t.ch1_status, t.ch2_status, t.ch3_status, t.ch4_status
           ORDER BY t.start_time_utc DESC
-          LIMIT $${annotationFilter && annotationFilter !== 'all' ? 2 : 1}
-          OFFSET $${annotationFilter && annotationFilter !== 'all' ? 3 : 2}
+          LIMIT $${limitParamIdx}
+          OFFSET $${offsetParamIdx}
         `;
       }
 
-      const result = annotationFilter && annotationFilter !== 'all'
-        ? await client.query(testsQuery, [filterValue, limit, offset])
-        : await client.query(testsQuery, [limit, offset]);
+      const result = await client.query(testsQuery, testsQueryParams);
 
       const tests: TestRecord[] = result.rows.map((row) => ({
         test_id: row.test_id,
@@ -648,7 +712,7 @@ export async function GET(request: NextRequest) {
           )`;
       }
 
-      // Resolve inclusive YMD range label (for client /todo links & captions)
+      // Inclusive YMD window matching SQL (client may use for /todo href)
       let rangeFrom: string | null = null;
       let rangeTo: string | null = null;
       if (window.type === "absolute") {
@@ -804,17 +868,20 @@ export async function GET(request: NextRequest) {
       !!chartAnnotationFilter && chartAnnotationFilter !== "all";
 
     // Build annotation filter for volume series (prefilter — legacy path)
+    // group:Other → free-text / null-group (no bind param); else $paramIndex
     let annotationFilter = "";
+    let chartAnnotationUsesParam = false;
     if (annotationActive) {
       const chartAnnotationParamIndex = chartTimeParams.length + 1;
-      if (isGroupFilter) {
+      if (isGroupFilter && filterValue) {
+        const g = annotationGroupExistsSql(
+          "t.test_id",
+          filterValue,
+          chartAnnotationParamIndex
+        );
         annotationFilter = `
-          AND EXISTS (
-            SELECT 1 FROM TestAnnotations ta
-            JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
-            WHERE ta.current_test_id = t.test_id
-            AND aqo.group_name = $${chartAnnotationParamIndex}
-          )`;
+          AND ${g.sql}`;
+        chartAnnotationUsesParam = g.usesParam;
       } else {
         annotationFilter = `
           AND EXISTS (
@@ -822,21 +889,22 @@ export async function GET(request: NextRequest) {
             WHERE ta.current_test_id = t.test_id
             AND ta.annotation_text = $${chartAnnotationParamIndex}
           )`;
+        chartAnnotationUsesParam = true;
       }
     }
 
     // EXISTS clause for rank-then-tag failedFiltered (applied AFTER rank, on test_id).
-    // Uses same param index as volume annotation when active.
+    // Uses same param index as volume annotation when active (when usesParam).
     let stripTagExists = "TRUE"; // annotation=all → all FAILs count
     if (annotationActive) {
       const stripAnnIdx = chartTimeParams.length + 1;
-      if (isGroupFilter) {
-        stripTagExists = `EXISTS (
-          SELECT 1 FROM TestAnnotations ta
-          JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
-          WHERE ta.current_test_id = bl.test_id
-            AND aqo.group_name = $${stripAnnIdx}
-        )`;
+      if (isGroupFilter && filterValue) {
+        const g = annotationGroupExistsSql(
+          "bl.test_id",
+          filterValue,
+          stripAnnIdx
+        );
+        stripTagExists = g.sql;
       } else {
         stripTagExists = `EXISTS (
           SELECT 1 FROM TestAnnotations ta
@@ -967,7 +1035,7 @@ export async function GET(request: NextRequest) {
 
     // Build final params array combining time and annotation filters
     const chartParams = [...chartTimeParams];
-    if (annotationActive) {
+    if (annotationActive && chartAnnotationUsesParam) {
       chartParams.push(filterValue!);
     }
 

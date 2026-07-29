@@ -108,15 +108,26 @@ export default function TodoPage() {
       filtered = filtered.filter(test => test.firmware_version === filterFirmware);
     }
 
-    // Apply date range filter
+    // Apply date range filter (UTC calendar days — match dashboard/API YMD windows)
     if (filterDateFrom) {
-      const fromDate = new Date(filterDateFrom);
-      filtered = filtered.filter(test => new Date(test.start_time) >= fromDate);
+      const fromUtc = `${filterDateFrom}T00:00:00.000Z`;
+      filtered = filtered.filter((test) => {
+        const start =
+          typeof test.start_time === "string"
+            ? test.start_time
+            : new Date(test.start_time).toISOString();
+        return start >= fromUtc;
+      });
     }
     if (filterDateTo) {
-      const toDate = new Date(filterDateTo);
-      toDate.setHours(23, 59, 59, 999); // End of day
-      filtered = filtered.filter(test => new Date(test.start_time) <= toDate);
+      const toUtc = `${filterDateTo}T23:59:59.999Z`;
+      filtered = filtered.filter((test) => {
+        const start =
+          typeof test.start_time === "string"
+            ? test.start_time
+            : new Date(test.start_time).toISOString();
+        return start <= toUtc;
+      });
     }
 
     // Sort

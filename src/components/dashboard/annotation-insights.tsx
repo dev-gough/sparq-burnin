@@ -42,6 +42,30 @@ interface AnnotationInsightsProps {
   requestEpoch: number;
 }
 
+/** Prefer API range (SQL window) for /todo; fall back to client dashboard helper. */
+function todoHrefFromSummary(
+  data: AnnotationSummary | null,
+  dashboardRange: DashboardRange,
+): string {
+  if (data?.range) {
+    const { from, to } = data.range;
+    if (from && to) {
+      return `/todo?dateFrom=${encodeURIComponent(from)}&dateTo=${encodeURIComponent(to)}`;
+    }
+    // Open/all-time window → global list
+    if (!from && !to) {
+      return "/todo";
+    }
+    if (from && !to) {
+      return `/todo?dateFrom=${encodeURIComponent(from)}`;
+    }
+    if (!from && to) {
+      return `/todo?dateTo=${encodeURIComponent(to)}`;
+    }
+  }
+  return todoHrefFromDashboardRange(dashboardRange);
+}
+
 /**
  * Compact top-causes strip for the command center.
  * Chips set annotationFilter (always applied to dashboard + table).
@@ -102,7 +126,7 @@ export function AnnotationInsights({
     return () => abort.abort();
   }, [dashboardRange, chartMode, requestEpoch]);
 
-  const todoHref = todoHrefFromDashboardRange(dashboardRange);
+  const todoHref = todoHrefFromSummary(data, dashboardRange);
 
   const toggleFilter = (value: string) => {
     if (annotationFilter === value) {
@@ -118,6 +142,9 @@ export function AnnotationInsights({
     data.totalFailed === 0 &&
     data.groups.length === 0 &&
     data.options.length === 0;
+
+  const tagCountTitle = (count: number, pct: number) =>
+    `${count} annotation tag${count === 1 ? "" : "s"} across failed tests (${pct}% of ${data?.totalFailed ?? 0} failures)`;
 
   return (
     <Card className="@container/card">
@@ -162,7 +189,7 @@ export function AnnotationInsights({
                       key={g.name}
                       type="button"
                       onClick={() => toggleFilter(value)}
-                      title={`${g.count} of ${data.totalFailed} failures (${g.percentageOfFailed}%)`}
+                      title={tagCountTitle(g.count, g.percentageOfFailed)}
                       className={cn(
                         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
                         active
@@ -201,7 +228,7 @@ export function AnnotationInsights({
                       key={`${o.group_name}:${o.name}`}
                       type="button"
                       onClick={() => toggleFilter(o.name)}
-                      title={`${o.group_name} · ${o.count} of ${data.totalFailed} (${o.percentageOfFailed}%)`}
+                      title={`${o.group_name} · ${tagCountTitle(o.count, o.percentageOfFailed)}`}
                       className={cn(
                         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
                         active
@@ -227,34 +254,45 @@ export function AnnotationInsights({
             )}
 
             {/* Untagged → period-scoped todo */}
-            <div className="flex flex-wrap items-center gap-2">
-              <Link
-                href={todoHref}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-                  data.untaggedFailed > 0
-                    ? "border-amber-500/40 bg-amber-500/10 text-amber-800 hover:bg-amber-500/15 dark:text-amber-300"
-                    : "border-border bg-muted/30 text-muted-foreground hover:bg-muted",
-                )}
-                title="Open unannotated failures for this period"
-              >
-                <IconAlertTriangle className="size-3.5 shrink-0" />
-                <span>
-                  Untagged failures
-                  <span className="ml-1.5 tabular-nums font-semibold">
-                    {data.untaggedFailed}
+            <div className="flex flex-col gap-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={todoHref}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                    data.untaggedFailed > 0
+                      ? "border-amber-500/40 bg-amber-500/10 text-amber-800 hover:bg-amber-500/15 dark:text-amber-300"
+                      : "border-border bg-muted/30 text-muted-foreground hover:bg-muted",
+                  )}
+                  title={
+                    chartMode === "recent"
+                      ? "Count is latest-per-inverter in this period; todo list includes all unannotated fails in the date range"
+                      : "Open unannotated failures for this period"
+                  }
+                >
+                  <IconAlertTriangle className="size-3.5 shrink-0" />
+                  <span>
+                    Untagged failures
+                    <span className="ml-1.5 tabular-nums font-semibold">
+                      {data.untaggedFailed}
+                    </span>
                   </span>
-                </span>
-                {dashboardRange.kind !== "all" && (
-                  <span className="text-[10px] font-normal opacity-75">
-                    in this period
+                  {dashboardRange.kind !== "all" && (
+                    <span className="text-[10px] font-normal opacity-75">
+                      in this period
+                    </span>
+                  )}
+                </Link>
+                {data.totalFailed > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    of {data.totalFailed} failed
                   </span>
                 )}
-              </Link>
-              {data.totalFailed > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  of {data.totalFailed} failed
-                </span>
+              </div>
+              {chartMode === "recent" && (
+                <p className="text-[11px] text-muted-foreground">
+                  Count: latest per inverter · list may include older runs
+                </p>
               )}
             </div>
           </div>

@@ -82,6 +82,8 @@ export default function Page() {
   const [tableDateTo, setTableDateTo] = React.useState<string>(
     () => init.tableDateTo,
   );
+  /** True after unlinked multi-day chart drill (dashboard period unchanged). */
+  const [bucketDrillUnlinked, setBucketDrillUnlinked] = React.useState(false);
 
   // Shared bucket series for volume chart + rate strip (one API call)
   const {
@@ -108,6 +110,7 @@ export default function Page() {
       setDashboardRange({ kind });
       setLastPill(kind);
       setSelectedDate("");
+      setBucketDrillUnlinked(false);
       applySmartBucket({ kind });
       bumpEpoch();
       if (filterLinked) {
@@ -123,6 +126,7 @@ export default function Page() {
     (from: string, to: string) => {
       setDashboardRange({ kind: "custom", from, to });
       setSelectedDate("");
+      setBucketDrillUnlinked(false);
       applySmartBucket({ kind: "custom", from, to });
       bumpEpoch();
       if (filterLinked) {
@@ -159,6 +163,7 @@ export default function Page() {
   const handleTableDateFromChange = React.useCallback(
     (from: string) => {
       setSelectedDate("");
+      setBucketDrillUnlinked(false);
       setTableDateFrom(from);
       tableDatesRef.current = { ...tableDatesRef.current, from };
       promoteFromTableDates(from, tableDatesRef.current.to);
@@ -169,6 +174,7 @@ export default function Page() {
   const handleTableDateToChange = React.useCallback(
     (to: string) => {
       setSelectedDate("");
+      setBucketDrillUnlinked(false);
       setTableDateTo(to);
       tableDatesRef.current = { ...tableDatesRef.current, to };
       promoteFromTableDates(tableDatesRef.current.from, to);
@@ -188,6 +194,7 @@ export default function Page() {
         setSelectedDate(date);
         setTableDateFrom(date);
         setTableDateTo(date);
+        setBucketDrillUnlinked(false);
         return;
       }
       const { from, to } = bucketRange(date, bucket);
@@ -195,9 +202,12 @@ export default function Page() {
       setTableDateFrom(from);
       setTableDateTo(to);
       if (filterLinked) {
+        setBucketDrillUnlinked(false);
         setDashboardRange({ kind: "custom", from, to });
         applySmartBucket({ kind: "custom", from, to });
         bumpEpoch();
+      } else {
+        setBucketDrillUnlinked(true);
       }
     },
     [bucket, filterLinked, applySmartBucket, bumpEpoch],
@@ -205,6 +215,7 @@ export default function Page() {
 
   const handleClearDateFilter = React.useCallback(() => {
     setSelectedDate("");
+    setBucketDrillUnlinked(false);
     if (filterLinked) {
       if (dashboardRange.kind === "custom") {
         setDashboardRange({ kind: lastPill });
@@ -276,6 +287,26 @@ export default function Page() {
                 </button>
               </div>
             )}
+
+            {/* Unlinked multi-day bucket drill: table dates only */}
+            {!dayDrillActive &&
+              bucketDrillUnlinked &&
+              tableDateFrom &&
+              tableDateTo && (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">
+                    Table: {tableDateFrom} – {tableDateTo}
+                  </span>
+                  <span>· dashboard period unchanged</span>
+                  <button
+                    type="button"
+                    className="ml-auto text-primary underline-offset-2 hover:underline"
+                    onClick={handleClearDateFilter}
+                  >
+                    Clear table dates
+                  </button>
+                </div>
+              )}
 
             <HeroMetrics
               dashboardRange={dashboardRange}
