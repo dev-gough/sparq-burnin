@@ -75,6 +75,17 @@ export function RollingNumber({
   const chars = display.split("");
   const a11y = pending || value === null ? zeroStr : format(value);
 
+  // Cascade ones → tens → hundreds (right-to-left), matching odometer feel.
+  // Only digit columns count toward stagger; commas/decimals stay fixed.
+  let digitIndexFromRight = 0;
+  const digitDelays: number[] = new Array(chars.length).fill(0);
+  for (let i = chars.length - 1; i >= 0; i--) {
+    if (/\d/.test(chars[i])) {
+      digitDelays[i] = digitIndexFromRight * 35;
+      digitIndexFromRight += 1;
+    }
+  }
+
   return (
     <div className={cn(shell, "tabular-nums", className)} aria-label={a11y}>
       <span className="inline-flex items-center leading-none" aria-hidden>
@@ -83,7 +94,7 @@ export function RollingNumber({
             <DigitReel
               key={`col-${i}-${chars.length}`}
               digit={Number(ch)}
-              delayMs={i * 35}
+              delayMs={digitDelays[i]}
             />
           ) : (
             <span
