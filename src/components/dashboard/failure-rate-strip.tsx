@@ -244,8 +244,8 @@ export function FailureRateStrip({
   }
 
   return (
-    <Card className="@container/card overflow-hidden">
-      <CardHeader className="flex-row items-center justify-between space-y-0 px-4 py-2.5">
+    <Card className="@container/card gap-0 overflow-hidden py-0 shadow-sm">
+      <CardHeader className="flex-row items-center justify-between gap-0 space-y-0 px-4 pb-0 pt-1.5">
         <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Failure rate over time
         </CardTitle>
@@ -255,15 +255,15 @@ export function FailureRateStrip({
           </span>
         )}
       </CardHeader>
-      <CardContent className="px-3 pb-3 pt-0 sm:px-4">
+      <CardContent className="px-3 pb-2 pt-0 sm:px-4">
         {loading ? (
-          <div className="flex h-[96px] items-center justify-center">
+          <div className="flex h-[112px] items-center justify-center">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
         ) : (
           <ReactECharts
             option={chartOption}
-            style={{ height: "96px", width: "100%" }}
+            style={{ height: "112px", width: "100%" }}
             opts={{ renderer: "canvas" }}
             notMerge
             lazyUpdate
