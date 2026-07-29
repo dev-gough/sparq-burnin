@@ -6,29 +6,20 @@ import type { EChartsOption } from "echarts";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  appendDashboardRangeParams,
-  type DashboardRange,
-} from "@/lib/dashboard-range";
-import {
   burninChartColors,
   formatBucketLabel,
   type ChartBucket,
 } from "@/lib/chart-theme";
-
-interface BucketStats {
-  date: string;
-  passed: number;
-  failed: number;
-  totalUnfiltered?: number;
-  failedFiltered?: number;
-}
+import {
+  hasStripFields,
+  type BucketStats,
+} from "@/hooks/useBucketStats";
 
 interface FailureRateStripProps {
-  dashboardRange: DashboardRange;
-  chartMode: string;
+  data: BucketStats[];
+  loading: boolean;
   annotationFilter: string;
   bucket: ChartBucket;
-  requestEpoch: number;
 }
 
 /**
@@ -38,18 +29,15 @@ interface FailureRateStripProps {
  * Hides when <2 buckets or strip fields missing under annotation filter.
  */
 export function FailureRateStrip({
-  dashboardRange,
-  chartMode,
+  data,
+  loading,
   annotationFilter,
   bucket,
-  requestEpoch,
 }: FailureRateStripProps) {
-  const [data, setData] = React.useState<BucketStats[] | null>(null);
-  const [loading, setLoading] = React.useState(true);
   const [isDarkMode, setIsDarkMode] = React.useState(false);
-  const [fieldsMissing, setFieldsMissing] = React.useState(false);
-
-  const annotationOn = annotationFilter && annotationFilter !== "all";
+  const annotationOn = Boolean(
+    annotationFilter && annotationFilter !== "all",
+  );
 
   React.useEffect(() => {
     const check = () =>
@@ -63,73 +51,10 @@ export function FailureRateStrip({
     return () => observer.disconnect();
   }, []);
 
-  React.useEffect(() => {
-    const abort = new AbortController();
-    const epoch = requestEpoch;
-
-    async function fetchStrip() {
-      try {
-        setLoading(true);
-        setFieldsMissing(false);
-        const params = new URLSearchParams({
-          chartMode,
-          annotation: annotationFilter,
-          bucket,
-        });
-        appendDashboardRangeParams(params, dashboardRange);
-
-        const response = await fetch(`/api/test-stats?${params}`, {
-          signal: abort.signal,
-        });
-        if (abort.signal.aborted || epoch !== requestEpoch) return;
-
-        if (!response.ok) {
-          setData([]);
-          return;
-        }
-
-        const json: BucketStats[] = await response.json();
-        if (abort.signal.aborted || epoch !== requestEpoch) return;
-
-        // When annotation filter is on, strip fields are required.
-        // When off, may derive from volume if fields absent (backward compat).
-        const hasStripFields =
-          json.length === 0 ||
-          json.every(
-            (row) =>
-              typeof row.totalUnfiltered === "number" &&
-              typeof row.failedFiltered === "number",
-          );
-
-        if (annotationOn && !hasStripFields) {
-          setFieldsMissing(true);
-          setData([]);
-          return;
-        }
-
-        setData(json);
-      } catch (e) {
-        if (abort.signal.aborted) return;
-        console.error("Failed to fetch failure-rate strip:", e);
-        setData([]);
-      } finally {
-        if (!abort.signal.aborted) setLoading(false);
-      }
-    }
-
-    fetchStrip();
-    return () => abort.abort();
-  }, [
-    dashboardRange,
-    chartMode,
-    annotationFilter,
-    bucket,
-    requestEpoch,
-    annotationOn,
-  ]);
+  const fieldsMissing = annotationOn && !hasStripFields(data);
 
   const series = React.useMemo(() => {
-    if (!data) return [];
+    if (fieldsMissing) return [];
     return data.map((row) => {
       let rate = 0;
       if (
@@ -141,17 +66,15 @@ export function FailureRateStrip({
             ? (row.failedFiltered / row.totalUnfiltered) * 100
             : 0;
       } else if (!annotationOn) {
-        // Safe fallback only when annotation is off
         const total = row.passed + row.failed;
         rate = total > 0 ? (row.failed / total) * 100 : 0;
       }
-      // If annotationOn and missing fields — already handled by fieldsMissing
       return {
         date: row.date,
         rate: Math.round(rate * 100) / 100,
       };
     });
-  }, [data, annotationOn]);
+  }, [data, annotationOn, fieldsMissing]);
 
   const chartOption: EChartsOption = React.useMemo(() => {
     const textColor = isDarkMode
@@ -263,10 +186,9 @@ export function FailureRateStrip({
     };
   }, [series, isDarkMode, bucket]);
 
-  // Hide rules (after hooks)
   if (fieldsMissing) {
     return (
-      <p className="text-xs text-muted-foreground px-1">
+      <p className="px-1 text-xs text-muted-foreground">
         Failure-rate trend unavailable for this filter
       </p>
     );
@@ -278,7 +200,7 @@ export function FailureRateStrip({
 
   return (
     <Card className="@container/card overflow-hidden">
-      <CardHeader className="flex-row items-center justify-between space-y-0 py-2.5 px-4">
+      <CardHeader className="flex-row items-center justify-between space-y-0 px-4 py-2.5">
         <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Failure rate over time
         </CardTitle>

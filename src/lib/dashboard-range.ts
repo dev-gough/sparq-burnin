@@ -115,3 +115,43 @@ export function defaultBucketForDashboardRange(
       return "day";
   }
 }
+
+/**
+ * Linked-mode init: keep dashboardRange and table dates aligned.
+ *
+ * - Both cookie dates present → promote dashboard to custom (same span)
+ * - Otherwise → default pill period + matching table span (ignore partial cookie dates)
+ *
+ * filterLinked defaults true and is not cookie-persisted; this prevents hero
+ * showing 30d while the table still has a stale cookie range.
+ */
+export function resolveLinkedInitState(
+  cookieDateFrom: string,
+  cookieDateTo: string,
+  defaultPill: DashboardPill = "30d",
+): {
+  dashboardRange: DashboardRange;
+  lastPill: DashboardPill;
+  tableDateFrom: string;
+  tableDateTo: string;
+} {
+  const from = (cookieDateFrom || "").trim();
+  const to = (cookieDateTo || "").trim();
+
+  if (from && to && from <= to) {
+    return {
+      dashboardRange: { kind: "custom", from, to },
+      lastPill: defaultPill,
+      tableDateFrom: from,
+      tableDateTo: to,
+    };
+  }
+
+  const span = tableDatesForPill(defaultPill);
+  return {
+    dashboardRange: { kind: defaultPill },
+    lastPill: defaultPill,
+    tableDateFrom: span.from,
+    tableDateTo: span.to,
+  };
+}

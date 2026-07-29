@@ -107,9 +107,12 @@ export function HeroMetrics({
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState(false);
 
+  const epochRef = React.useRef(requestEpoch);
+  epochRef.current = requestEpoch;
+
   React.useEffect(() => {
     const abort = new AbortController();
-    const epoch = requestEpoch;
+    const epochAtStart = requestEpoch;
 
     async function fetchStats() {
       try {
@@ -126,7 +129,7 @@ export function HeroMetrics({
         const response = await fetch(`/api/test-stats?${params}`, {
           signal: abort.signal,
         });
-        if (abort.signal.aborted || epoch !== requestEpoch) return;
+        if (abort.signal.aborted || epochRef.current !== epochAtStart) return;
 
         if (!response.ok) {
           setError(true);
@@ -135,7 +138,7 @@ export function HeroMetrics({
         }
 
         const json = await response.json();
-        if (abort.signal.aborted || epoch !== requestEpoch) return;
+        if (abort.signal.aborted || epochRef.current !== epochAtStart) return;
 
         // Support flat (no compare) fallback shape
         if (json.current) {
@@ -156,7 +159,9 @@ export function HeroMetrics({
         setError(true);
         setData(null);
       } finally {
-        if (!abort.signal.aborted) setLoading(false);
+        if (!abort.signal.aborted && epochRef.current === epochAtStart) {
+          setLoading(false);
+        }
       }
     }
 
@@ -264,7 +269,7 @@ export function HeroMetrics({
           <button
             type="button"
             onClick={onFailuresClick}
-            className="group text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
+            className="group rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             title="Filter table to FAIL and scroll to tests"
           >
             <CardTitle className="text-3xl font-semibold tabular-nums text-rose-600 transition-colors group-hover:underline dark:text-rose-400 sm:text-4xl">
@@ -277,6 +282,13 @@ export function HeroMetrics({
           {showPop && delta && (
             <TrendBadge value={delta.failed} goodWhenDown />
           )}
+          <p className="text-xs text-muted-foreground">
+            Table shows FAIL rows in the linked date range
+            {chartMode === "recent"
+              ? "; counts may differ from hero (latest-per-inverter)"
+              : ""}
+            .
+          </p>
         </CardHeader>
       </Card>
     </div>

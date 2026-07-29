@@ -89,10 +89,8 @@ export function DashboardHeader({
     dashboardRange.kind === "custom" ? null : dashboardRange.kind;
   const isCustom = dashboardRange.kind === "custom";
   const exportRange = exportTimeRange(dashboardRange);
-  const exportLimited =
-    exportRange === null ||
-    // Always honest: export APIs only take timeRange, not annotation
-    true;
+  // Always show export limitation note (APIs are timeRange-only; ignore annotation)
+  const showExportLimitation = true;
 
   const applyCustom = () => {
     if (!customFrom || !customTo) return;
@@ -407,7 +405,7 @@ export function DashboardHeader({
                 ? "Downloading…"
                 : "Failed test data (ZIP)"}
             </DropdownMenuItem>
-            {exportLimited && (
+            {showExportLimitation && (
               <>
                 <DropdownMenuSeparator />
                 <div className="px-2 py-1.5 text-xs text-muted-foreground">

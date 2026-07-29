@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/card";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
-  appendDashboardRangeParams,
   type DashboardRange,
   dashboardRangeLabel,
 } from "@/lib/dashboard-range";
@@ -26,16 +25,12 @@ import {
   formatBucketLabel,
   type ChartBucket,
 } from "@/lib/chart-theme";
+import {
+  volumeSeriesFromBuckets,
+  type BucketStats,
+} from "@/hooks/useBucketStats";
 
 export const description = "Burnin Pass/Fail Results";
-
-interface TestStats {
-  date: string;
-  passed: number;
-  failed: number;
-  totalUnfiltered?: number;
-  failedFiltered?: number;
-}
 
 const BUCKET_OPTIONS: { value: ChartBucket; label: string }[] = [
   { value: "day", label: "Day" },
@@ -53,7 +48,9 @@ interface ChartAreaInteractiveProps {
   highlightDate?: string;
   bucket: ChartBucket;
   onBucketChange: (bucket: ChartBucket) => void;
-  requestEpoch: number;
+  /** Shared bucket stats from page (one fetch for strip + volume). */
+  data: BucketStats[];
+  loading: boolean;
 }
 
 const FAILED_SERIES_NAME = "Failed (right scale)";
@@ -66,10 +63,9 @@ export function ChartAreaInteractive({
   highlightDate,
   bucket,
   onBucketChange,
-  requestEpoch,
+  data,
+  loading,
 }: ChartAreaInteractiveProps) {
-  const [chartData, setChartData] = React.useState<TestStats[]>([]);
-  const [loading, setLoading] = React.useState(true);
   const [isDarkMode, setIsDarkMode] = React.useState(false);
   const chartRef = React.useRef<ReactECharts>(null);
 
@@ -86,47 +82,11 @@ export function ChartAreaInteractive({
     return () => observer.disconnect();
   }, []);
 
-  React.useEffect(() => {
-    const abortController = new AbortController();
-    const epoch = requestEpoch;
-
-    const fetchTestStats = async () => {
-      try {
-        setLoading(true);
-        const params = new URLSearchParams({
-          chartMode,
-          annotation: annotationFilter,
-          bucket,
-        });
-        appendDashboardRangeParams(params, dashboardRange);
-
-        const response = await fetch(`/api/test-stats?${params}`, {
-          signal: abortController.signal,
-        });
-        if (abortController.signal.aborted || epoch !== requestEpoch) return;
-
-        if (response.ok) {
-          const data = await response.json();
-          if (abortController.signal.aborted || epoch !== requestEpoch) return;
-          setChartData(data);
-        } else {
-          console.error("Failed to fetch test statistics");
-          setChartData([]);
-        }
-      } catch (error) {
-        if (abortController.signal.aborted) return;
-        console.error("Error fetching test statistics:", error);
-        setChartData([]);
-      } finally {
-        if (!abortController.signal.aborted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    fetchTestStats();
-    return () => abortController.abort();
-  }, [chartMode, dashboardRange, annotationFilter, bucket, requestEpoch]);
+  // Volume only: drop strip-only empty buckets (FULL OUTER JOIN zeros under annotation)
+  const chartData = React.useMemo(
+    () => volumeSeriesFromBuckets(data),
+    [data],
+  );
 
   const chartOption: EChartsOption = React.useMemo(() => {
     const textColor = isDarkMode
@@ -367,7 +327,6 @@ export function ChartAreaInteractive({
     };
   }, [chartData, isDarkMode, highlightDate, bucket]);
 
-  // Day click filters the table; non-day drill-down lands in PR5 via bucketRange.
   const onEvents = React.useMemo(
     () => ({
       click: (params: { componentType?: string; name?: string }) => {

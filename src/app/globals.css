@@ -93,10 +93,6 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-  /* Status semantics for command-center hero / charts */
-  --status-pass: #10b981;
-  --status-fail: #f43f5e;
-  --status-warn: #d97706;
 }
 
 .dark {
@@ -131,9 +127,6 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
-  --status-pass: #34d399;
-  --status-fail: #fb7185;
-  --status-warn: #fbbf24;
 }
 
 @layer base {

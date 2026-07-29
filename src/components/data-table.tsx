@@ -250,7 +250,6 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
 ];
 
 interface DataTableProps {
-  selectedDate?: string;
   onClearDateFilter?: () => void;
   annotationFilter: string;
   onAnnotationFilterChange: (filter: string) => void;
@@ -266,7 +265,6 @@ interface DataTableProps {
 }
 
 export function DataTable({
-  selectedDate: _selectedDate,
   onClearDateFilter,
   annotationFilter,
   onAnnotationFilterChange,
@@ -279,7 +277,6 @@ export function DataTable({
   statusFilter,
   onStatusFilterChange,
 }: DataTableProps) {
-  void _selectedDate; // parent sets table dates on day click; prop kept for API clarity
   const router = useRouter();
   const { resolvedTheme } = useTheme();
   const { formatInTimezone, selectedTimezone } = useTimezone();
@@ -437,9 +434,6 @@ export function DataTable({
       setAnnotationGroups(grouped);
     }
   }, [cachedGroups, cachedQuickOptions]);
-
-  // selectedDate is applied by the parent (page.tsx sets table dates on day click
-  // without promoting dashboardRange). Date inputs already reflect tableDateFrom/To.
 
   // Save filters to cookies when they change
   React.useEffect(() => {

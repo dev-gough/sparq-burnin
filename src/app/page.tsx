@@ -10,9 +10,11 @@ import {
   type DashboardPill,
   type DashboardRange,
   defaultBucketForDashboardRange,
+  resolveLinkedInitState,
   tableDatesForPill,
 } from "@/lib/dashboard-range";
 import type { ChartBucket } from "@/lib/chart-theme";
+import { useBucketStats } from "@/hooks/useBucketStats";
 
 const FILTER_COOKIE_KEY = "burnin-data-table-filters";
 
@@ -36,17 +38,29 @@ const loadFiltersFromCookie = (): Record<string, unknown> => {
   }
 };
 
+function readLinkedInit() {
+  const saved = loadFiltersFromCookie();
+  return resolveLinkedInitState(
+    (saved.dateFromFilter as string) || "",
+    (saved.dateToFilter as string) || "",
+    "30d",
+  );
+}
+
 export default function Page() {
-  // --- Command-center state (split dashboard vs table dates) ---
-  const [dashboardRange, setDashboardRange] = React.useState<DashboardRange>({
-    kind: "30d",
-  });
-  /** Last non-custom pill — used when linked clear reverts custom. */
-  const [lastPill, setLastPill] = React.useState<DashboardPill>("30d");
+  // Linked default: init dashboard + table dates together so they never disagree
+  const [init] = React.useState(readLinkedInit);
+
+  const [dashboardRange, setDashboardRange] = React.useState<DashboardRange>(
+    () => init.dashboardRange,
+  );
+  const [lastPill, setLastPill] = React.useState<DashboardPill>(
+    () => init.lastPill,
+  );
   const [selectedDate, setSelectedDate] = React.useState<string>("");
   const [chartMode, setChartMode] = React.useState("recent");
   const [bucket, setBucket] = React.useState<ChartBucket>(() =>
-    defaultBucketForDashboardRange({ kind: "30d" }),
+    defaultBucketForDashboardRange(init.dashboardRange),
   );
   const [filterLinked, setFilterLinked] = React.useState(true);
   const [requestEpoch, setRequestEpoch] = React.useState(0);
@@ -61,30 +75,33 @@ export default function Page() {
     return (saved.statusFilter as string) || "valid";
   });
 
-  const [tableDateFrom, setTableDateFrom] = React.useState<string>(() => {
-    const saved = loadFiltersFromCookie();
-    // Prefer cookie; if empty and we default to 30d linked, seed table to 30d span
-    const fromCookie = (saved.dateFromFilter as string) || "";
-    if (fromCookie) return fromCookie;
-    return tableDatesForPill("30d").from;
-  });
-  const [tableDateTo, setTableDateTo] = React.useState<string>(() => {
-    const saved = loadFiltersFromCookie();
-    const toCookie = (saved.dateToFilter as string) || "";
-    if (toCookie) return toCookie;
-    return tableDatesForPill("30d").to;
+  const [tableDateFrom, setTableDateFrom] = React.useState<string>(
+    () => init.tableDateFrom,
+  );
+  const [tableDateTo, setTableDateTo] = React.useState<string>(
+    () => init.tableDateTo,
+  );
+
+  // Shared bucket series for volume chart + rate strip (one API call)
+  const {
+    data: bucketStats,
+    loading: bucketLoading,
+  } = useBucketStats({
+    dashboardRange,
+    chartMode,
+    annotationFilter,
+    bucket,
+    requestEpoch,
   });
 
   const bumpEpoch = React.useCallback(() => {
     setRequestEpoch((e) => e + 1);
   }, []);
 
-  // Smart bucket when dashboard period changes
   const applySmartBucket = React.useCallback((range: DashboardRange) => {
     setBucket(defaultBucketForDashboardRange(range));
   }, []);
 
-  /** Period pill (7d/30d/90d/all). */
   const handlePeriodPill = React.useCallback(
     (kind: DashboardPill) => {
       setDashboardRange({ kind });
@@ -101,7 +118,6 @@ export default function Page() {
     [filterLinked, applySmartBucket, bumpEpoch],
   );
 
-  /** Custom range from More sheet. */
   const handleCustomRange = React.useCallback(
     (from: string, to: string) => {
       setDashboardRange({ kind: "custom", from, to });
@@ -116,16 +132,11 @@ export default function Page() {
     [filterLinked, applySmartBucket, bumpEpoch],
   );
 
-  // Keep latest table dates in a ref so paired from/to edits never go stale
   const tableDatesRef = React.useRef({ from: tableDateFrom, to: tableDateTo });
   React.useEffect(() => {
     tableDatesRef.current = { from: tableDateFrom, to: tableDateTo };
   }, [tableDateFrom, tableDateTo]);
 
-  /**
-   * Table date edits (user). When linked → promote dashboard to custom.
-   * Clearing both dates while linked reverts to lastPill.
-   */
   const promoteFromTableDates = React.useCallback(
     (from: string, to: string) => {
       if (!filterLinked) return;
@@ -164,7 +175,7 @@ export default function Page() {
     [promoteFromTableDates],
   );
 
-  /** Chart day click: set selectedDate + table dates; never promote dashboard. */
+  /** Chart day click: table dates only; never promote dashboard (design). */
   const handleDateClick = React.useCallback((date: string) => {
     setSelectedDate(date);
     setTableDateFrom(date);
@@ -190,13 +201,7 @@ export default function Page() {
       setTableDateFrom("");
       setTableDateTo("");
     }
-  }, [
-    filterLinked,
-    dashboardRange,
-    lastPill,
-    applySmartBucket,
-    bumpEpoch,
-  ]);
+  }, [filterLinked, dashboardRange, lastPill, applySmartBucket, bumpEpoch]);
 
   const handleBucketChange = React.useCallback((next: ChartBucket) => {
     setBucket(next);
@@ -205,10 +210,8 @@ export default function Page() {
     }
   }, []);
 
-  /** Failures hero: filter table to FAIL + scroll. */
   const handleFailuresClick = React.useCallback(() => {
     setStatusFilter("FAIL");
-    // Cookie is written by DataTable's save effect when statusFilter prop changes
     requestAnimationFrame(() => {
       document
         .getElementById("test-table")
@@ -216,11 +219,11 @@ export default function Page() {
     });
   }, []);
 
-  // Single-day highlight for chart when table is filtered to one day
   const isSingleDayFilter =
     tableDateFrom && tableDateTo && tableDateFrom === tableDateTo;
   const highlightDate =
     selectedDate || (isSingleDayFilter ? tableDateFrom : "");
+  const dayDrillActive = Boolean(selectedDate);
 
   return (
     <div className="ml-10">
@@ -236,7 +239,23 @@ export default function Page() {
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
           <div className="mx-auto flex w-full flex-col gap-4 px-4 py-4 md:gap-6 md:py-6 lg:px-6 4xl:gap-8 4xl:px-8 5xl:gap-10 5xl:px-12">
-            {/* HERO */}
+            {/* Day-drill chip: linked stays on, but table dates ≠ dashboard period */}
+            {dayDrillActive && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  Table: {selectedDate}
+                </span>
+                <span>· dashboard period unchanged</span>
+                <button
+                  type="button"
+                  className="ml-auto text-primary underline-offset-2 hover:underline"
+                  onClick={handleClearDateFilter}
+                >
+                  Clear day filter
+                </button>
+              </div>
+            )}
+
             <HeroMetrics
               dashboardRange={dashboardRange}
               chartMode={chartMode}
@@ -245,16 +264,13 @@ export default function Page() {
               onFailuresClick={handleFailuresClick}
             />
 
-            {/* Failure-rate strip (required) */}
             <FailureRateStrip
-              dashboardRange={dashboardRange}
-              chartMode={chartMode}
+              data={bucketStats}
+              loading={bucketLoading}
               annotationFilter={annotationFilter}
               bucket={bucket}
-              requestEpoch={requestEpoch}
             />
 
-            {/* Volume chart */}
             <ChartAreaInteractive
               onDateClick={handleDateClick}
               chartMode={chartMode}
@@ -263,12 +279,11 @@ export default function Page() {
               highlightDate={highlightDate}
               bucket={bucket}
               onBucketChange={handleBucketChange}
-              requestEpoch={requestEpoch}
+              data={bucketStats}
+              loading={bucketLoading}
             />
 
-            {/* Test table */}
             <DataTable
-              selectedDate={selectedDate}
               onClearDateFilter={handleClearDateFilter}
               annotationFilter={annotationFilter}
               onAnnotationFilterChange={setAnnotationFilter}
