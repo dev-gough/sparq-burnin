@@ -22,6 +22,30 @@ interface FailureRateStripProps {
   bucket: ChartBucket;
 }
 
+/** Nice upper bound for a 0–max axis with room above the peak rate. */
+function niceRateMax(peak: number): number {
+  if (!Number.isFinite(peak) || peak <= 0) return 1;
+  const padded = peak * 1.2;
+  // Prefer round steps: 1, 2, 5 × 10^n
+  const exp = Math.floor(Math.log10(padded));
+  const base = 10 ** exp;
+  const n = padded / base;
+  const nice = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  return nice * base;
+}
+
+/** Compact y-axis labels: "0", "2.5%", "5%" — avoid long trailing zeros. */
+function formatRateAxisLabel(v: number): string {
+  if (!Number.isFinite(v) || Math.abs(v) < 1e-9) return "0";
+  const rounded =
+    v >= 10 ? Math.round(v) : Math.round(v * 10) / 10;
+  const text =
+    Number.isInteger(rounded) || Math.abs(rounded - Math.round(rounded)) < 1e-9
+      ? String(Math.round(rounded))
+      : rounded.toFixed(1);
+  return `${text}%`;
+}
+
 /**
  * Compact failure-rate-over-time strip.
  * Uses totalUnfiltered / failedFiltered (rank-then-tag).
@@ -88,27 +112,34 @@ export function FailureRateStrip({
       : burninChartColors.grid.light;
     const fail = burninChartColors.failed.base;
 
+    const maxRate = series.reduce((m, s) => Math.max(m, s.rate), 0);
+    // Headroom + nice upper bound so 3 ticks (0 / mid / max) stay readable
+    const yMax = niceRateMax(maxRate);
+
     return {
       backgroundColor: "transparent",
       textStyle: {
         color: textColor,
         fontFamily: "var(--font-geist-sans), sans-serif",
       },
+      // containLabel gives y-labels room without a fixed cramped left gutter
       grid: {
-        left: 44,
-        right: 16,
-        top: 12,
-        bottom: 24,
-        containLabel: false,
+        left: 4,
+        right: 10,
+        top: 10,
+        bottom: 4,
+        containLabel: true,
       },
       xAxis: {
         type: "category",
         data: series.map((s) => s.date),
+        boundaryGap: false,
         axisLine: { show: false },
         axisTick: { show: false },
         axisLabel: {
           color: mutedColor,
-          fontSize: 10,
+          fontSize: 11,
+          margin: 10,
           hideOverlap: true,
           formatter: (v: string) => formatBucketLabel(v, bucket),
         },
@@ -116,15 +147,29 @@ export function FailureRateStrip({
       yAxis: {
         type: "value",
         min: 0,
+        max: yMax,
+        // Exactly 3 ticks: 0, mid, max — avoids stacked labels on a short strip
+        interval: yMax / 2,
+        splitNumber: 2,
         axisLine: { show: false },
         axisTick: { show: false },
         axisLabel: {
           color: mutedColor,
-          fontSize: 10,
-          formatter: (v: number) => `${v}%`,
+          fontSize: 11,
+          fontWeight: 500,
+          margin: 12,
+          // Tabular-ish alignment for mixed "0" / "2.5%" / "5%"
+          align: "right",
+          formatter: (v: number) => formatRateAxisLabel(v),
         },
         splitLine: {
-          lineStyle: { color: gridColor, type: "dashed" as const },
+          show: true,
+          lineStyle: {
+            color: gridColor,
+            type: "dashed" as const,
+            opacity: 0.65,
+            width: 1,
+          },
         },
       },
       series: [
@@ -210,15 +255,15 @@ export function FailureRateStrip({
           </span>
         )}
       </CardHeader>
-      <CardContent className="px-2 pb-2 pt-0 sm:px-4">
+      <CardContent className="px-3 pb-3 pt-0 sm:px-4">
         {loading ? (
-          <div className="flex h-[80px] items-center justify-center">
+          <div className="flex h-[96px] items-center justify-center">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
         ) : (
           <ReactECharts
             option={chartOption}
-            style={{ height: "84px", width: "100%" }}
+            style={{ height: "96px", width: "100%" }}
             opts={{ renderer: "canvas" }}
             notMerge
             lazyUpdate
