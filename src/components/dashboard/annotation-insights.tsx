@@ -44,6 +44,47 @@ interface AnnotationInsightsProps {
   enabled?: boolean;
 }
 
+/** Merge rows that share a display name (e.g. legacy API NULL vs 'Other' groups). */
+function dedupeByName(groups: InsightGroup[]): InsightGroup[] {
+  const map = new Map<string, InsightGroup>();
+  for (const g of groups) {
+    const prev = map.get(g.name);
+    if (!prev) {
+      map.set(g.name, { ...g });
+    } else {
+      map.set(g.name, {
+        name: g.name,
+        count: prev.count + g.count,
+        percentageOfFailed: prev.percentageOfFailed + g.percentageOfFailed,
+      });
+    }
+  }
+  return Array.from(map.values());
+}
+
+/** Dedupe option chips by option text (filter value); keep highest-count row's group label. */
+function dedupeByOption(options: InsightOption[]): InsightOption[] {
+  const map = new Map<string, InsightOption>();
+  for (const o of options) {
+    const prev = map.get(o.name);
+    if (!prev || o.count > prev.count) {
+      map.set(o.name, {
+        ...o,
+        count: (prev?.count ?? 0) + o.count,
+        percentageOfFailed:
+          (prev?.percentageOfFailed ?? 0) + o.percentageOfFailed,
+      });
+    } else {
+      map.set(o.name, {
+        ...prev,
+        count: prev.count + o.count,
+        percentageOfFailed: prev.percentageOfFailed + o.percentageOfFailed,
+      });
+    }
+  }
+  return Array.from(map.values());
+}
+
 /** Prefer API range (SQL window) for /todo; fall back to client dashboard helper. */
 function todoHrefFromSummary(
   data: AnnotationSummary | null,
@@ -214,12 +255,12 @@ export function AnnotationInsights({
                 <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   Groups
                 </span>
-                {data.groups.map((g) => {
+                {dedupeByName(data.groups).map((g) => {
                   const value = `group:${g.name}`;
                   const active = annotationFilter === value;
                   return (
                     <button
-                      key={g.name}
+                      key={`group:${g.name}`}
                       type="button"
                       onClick={() => toggleFilter(value)}
                       title={tagCountTitle(g.count, g.percentageOfFailed)}
@@ -254,11 +295,11 @@ export function AnnotationInsights({
                 <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   Causes
                 </span>
-                {data.options.map((o) => {
+                {dedupeByOption(data.options).map((o) => {
                   const active = annotationFilter === o.name;
                   return (
                     <button
-                      key={`${o.group_name}:${o.name}`}
+                      key={`option:${o.group_name}:${o.name}`}
                       type="button"
                       onClick={() => toggleFilter(o.name)}
                       title={`${o.group_name} · ${tagCountTitle(o.count, o.percentageOfFailed)}`}

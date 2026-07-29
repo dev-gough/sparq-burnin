@@ -841,6 +841,8 @@ export async function GET(request: NextRequest) {
       );
 
       // Top annotation groups among failed tests (count annotation rows, match failure-analytics)
+      // GROUP BY the coalesced label — otherwise NULL group_name and a real group
+      // named 'Other' both appear as name='Other' and break React keys / double-count chips.
       const groupsResult = await client.query(
         `
         WITH ${baseTestsCte}
@@ -852,7 +854,7 @@ export async function GET(request: NextRequest) {
         JOIN base_tests t ON ta.current_test_id = t.test_id
         WHERE t.overall_status = 'FAIL'
           AND ta.current_test_id IS NOT NULL
-        GROUP BY aqo.group_name
+        GROUP BY COALESCE(aqo.group_name, 'Other')
         ORDER BY count DESC
         LIMIT $${timeParams.length + 1}
         `,
