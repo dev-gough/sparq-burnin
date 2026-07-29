@@ -14,6 +14,10 @@ import {
   hasStripFields,
   type BucketStats,
 } from "@/hooks/useBucketStats";
+import {
+  dashboardRangeLabel,
+  type DashboardRange,
+} from "@/lib/dashboard-range";
 
 interface FailureRateStripProps {
   data: BucketStats[];
@@ -21,7 +25,12 @@ interface FailureRateStripProps {
   refreshing?: boolean;
   annotationFilter: string;
   bucket: ChartBucket;
+  /** For empty-state copy (“No tests in the last 30 days”). */
+  dashboardRange?: DashboardRange;
 }
+
+/** Shared plot height — skeleton, empty, and chart use this so layout never jumps. */
+export const FAILURE_RATE_STRIP_HEIGHT_PX = 156;
 
 /** Nice upper bound for a 0–max axis with room above the peak rate. */
 function niceRateMax(peak: number): number {
@@ -59,6 +68,7 @@ export function FailureRateStrip({
   refreshing = false,
   annotationFilter,
   bucket,
+  dashboardRange,
 }: FailureRateStripProps) {
   const [isDarkMode, setIsDarkMode] = React.useState(false);
   const annotationOn = Boolean(
@@ -234,24 +244,18 @@ export function FailureRateStrip({
     };
   }, [series, isDarkMode, bucket]);
 
-  // Keep overall card height similar to the original padded Card (~190px),
-  // but spend almost all of it on the plot (compact title, no gap/py waste).
-  const CHART_HEIGHT_PX = 156;
+  const CHART_HEIGHT_PX = FAILURE_RATE_STRIP_HEIGHT_PX;
   const showSkeleton = loading && series.length < 2;
-  const showEmpty =
-    !loading && !fieldsMissing && series.length < 2;
-  // Hide only when annotation fields missing and not mid-load
-  if (fieldsMissing && !loading) {
-    return (
-      <p className="px-1 text-xs text-muted-foreground">
-        Failure-rate trend unavailable for this filter
-      </p>
-    );
-  }
+  const showEmpty = !loading && !fieldsMissing && series.length < 2;
+  const periodPhrase = dashboardRange
+    ? dashboardRangeLabel(dashboardRange)
+    : "this period";
 
-  if (showEmpty) {
-    return null;
-  }
+  // Always keep the same card chrome so period changes never collapse the page.
+  // Annotation-unavailable: still full height with a one-line note.
+  const emptyMessage = fieldsMissing && !loading
+    ? "Failure-rate trend unavailable for this filter"
+    : `No tests in ${periodPhrase}`;
 
   return (
     <Card className="@container/card gap-0 overflow-hidden py-0 shadow-sm">
@@ -285,6 +289,16 @@ export function FailureRateStrip({
               ))}
             </div>
             <div className="h-px w-full bg-border/60" />
+          </div>
+        ) : showEmpty || (fieldsMissing && !loading) ? (
+          <div
+            className="flex items-center justify-center rounded-md border border-dashed border-border/70 bg-muted/20 px-4"
+            style={{ height: CHART_HEIGHT_PX }}
+            role="status"
+          >
+            <p className="text-center text-sm text-muted-foreground">
+              {emptyMessage}
+            </p>
           </div>
         ) : (
           <div

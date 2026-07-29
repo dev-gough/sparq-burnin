@@ -423,6 +423,7 @@ export default function Page() {
               refreshing={stripRefreshing}
               annotationFilter={annotationFilter}
               bucket={stripBucket}
+              dashboardRange={dashboardRange}
             />
 
             <ChartAreaInteractive
