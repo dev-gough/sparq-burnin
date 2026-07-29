@@ -250,7 +250,6 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
 ];
 
 interface DataTableProps {
-  selectedDate?: string;
   onClearDateFilter?: () => void;
   annotationFilter: string;
   onAnnotationFilterChange: (filter: string) => void;
@@ -260,10 +259,12 @@ interface DataTableProps {
   onDateFromFilterChange: (date: string) => void;
   dateToFilter: string;
   onDateToFilterChange: (date: string) => void;
+  /** Controlled status filter (lifted for hero Failures click). */
+  statusFilter: string;
+  onStatusFilterChange: (status: string) => void;
 }
 
 export function DataTable({
-  selectedDate,
   onClearDateFilter,
   annotationFilter,
   onAnnotationFilterChange,
@@ -273,6 +274,8 @@ export function DataTable({
   onDateFromFilterChange,
   dateToFilter,
   onDateToFilterChange,
+  statusFilter,
+  onStatusFilterChange,
 }: DataTableProps) {
   const router = useRouter();
   const { resolvedTheme } = useTheme();
@@ -291,14 +294,10 @@ export function DataTable({
     pageIndex: 0,
     pageSize: 30,
   });
-  // Initialize filter states from cookies
+  // Initialize filter states from cookies (status is controlled by parent)
   const [serialSearch, setSerialSearch] = React.useState(() => {
     const savedFilters = loadFiltersFromCookie();
     return savedFilters.serialSearch || "";
-  });
-  const [statusFilter, setStatusFilter] = React.useState(() => {
-    const savedFilters = loadFiltersFromCookie();
-    return savedFilters.statusFilter || "valid";
   });
   const [firmwareFilter, setFirmwareFilter] = React.useState(() => {
     const savedFilters = loadFiltersFromCookie();
@@ -436,14 +435,6 @@ export function DataTable({
     }
   }, [cachedGroups, cachedQuickOptions]);
 
-  // Apply selectedDate from chart click to date filters
-  React.useEffect(() => {
-    if (selectedDate) {
-      onDateFromFilterChange(selectedDate);
-      onDateToFilterChange(selectedDate);
-    }
-  }, [selectedDate, onDateFromFilterChange, onDateToFilterChange]);
-
   // Save filters to cookies when they change
   React.useEffect(() => {
     const filterState: FilterState = {
@@ -558,6 +549,7 @@ export function DataTable({
   if (loading) {
     return (
       <Tabs
+        id="test-table"
         defaultValue="outline"
         className="w-full flex-col justify-start gap-6"
       >
@@ -666,8 +658,9 @@ export function DataTable({
 
   return (
     <Tabs
+      id="test-table"
       defaultValue="outline"
-      className="w-full flex-col justify-start gap-6"
+      className="w-full flex-col justify-start gap-6 scroll-mt-4"
     >
       <TabsContent
         value="outline"
@@ -693,7 +686,10 @@ export function DataTable({
             <div className="flex justify-between sm:gap-4">
               <div className="space-y-2">
                 <Label>Status</Label>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <Select
+                  value={statusFilter}
+                  onValueChange={onStatusFilterChange}
+                >
                   <SelectTrigger className="w-32">
                     <SelectValue />
                   </SelectTrigger>
@@ -846,12 +842,16 @@ export function DataTable({
                 </Toggle>
               </div>
               <div className="flex flex-col items-center gap-1">
-                <InfoTooltip content="When linked, the annotation and date filters affect both the chart above and this table. When unlinked, filters only apply to the table." />
+                <InfoTooltip content="When linked, table dates stay in sync with the dashboard period (pills / custom range). Annotation filters always apply to both the dashboard and table." />
                 <Button
                   size="sm"
                   variant={filterLinked ? "default" : "outline"}
                   onClick={() => onFilterLinkedChange(!filterLinked)}
-                  title={filterLinked ? "Filter affects chart and table" : "Filter only affects table"}
+                  title={
+                    filterLinked
+                      ? "Table dates linked to dashboard period"
+                      : "Table dates independent of dashboard"
+                  }
                   className="h-10"
                 >
                   {filterLinked ? <Link2 className="h-4 w-4" /> : <Unlink className="h-4 w-4" />}
@@ -863,13 +863,17 @@ export function DataTable({
                   variant="outline"
                   onClick={() => {
                     setSerialSearch("");
-                    setStatusFilter("all");
+                    onStatusFilterChange("all");
                     setFirmwareFilter("all");
                     onAnnotationFilterChange("all");
-                    onDateFromFilterChange("");
-                    onDateToFilterChange("");
                     setLatestOnly(false);
-                    onClearDateFilter?.();
+                    // Prefer parent clear (handles linked period revert + both dates atomically)
+                    if (onClearDateFilter) {
+                      onClearDateFilter();
+                    } else {
+                      onDateFromFilterChange("");
+                      onDateToFilterChange("");
+                    }
                   }}
                   className="h-10"
                 >

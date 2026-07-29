@@ -10,8 +10,18 @@ type TimeRange = typeof ALLOWED_TIME_RANGES[number];
 const ALLOWED_CHART_MODES = ['recent', 'all'] as const;
 type ChartMode = typeof ALLOWED_CHART_MODES[number];
 
+// Allowed chart bucket granularities (map directly to Postgres DATE_TRUNC units)
+const ALLOWED_BUCKETS = ['day', 'week', 'month', 'quarter', 'year'] as const;
+export type ChartBucket = typeof ALLOWED_BUCKETS[number];
+
 // Allowed view types
-const ALLOWED_VIEWS = ['summary', 'tests', 'firmware-versions', 'annotations'] as const;
+const ALLOWED_VIEWS = [
+  'summary',
+  'tests',
+  'firmware-versions',
+  'annotations',
+  'annotation-summary',
+] as const;
 type ViewType = typeof ALLOWED_VIEWS[number];
 
 /**
@@ -57,6 +67,16 @@ export function getTimeRangeDays(timeRange: TimeRange): number | null {
     case 'all':
       return null;
   }
+}
+
+/**
+ * Validates a chart bucket granularity parameter
+ * @param bucket - The bucket to validate
+ * @returns The validated bucket or 'day' as default
+ */
+export function validateBucket(bucket: string | null): ChartBucket {
+  if (!bucket) return 'day';
+  return ALLOWED_BUCKETS.includes(bucket as ChartBucket) ? (bucket as ChartBucket) : 'day';
 }
 
 /**

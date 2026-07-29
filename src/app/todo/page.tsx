@@ -33,11 +33,23 @@ export default function TodoPage() {
   const [sortField, setSortField] = React.useState<keyof UnannotatedTest>("start_time");
   const [sortDirection, setSortDirection] = React.useState<"asc" | "desc">("desc");
 
-  // Filter states
+  // Filter states — date defaults come from ?dateFrom=&dateTo= (dashboard untagged chip)
   const [searchSerial, setSearchSerial] = React.useState("");
   const [filterFirmware, setFilterFirmware] = React.useState("all");
   const [filterDateFrom, setFilterDateFrom] = React.useState("");
   const [filterDateTo, setFilterDateTo] = React.useState("");
+
+  // Client-side only: seed date filters from query string (no server date filter in v1)
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const from = params.get("dateFrom");
+    const to = params.get("dateTo");
+    // Only accept YYYY-MM-DD to avoid garbage in the date inputs
+    const ymd = /^\d{4}-\d{2}-\d{2}$/;
+    if (from && ymd.test(from)) setFilterDateFrom(from);
+    if (to && ymd.test(to)) setFilterDateTo(to);
+  }, []);
 
   React.useEffect(() => {
     const fetchData = async () => {
@@ -96,15 +108,26 @@ export default function TodoPage() {
       filtered = filtered.filter(test => test.firmware_version === filterFirmware);
     }
 
-    // Apply date range filter
+    // Apply date range filter (UTC calendar days — match dashboard/API YMD windows)
     if (filterDateFrom) {
-      const fromDate = new Date(filterDateFrom);
-      filtered = filtered.filter(test => new Date(test.start_time) >= fromDate);
+      const fromUtc = `${filterDateFrom}T00:00:00.000Z`;
+      filtered = filtered.filter((test) => {
+        const start =
+          typeof test.start_time === "string"
+            ? test.start_time
+            : new Date(test.start_time).toISOString();
+        return start >= fromUtc;
+      });
     }
     if (filterDateTo) {
-      const toDate = new Date(filterDateTo);
-      toDate.setHours(23, 59, 59, 999); // End of day
-      filtered = filtered.filter(test => new Date(test.start_time) <= toDate);
+      const toUtc = `${filterDateTo}T23:59:59.999Z`;
+      filtered = filtered.filter((test) => {
+        const start =
+          typeof test.start_time === "string"
+            ? test.start_time
+            : new Date(test.start_time).toISOString();
+        return start <= toUtc;
+      });
     }
 
     // Sort
