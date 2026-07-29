@@ -45,6 +45,8 @@ interface HeroMetricsProps {
   annotationFilter: string;
   requestEpoch: number;
   onFailuresClick: () => void;
+  /** Skip fetch until parent cookie filters are ready. Default true. */
+  enabled?: boolean;
 }
 
 function TrendBadge({
@@ -102,6 +104,7 @@ export function HeroMetrics({
   annotationFilter,
   requestEpoch,
   onFailuresClick,
+  enabled = true,
 }: HeroMetricsProps) {
   const [data, setData] = React.useState<CompareResponse | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -111,6 +114,11 @@ export function HeroMetrics({
   epochRef.current = requestEpoch;
 
   React.useEffect(() => {
+    if (!enabled) {
+      setLoading(true);
+      return;
+    }
+
     const abort = new AbortController();
     const epochAtStart = requestEpoch;
 
@@ -167,7 +175,7 @@ export function HeroMetrics({
 
     fetchStats();
     return () => abort.abort();
-  }, [dashboardRange, chartMode, annotationFilter, requestEpoch]);
+  }, [dashboardRange, chartMode, annotationFilter, requestEpoch, enabled]);
 
   const stats = data?.current;
   const delta = data?.delta;

@@ -25,6 +25,8 @@ export function useBucketStats(opts: {
   annotationFilter: string;
   bucket: ChartBucket;
   requestEpoch: number;
+  /** When false, skip fetch (e.g. until cookie filters hydrate). Default true. */
+  enabled?: boolean;
 }): {
   data: BucketStats[];
   loading: boolean;
@@ -36,6 +38,7 @@ export function useBucketStats(opts: {
     annotationFilter,
     bucket,
     requestEpoch,
+    enabled = true,
   } = opts;
 
   const [data, setData] = React.useState<BucketStats[]>([]);
@@ -47,6 +50,11 @@ export function useBucketStats(opts: {
   epochRef.current = requestEpoch;
 
   React.useEffect(() => {
+    if (!enabled) {
+      setLoading(true);
+      return;
+    }
+
     const abort = new AbortController();
     const epochAtStart = requestEpoch;
 
@@ -95,6 +103,7 @@ export function useBucketStats(opts: {
     annotationFilter,
     bucket,
     requestEpoch,
+    enabled,
   ]);
 
   return { data, loading, error };

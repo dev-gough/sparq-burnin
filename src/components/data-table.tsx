@@ -106,6 +106,29 @@ export const testSchema = z.object({
   annotations: z.string().nullable(),
 });
 
+type TestRow = z.infer<typeof testSchema>;
+
+/** Keep first occurrence of each test_id (stable order). */
+function dedupeTestsById(rows: TestRow[]): TestRow[] {
+  const seen = new Set<number>();
+  const out: TestRow[] = [];
+  for (const row of rows) {
+    if (seen.has(row.test_id)) continue;
+    seen.add(row.test_id);
+    out.push(row);
+  }
+  return out;
+}
+
+/** Append batch rows that are not already present by test_id. */
+function appendUniqueTests(prev: TestRow[], batch: TestRow[]): TestRow[] {
+  if (batch.length === 0) return prev;
+  const seen = new Set(prev.map((r) => r.test_id));
+  const fresh = batch.filter((r) => !seen.has(r.test_id));
+  if (fresh.length === 0) return prev;
+  return [...prev, ...fresh];
+}
+
 // Create columns dynamically to access timezone context
 const createColumns = (formatInTimezone: (dateString: string) => string, selectedTimezone: string): ColumnDef<z.infer<typeof testSchema>>[] => [
   {
@@ -325,6 +348,9 @@ export function DataTable({
   };
 
   React.useEffect(() => {
+    const abort = new AbortController();
+    const { signal } = abort;
+
     const fetchData = async () => {
       setLoading(true);
       try {
@@ -343,37 +369,49 @@ export function DataTable({
         initialParams.append("offset", "0");
 
         const [testsResponse, firmwareResponse] = await Promise.all([
-          fetch(`/api/test-stats?${initialParams}`),
-          fetch("/api/test-stats?view=firmware-versions"),
+          fetch(`/api/test-stats?${initialParams}`, { signal }),
+          fetch("/api/test-stats?view=firmware-versions", { signal }),
         ]);
+
+        if (signal.aborted) return;
 
         if (testsResponse.ok) {
           const initialData = await testsResponse.json();
-          setData(initialData);
+          if (signal.aborted) return;
+          // Dedupe by test_id (guards against API duplicates / race appends)
+          const initialUnique = dedupeTestsById(
+            Array.isArray(initialData) ? initialData : [],
+          );
+          setData(initialUnique);
           setLoading(false); // Show data immediately
 
           // STEP 2: Background load remaining tests in batches of 500
-          if (initialData.length === 200) {
-            // Only fetch more if we got a full first page (indicates more data exists)
+          if (initialUnique.length === 200) {
             let offset = 200;
             const batchSize = 500;
             let hasMore = true;
 
-            while (hasMore) {
+            while (hasMore && !signal.aborted) {
               const batchParams = new URLSearchParams(baseParams);
               batchParams.append("limit", batchSize.toString());
               batchParams.append("offset", offset.toString());
 
-              const batchResponse = await fetch(`/api/test-stats?${batchParams}`);
+              const batchResponse = await fetch(
+                `/api/test-stats?${batchParams}`,
+                { signal },
+              );
+              if (signal.aborted) return;
               if (batchResponse.ok) {
                 const batchData = await batchResponse.json();
+                if (signal.aborted) return;
 
-                if (batchData.length > 0) {
-                  // Append batch to existing data
-                  setData(prevData => [...prevData, ...batchData]);
+                if (Array.isArray(batchData) && batchData.length > 0) {
+                  // Append only new test_ids — prevents Strict Mode / filter-change races
+                  setData((prevData) =>
+                    appendUniqueTests(prevData, batchData),
+                  );
                   offset += batchData.length;
 
-                  // Check if we got less than batch size (indicates last batch)
                   if (batchData.length < batchSize) {
                     hasMore = false;
                   }
@@ -386,24 +424,32 @@ export function DataTable({
               }
             }
 
-            console.log(`✅ Progressive loading complete: ${offset} total tests loaded`);
+            if (!signal.aborted) {
+              console.log(
+                `✅ Progressive loading complete: ${offset} total tests loaded`,
+              );
+            }
           }
-        } else {
+        } else if (!signal.aborted) {
           setLoading(false);
         }
 
-        if (firmwareResponse.ok) {
+        if (firmwareResponse.ok && !signal.aborted) {
           const versions = await firmwareResponse.json();
           setFirmwareVersions(versions);
         }
       } catch (error) {
+        if (signal.aborted) return;
         console.error("Failed to fetch data:", error);
       } finally {
-        setLoading(false);
+        if (!signal.aborted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchData();
+    return () => abort.abort();
   }, [latestOnly, annotationFilter]);
 
   // Build annotation groups from cached data
@@ -511,7 +557,9 @@ export function DataTable({
       columnFilters,
       pagination,
     },
-    getRowId: (row) => row.test_id.toString(),
+    // test_id is the stable identity; progressive-load races must not create dups
+    getRowId: (row) => String(row.test_id),
+
     enableRowSelection: false,
     onRowSelectionChange: setRowSelection,
     onColumnFiltersChange: setColumnFilters,

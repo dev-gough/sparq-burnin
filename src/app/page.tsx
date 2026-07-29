@@ -39,51 +39,56 @@ const loadFiltersFromCookie = (): Record<string, unknown> => {
   }
 };
 
-function readLinkedInit() {
-  const saved = loadFiltersFromCookie();
-  return resolveLinkedInitState(
-    (saved.dateFromFilter as string) || "",
-    (saved.dateToFilter as string) || "",
-    "30d",
-  );
-}
+/**
+ * SSR-safe defaults (no document.cookie). Cookies are applied once after mount
+ * so server HTML and the first client render match (avoids hydration mismatches
+ * when annotation filter / dates are cookie-persisted).
+ */
+const SSR_DEFAULT_PILL: DashboardPill = "30d";
+const SSR_DEFAULT_RANGE: DashboardRange = { kind: SSR_DEFAULT_PILL };
 
 export default function Page() {
-  // Linked default: init dashboard + table dates together so they never disagree
-  const [init] = React.useState(readLinkedInit);
-
-  const [dashboardRange, setDashboardRange] = React.useState<DashboardRange>(
-    () => init.dashboardRange,
-  );
-  const [lastPill, setLastPill] = React.useState<DashboardPill>(
-    () => init.lastPill,
-  );
+  const [dashboardRange, setDashboardRange] =
+    React.useState<DashboardRange>(SSR_DEFAULT_RANGE);
+  const [lastPill, setLastPill] =
+    React.useState<DashboardPill>(SSR_DEFAULT_PILL);
   const [selectedDate, setSelectedDate] = React.useState<string>("");
   const [chartMode, setChartMode] = React.useState("recent");
   const [bucket, setBucket] = React.useState<ChartBucket>(() =>
-    defaultBucketForDashboardRange(init.dashboardRange),
+    defaultBucketForDashboardRange(SSR_DEFAULT_RANGE),
   );
   const [filterLinked, setFilterLinked] = React.useState(true);
   const [requestEpoch, setRequestEpoch] = React.useState(0);
 
-  const [annotationFilter, setAnnotationFilter] = React.useState<string>(() => {
-    const saved = loadFiltersFromCookie();
-    return (saved.annotationFilter as string) || "all";
-  });
+  // Defaults match SSR; cookie restore runs in useEffect below
+  const [annotationFilter, setAnnotationFilter] = React.useState<string>("all");
+  const [statusFilter, setStatusFilter] = React.useState<string>("valid");
 
-  const [statusFilter, setStatusFilter] = React.useState<string>(() => {
-    const saved = loadFiltersFromCookie();
-    return (saved.statusFilter as string) || "valid";
-  });
-
-  const [tableDateFrom, setTableDateFrom] = React.useState<string>(
-    () => init.tableDateFrom,
-  );
-  const [tableDateTo, setTableDateTo] = React.useState<string>(
-    () => init.tableDateTo,
-  );
+  // Empty until mount so server/client first paint match; then pill span or cookies
+  const [tableDateFrom, setTableDateFrom] = React.useState<string>("");
+  const [tableDateTo, setTableDateTo] = React.useState<string>("");
   /** True after unlinked multi-day chart drill (dashboard period unchanged). */
   const [bucketDrillUnlinked, setBucketDrillUnlinked] = React.useState(false);
+  /** False until cookie/local defaults applied — gates stats fetch. */
+  const [filtersReady, setFiltersReady] = React.useState(false);
+
+  // Apply persisted filters after mount (client-only)
+  React.useEffect(() => {
+    const saved = loadFiltersFromCookie();
+    const init = resolveLinkedInitState(
+      (saved.dateFromFilter as string) || "",
+      (saved.dateToFilter as string) || "",
+      SSR_DEFAULT_PILL,
+    );
+    setDashboardRange(init.dashboardRange);
+    setLastPill(init.lastPill);
+    setTableDateFrom(init.tableDateFrom);
+    setTableDateTo(init.tableDateTo);
+    setBucket(defaultBucketForDashboardRange(init.dashboardRange));
+    setAnnotationFilter((saved.annotationFilter as string) || "all");
+    setStatusFilter((saved.statusFilter as string) || "valid");
+    setFiltersReady(true);
+  }, []);
 
   // Shared bucket series for volume chart + rate strip (one API call)
   const {
@@ -95,6 +100,7 @@ export default function Page() {
     annotationFilter,
     bucket,
     requestEpoch,
+    enabled: filtersReady,
   });
 
   const bumpEpoch = React.useCallback(() => {
@@ -314,11 +320,12 @@ export default function Page() {
               annotationFilter={annotationFilter}
               requestEpoch={requestEpoch}
               onFailuresClick={handleFailuresClick}
+              enabled={filtersReady}
             />
 
             <FailureRateStrip
               data={bucketStats}
-              loading={bucketLoading}
+              loading={bucketLoading || !filtersReady}
               annotationFilter={annotationFilter}
               bucket={bucket}
             />
@@ -332,7 +339,7 @@ export default function Page() {
               bucket={bucket}
               onBucketChange={handleBucketChange}
               data={bucketStats}
-              loading={bucketLoading}
+              loading={bucketLoading || !filtersReady}
             />
 
             <AnnotationInsights
@@ -341,21 +348,30 @@ export default function Page() {
               annotationFilter={annotationFilter}
               onAnnotationFilterChange={setAnnotationFilter}
               requestEpoch={requestEpoch}
+              enabled={filtersReady}
             />
 
-            <DataTable
-              onClearDateFilter={handleClearDateFilter}
-              annotationFilter={annotationFilter}
-              onAnnotationFilterChange={setAnnotationFilter}
-              filterLinked={filterLinked}
-              onFilterLinkedChange={setFilterLinked}
-              dateFromFilter={tableDateFrom}
-              onDateFromFilterChange={handleTableDateFromChange}
-              dateToFilter={tableDateTo}
-              onDateToFilterChange={handleTableDateToChange}
-              statusFilter={statusFilter}
-              onStatusFilterChange={setStatusFilter}
-            />
+            {filtersReady ? (
+              <DataTable
+                onClearDateFilter={handleClearDateFilter}
+                annotationFilter={annotationFilter}
+                onAnnotationFilterChange={setAnnotationFilter}
+                filterLinked={filterLinked}
+                onFilterLinkedChange={setFilterLinked}
+                dateFromFilter={tableDateFrom}
+                onDateFromFilterChange={handleTableDateFromChange}
+                dateToFilter={tableDateTo}
+                onDateToFilterChange={handleTableDateToChange}
+                statusFilter={statusFilter}
+                onStatusFilterChange={setStatusFilter}
+              />
+            ) : (
+              <div
+                id="test-table"
+                className="min-h-[240px] animate-pulse rounded-xl border bg-card"
+                aria-hidden
+              />
+            )}
           </div>
         </div>
       </div>

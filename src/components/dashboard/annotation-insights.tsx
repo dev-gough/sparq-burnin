@@ -40,6 +40,8 @@ interface AnnotationInsightsProps {
   annotationFilter: string;
   onAnnotationFilterChange: (filter: string) => void;
   requestEpoch: number;
+  /** Skip fetch until parent cookie filters are ready. Default true. */
+  enabled?: boolean;
 }
 
 /** Prefer API range (SQL window) for /todo; fall back to client dashboard helper. */
@@ -77,6 +79,7 @@ export function AnnotationInsights({
   annotationFilter,
   onAnnotationFilterChange,
   requestEpoch,
+  enabled = true,
 }: AnnotationInsightsProps) {
   const [data, setData] = React.useState<AnnotationSummary | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -85,6 +88,11 @@ export function AnnotationInsights({
   epochRef.current = requestEpoch;
 
   React.useEffect(() => {
+    if (!enabled) {
+      setLoading(true);
+      return;
+    }
+
     const abort = new AbortController();
     const epochAtStart = requestEpoch;
 
@@ -124,7 +132,7 @@ export function AnnotationInsights({
 
     fetchSummary();
     return () => abort.abort();
-  }, [dashboardRange, chartMode, requestEpoch]);
+  }, [dashboardRange, chartMode, requestEpoch, enabled]);
 
   const todoHref = todoHrefFromSummary(data, dashboardRange);
 
