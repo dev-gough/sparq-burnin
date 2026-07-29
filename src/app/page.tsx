@@ -170,7 +170,7 @@ export default function Page() {
    * Fast EXISTS probe before mounting heavy KPI/chart fetches.
    * Gates empty-state vs skeleton/content path.
    */
-  const { hasData, probing } = usePeriodHasData({
+  const { hasData } = usePeriodHasData({
     dashboardRange,
     annotationFilter,
     requestEpoch,
