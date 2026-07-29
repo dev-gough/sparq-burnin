@@ -10,12 +10,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RollingNumber } from "@/components/dashboard/rolling-number";
 import {
   appendDashboardRangeParams,
   type DashboardRange,
   dashboardRangeLabel,
 } from "@/lib/dashboard-range";
-import { cn } from "@/lib/utils";
 
 interface SummaryStats {
   total: number;
@@ -120,41 +120,8 @@ function CaptionSlot({ children }: { children: React.ReactNode }) {
   );
 }
 
-/**
- * Number region: outer box height is locked to the real title line-box
- * (text-5xl/6xl or text-3xl/4xl with leading-none) so skeletons cannot be taller.
- */
-function MetricValue({
-  pending,
-  variant,
-  className,
-  children,
-}: {
-  pending: boolean;
-  variant: "hero" | "secondary";
-  className?: string;
-  children: React.ReactNode;
-}) {
-  // text-5xl=3rem, text-6xl=3.75rem; text-3xl=1.875rem, text-4xl=2.25rem
-  const shell =
-    variant === "hero"
-      ? "flex h-12 shrink-0 items-center sm:h-[3.75rem]" // text-5xl / text-6xl
-      : "flex h-[1.875rem] shrink-0 items-center sm:h-9"; // text-3xl / text-4xl
-  const bar =
-    variant === "hero"
-      ? "h-10 w-32 sm:h-12 sm:w-36"
-      : "h-7 w-24 sm:h-8 sm:w-28";
-
-  return (
-    <div className={shell}>
-      {pending ? (
-        <Skeleton className={cn("rounded-md", bar)} aria-hidden />
-      ) : (
-        <span className={cn("leading-none", className)}>{children}</span>
-      )}
-    </div>
-  );
-}
+const formatRate = (n: number) => n.toFixed(1);
+const formatInt = (n: number) => n.toLocaleString();
 
 export function HeroMetrics({
   dashboardRange,
@@ -250,18 +217,15 @@ export function HeroMetrics({
             Failure rate
           </CardDescription>
           <CardTitle className="text-5xl font-semibold tabular-nums tracking-tight leading-none sm:text-6xl">
-            <MetricValue
+            <RollingNumber
+              value={stats ? stats.failureRate : null}
               pending={pending || !stats}
+              format={formatRate}
               variant="hero"
-              className="tabular-nums"
-            >
-              {stats ? (
-                <>
-                  {stats.failureRate.toFixed(1)}
-                  <span className="text-3xl text-muted-foreground">%</span>
-                </>
-              ) : null}
-            </MetricValue>
+              suffix={
+                <span className="text-3xl text-muted-foreground">%</span>
+              }
+            />
           </CardTitle>
           <TrendSlot>
             {pending || !stats ? (
@@ -317,13 +281,12 @@ export function HeroMetrics({
             Inverters tested
           </CardDescription>
           <CardTitle className="text-3xl font-semibold tabular-nums leading-none sm:text-4xl">
-            <MetricValue
+            <RollingNumber
+              value={stats ? stats.total : null}
               pending={pending || !stats}
+              format={formatInt}
               variant="secondary"
-              className="tabular-nums"
-            >
-              {stats ? stats.total.toLocaleString() : null}
-            </MetricValue>
+            />
           </CardTitle>
           <TrendSlot>
             {pending || !stats ? (
@@ -365,13 +328,13 @@ export function HeroMetrics({
             disabled={pending || !stats}
           >
             <CardTitle className="text-3xl font-semibold tabular-nums leading-none text-rose-600 transition-colors group-hover:underline dark:text-rose-400 sm:text-4xl">
-              <MetricValue
+              <RollingNumber
+                value={stats ? stats.failed : null}
                 pending={pending || !stats}
+                format={formatInt}
                 variant="secondary"
-                className="tabular-nums text-rose-600 dark:text-rose-400"
-              >
-                {stats ? stats.failed.toLocaleString() : null}
-              </MetricValue>
+                className="text-rose-600 dark:text-rose-400"
+              />
             </CardTitle>
             <span className="mt-1 block h-5 text-xs leading-5 text-muted-foreground group-hover:text-foreground">
               Click to view in table ↓
