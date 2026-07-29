@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { IconFlame, IconTemperature } from "@tabler/icons-react";
+import { IconChartBarOff } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +19,7 @@ interface DashboardEmptyStateProps {
 
 /**
  * Full remaining-viewport empty state when the selected period has no tests.
- * Keeps the dashboard to roughly one view height (header + this panel).
+ * Ops-default copy (O8) — factual recovery path, not marketing wit.
  */
 export function DashboardEmptyState({
   dashboardRange,
@@ -36,38 +36,42 @@ export function DashboardEmptyState({
       role="status"
     >
       <div className="relative w-full max-w-lg rounded-2xl border bg-card px-8 py-12 text-center shadow-sm">
-        {/* Soft glow — “oven cooling” */}
-        <div
-          className="pointer-events-none absolute inset-x-12 top-8 h-24 rounded-full bg-rose-500/10 blur-2xl dark:bg-rose-500/15"
-          aria-hidden
-        />
-
-        <div className="relative mx-auto mb-5 flex size-16 items-center justify-center rounded-2xl border border-rose-500/20 bg-gradient-to-b from-rose-500/15 to-transparent">
-          <IconFlame
-            className="size-8 text-rose-500/80 dark:text-rose-400/90"
-            stroke={1.5}
-            aria-hidden
-          />
-          <IconTemperature
-            className="absolute -right-1 -bottom-1 size-5 text-muted-foreground/70"
+        <div className="relative mx-auto mb-5 flex size-16 items-center justify-center rounded-2xl border border-border bg-muted/40">
+          <IconChartBarOff
+            className="size-8 text-muted-foreground"
             stroke={1.5}
             aria-hidden
           />
         </div>
 
         <h2 className="relative text-xl font-semibold tracking-tight sm:text-2xl">
-          Burn-in chamber is quiet
+          No tests in this period
         </h2>
         <p className="relative mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
-          No inverter runs showed up in{" "}
+          No inverter burn-in runs were found in{" "}
           <span className="font-medium text-foreground">{period}</span>.
-          Either the line was offline, the window is too tight, or every unit
-          is still warming up somewhere else.
         </p>
 
-        <p className="relative mt-4 font-mono text-[11px] tracking-wide text-muted-foreground/80 uppercase">
-          0 tests · 0° of drama
-        </p>
+        <ul className="relative mx-auto mt-4 max-w-sm space-y-1.5 text-left text-sm text-muted-foreground">
+          <li className="flex gap-2">
+            <span className="text-muted-foreground/60" aria-hidden>
+              ·
+            </span>
+            <span>The date window may be too short</span>
+          </li>
+          <li className="flex gap-2">
+            <span className="text-muted-foreground/60" aria-hidden>
+              ·
+            </span>
+            <span>The line may have been offline</span>
+          </li>
+          <li className="flex gap-2">
+            <span className="text-muted-foreground/60" aria-hidden>
+              ·
+            </span>
+            <span>Data may not have been ingested yet</span>
+          </li>
+        </ul>
 
         {(canWiden || onWidenRange) && (
           <div className="relative mt-8 flex flex-wrap items-center justify-center gap-2">
@@ -83,14 +87,14 @@ export function DashboardEmptyState({
                 onClick={onWidenRange}
                 className="h-10"
               >
-                Pick another range
+                Custom range
               </Button>
             )}
           </div>
         )}
 
         <p className="relative mt-6 text-xs text-muted-foreground">
-          Tip: use the period pills above —{" "}
+          Use the period controls above —{" "}
           <span className="font-medium text-foreground/80">All</span> usually
           has the full burn-in history.
         </p>

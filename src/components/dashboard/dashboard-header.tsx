@@ -4,8 +4,11 @@ import * as React from "react";
 import {
   IconDownload,
   IconFileZip,
+  IconMoon,
   IconSettings,
+  IconSun,
 } from "@tabler/icons-react";
+import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -34,17 +37,50 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import {
   type DashboardPill,
   type DashboardRange,
+  dashboardRangeContextLabel,
   exportTimeRange,
 } from "@/lib/dashboard-range";
 import { cn } from "@/lib/utils";
 
+const METRICS_HELP = (
+  <div className="space-y-2 text-left text-xs leading-relaxed">
+    <p>
+      <span className="font-semibold">Latest</span> = one result per inverter
+      in the window (hero + charts).{" "}
+      <span className="font-semibold">All tests</span> = every run counts.
+    </p>
+    <p>
+      <span className="font-semibold">Prior period</span> is the equal-length
+      window immediately before the selected range. Hover a trend for dates.
+    </p>
+    <p>
+      <span className="font-semibold">Test volume</span> uses dual axes: green
+      bars = pass count (left); red = fail count (right). Hover for failure
+      rate and low-sample cues.
+    </p>
+    <p>
+      <span className="font-semibold">Timezones:</span> period pills, custom
+      range, charts, and date filters use{" "}
+      <span className="font-semibold">UTC calendar days</span>. Table row
+      timestamps use your selected display timezone (sidebar).
+    </p>
+    <p>
+      Annotation filters apply to hero, charts, and table. Failures → table
+      shows FAIL rows in the linked date range (may differ slightly from
+      latest-per-inverter hero counts).
+    </p>
+  </div>
+);
+
+/** O15: short + full labels use the same tokens (90d not “3 months”). */
 const PERIOD_PILLS: { value: DashboardPill; label: string; short: string }[] = [
   { value: "7d", label: "7 days", short: "7d" },
   { value: "30d", label: "30 days", short: "30d" },
-  { value: "90d", label: "3 months", short: "90d" },
+  { value: "90d", label: "90 days", short: "90d" },
   { value: "all", label: "All time", short: "All" },
 ];
 
@@ -61,6 +97,11 @@ interface DashboardHeaderProps {
    * 30d before localStorage prefs apply).
    */
   prefsReady?: boolean;
+  /** Controlled More sheet (e.g. empty-state “Custom range”). */
+  moreOpen?: boolean;
+  onMoreOpenChange?: (open: boolean) => void;
+  /** O31: last successful dashboard data paint (client clock). */
+  dataAsOf?: Date | null;
 }
 
 export function DashboardHeader({
@@ -72,8 +113,28 @@ export function DashboardHeader({
   filterLinked,
   onFilterLinkedChange,
   prefsReady = true,
+  moreOpen: moreOpenProp,
+  onMoreOpenChange,
+  dataAsOf = null,
 }: DashboardHeaderProps) {
-  const [moreOpen, setMoreOpen] = React.useState(false);
+  const [moreOpenInternal, setMoreOpenInternal] = React.useState(false);
+  const moreOpen = moreOpenProp ?? moreOpenInternal;
+  const setMoreOpen = onMoreOpenChange ?? setMoreOpenInternal;
+  const { theme, setTheme, resolvedTheme } = useTheme();
+  const [themeMounted, setThemeMounted] = React.useState(false);
+  React.useEffect(() => setThemeMounted(true), []);
+  const contextDates = dashboardRangeContextLabel(dashboardRange);
+  const dataAsOfLabel = React.useMemo(() => {
+    if (!dataAsOf) return null;
+    try {
+      return dataAsOf.toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    } catch {
+      return null;
+    }
+  }, [dataAsOf]);
   const [customFrom, setCustomFrom] = React.useState(
     dashboardRange.kind === "custom" ? dashboardRange.from : "",
   );
@@ -178,13 +239,16 @@ export function DashboardHeader({
   };
 
   return (
-    <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-3 border-b px-4 py-2 lg:px-6">
-      <h1 className="text-base font-semibold tracking-tight sm:text-lg">
-        Burn-in Command Center
-      </h1>
+    <header className="sticky top-0 z-20 flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-4 lg:px-6">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <h1 className="truncate text-sm font-semibold tracking-tight sm:text-base lg:text-lg">
+          Burn-in Command Center
+        </h1>
+        <InfoTooltip content={METRICS_HELP} side="bottom" />
+      </div>
 
-      {/* Period pills — large touch targets */}
-      <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:justify-center">
+      {/* Period + result mode — large touch targets (O12) */}
+      <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:justify-center sm:gap-3">
         <ToggleGroup
           type="single"
           value={activePill ?? ""}
@@ -194,7 +258,8 @@ export function DashboardHeader({
           variant="outline"
           className={cn(
             "hidden sm:flex",
-            !prefsReady && "pointer-events-none opacity-60",
+            // O39: skeleton-like mute while prefs load (not a faded live control)
+            !prefsReady && "pointer-events-none animate-pulse opacity-50",
           )}
           aria-busy={!prefsReady}
         >
@@ -202,7 +267,7 @@ export function DashboardHeader({
             <ToggleGroupItem
               key={p.value}
               value={p.value}
-              className="h-10 min-w-[3.25rem] px-3 text-sm data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+              className="h-10 min-h-10 min-w-11 px-3 text-sm focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
               aria-label={p.label}
             >
               {p.short}
@@ -210,7 +275,7 @@ export function DashboardHeader({
           ))}
         </ToggleGroup>
 
-        {/* Mobile: select instead of pills */}
+        {/* Mobile: select instead of pills — min 40px touch */}
         <Select
           value={
             !prefsReady
@@ -229,7 +294,7 @@ export function DashboardHeader({
           disabled={!prefsReady}
         >
           <SelectTrigger
-            className="h-10 w-[9.5rem] sm:hidden"
+            className="h-10 min-h-10 w-[8.5rem] sm:hidden"
             aria-label="Select period"
           >
             <SelectValue placeholder="Period…" />
@@ -244,21 +309,88 @@ export function DashboardHeader({
           </SelectContent>
         </Select>
 
-        {isCustom && (
-          <span className="hidden rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary sm:inline-flex">
-            Custom {dashboardRange.from} → {dashboardRange.to}
+        {/* O6: Result mode always visible (desktop); compact on mobile */}
+        <ToggleGroup
+          type="single"
+          value={chartMode}
+          onValueChange={(value) => {
+            if (value) onChartModeChange(value);
+          }}
+          variant="outline"
+          className={cn(
+            "hidden md:flex",
+            !prefsReady && "pointer-events-none animate-pulse opacity-50",
+          )}
+          aria-label="Result mode"
+        >
+          <ToggleGroupItem
+            value="recent"
+            className="h-10 min-h-10 px-3 text-sm focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+            title="One result per inverter in the window"
+          >
+            Latest
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="all"
+            className="h-10 min-h-10 px-3 text-sm focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+            title="Every test run counts"
+          >
+            All tests
+          </ToggleGroupItem>
+        </ToggleGroup>
+
+        {/* Mobile mode: short select */}
+        <Select
+          value={prefsReady ? chartMode : undefined}
+          onValueChange={onChartModeChange}
+          disabled={!prefsReady}
+        >
+          <SelectTrigger
+            className="h-10 min-h-10 w-[6.75rem] md:hidden"
+            aria-label="Result mode"
+          >
+            <SelectValue placeholder="Mode…" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="recent">Latest</SelectItem>
+            <SelectItem value="all">All tests</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* O25 + O31: active UTC span + last refresh */}
+        {prefsReady && (contextDates || dataAsOfLabel) && (
+          <span className="hidden items-center gap-2 text-xs tabular-nums text-muted-foreground lg:inline-flex">
+            {contextDates &&
+              (isCustom ? (
+                <span
+                  className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 font-medium text-primary"
+                  title="UTC calendar days"
+                >
+                  {contextDates} · UTC
+                </span>
+              ) : (
+                <span title="UTC calendar days">{contextDates}</span>
+              ))}
+            {dataAsOfLabel && (
+              <span
+                className="text-muted-foreground/80"
+                title="Client time of last dashboard data update"
+              >
+                Updated {dataAsOfLabel}
+              </span>
+            )}
           </span>
         )}
       </div>
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
         {/* More sheet */}
         <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
           <SheetTrigger asChild>
             <Button
               variant="outline"
               size="sm"
-              className="h-10 gap-1.5 px-3"
+              className="h-10 min-h-10 gap-1.5 px-2.5 sm:px-3"
               aria-label="More options"
             >
               <IconSettings className="size-4" />
@@ -275,7 +407,7 @@ export function DashboardHeader({
             </SheetHeader>
 
             <div className="flex flex-col gap-6 px-4 pb-6">
-              {/* Chart mode */}
+              {/* Chart mode (also on header — kept here for advanced copy) */}
               <div className="space-y-2">
                 <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Result mode
@@ -297,50 +429,93 @@ export function DashboardHeader({
                   </ToggleGroupItem>
                 </ToggleGroup>
                 <p className="text-xs text-muted-foreground">
-                  {chartMode === "recent"
-                    ? "One result per inverter in the selected window (hero) or per chart period (volume)."
-                    : "Every test run counts."}
+                  Same control as the header. Latest = one result per inverter;
+                  All tests = every run.
                 </p>
               </div>
 
-              {/* Custom dates */}
+              {/* Custom dates — UTC calendar days (O14) */}
               <div className="space-y-2">
                 <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Custom date range (UTC)
+                  Custom date range
                 </Label>
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground/80">
+                    UTC calendar days
+                  </span>{" "}
+                  — same clock as charts, hero metrics, and table date filters.
+                  Row timestamps in the table still follow your display timezone.
+                </p>
                 <div className="flex flex-wrap gap-2">
                   <div className="space-y-1">
                     <Label htmlFor="dash-from" className="text-xs">
-                      From
+                      From (UTC)
                     </Label>
                     <Input
                       id="dash-from"
                       type="date"
                       value={customFrom}
                       onChange={(e) => setCustomFrom(e.target.value)}
-                      className="h-10 w-40"
+                      className="h-10 min-h-10 w-40"
                     />
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="dash-to" className="text-xs">
-                      To
+                      To (UTC)
                     </Label>
                     <Input
                       id="dash-to"
                       type="date"
                       value={customTo}
                       onChange={(e) => setCustomTo(e.target.value)}
-                      className="h-10 w-40"
+                      className="h-10 min-h-10 w-40"
                     />
                   </div>
                 </div>
                 <Button
-                  className="h-10"
+                  className="h-10 min-h-10"
                   onClick={applyCustom}
                   disabled={!customFrom || !customTo || customFrom > customTo}
                 >
                   Apply custom range
                 </Button>
+              </div>
+
+              {/* O23: Theme — also in sidebar; surfaced here for discoverability */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Appearance
+                </Label>
+                <ToggleGroup
+                  type="single"
+                  value={
+                    themeMounted
+                      ? theme === "system"
+                        ? "system"
+                        : resolvedTheme === "dark"
+                          ? "dark"
+                          : "light"
+                      : undefined
+                  }
+                  onValueChange={(value) => {
+                    if (value) setTheme(value);
+                  }}
+                  variant="outline"
+                  className="w-full justify-start"
+                  aria-label="Color theme"
+                >
+                  <ToggleGroupItem value="light" className="h-10 min-h-10 flex-1 gap-1.5">
+                    <IconSun className="size-4" />
+                    Light
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="dark" className="h-10 min-h-10 flex-1 gap-1.5">
+                    <IconMoon className="size-4" />
+                    Dark
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="system" className="h-10 min-h-10 flex-1">
+                    System
+                  </ToggleGroupItem>
+                </ToggleGroup>
               </div>
 
               {/* Date link toggle */}
@@ -411,6 +586,11 @@ export function DashboardHeader({
             <DropdownMenuItem
               disabled={!exportRange || isGeneratingReport}
               onClick={generateReport}
+              title={
+                exportRange === null
+                  ? "Exports require a pill period (7d / 30d / 90d / All), not a custom range"
+                  : undefined
+              }
             >
               <IconDownload className="mr-2 size-4" />
               {isGeneratingReport ? "Generating…" : "Test report (CSV)"}
@@ -418,6 +598,11 @@ export function DashboardHeader({
             <DropdownMenuItem
               disabled={!exportRange || isGeneratingFailedData}
               onClick={downloadFailedTestData}
+              title={
+                exportRange === null
+                  ? "Exports require a pill period (7d / 30d / 90d / All), not a custom range"
+                  : undefined
+              }
             >
               <IconFileZip className="mr-2 size-4" />
               {isGeneratingFailedData
@@ -429,8 +614,8 @@ export function DashboardHeader({
                 <DropdownMenuSeparator />
                 <div className="px-2 py-1.5 text-xs text-muted-foreground">
                   {exportRange === null
-                    ? "Custom ranges are not supported by export APIs. Choose 7d, 30d, 90d, or All."
-                    : "Exports ignore annotation filters and use the pill time window only."}
+                    ? "Export disabled for custom ranges. Choose 7d, 30d, 90d, or All."
+                    : "Exports use the pill time window only and ignore annotation filters."}
                 </div>
               </>
             )}

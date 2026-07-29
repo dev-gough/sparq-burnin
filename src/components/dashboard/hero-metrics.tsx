@@ -9,12 +9,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { RollingNumber } from "@/components/dashboard/rolling-number";
 import {
   appendDashboardRangeParams,
   type DashboardRange,
   dashboardRangeLabel,
 } from "@/lib/dashboard-range";
+import { cn } from "@/lib/utils";
 
 interface SummaryStats {
   total: number;
@@ -49,16 +55,38 @@ interface HeroMetricsProps {
   enabled?: boolean;
 }
 
+/** Format signed integer deltas with locale grouping (e.g. −1,948). */
+function formatSignedInt(n: number): string {
+  const abs = Math.abs(Math.round(n)).toLocaleString();
+  if (n === 0) return "0";
+  return n > 0 ? `+${abs}` : `−${abs}`;
+}
+
+/**
+ * Prior-period delta badge.
+ * Visible: absolute delta (+ optional % of prior). Tooltip: full prior window.
+ * Fixed-height TrendSlot — keep this compact (no multi-line copy).
+ */
 function TrendBadge({
   value,
   suffix = "",
   goodWhenDown = false,
   neutral = false,
+  priorLabel = null,
+  priorAbsolute = null,
 }: {
   value: number;
+  /** Unit suffix after the absolute delta, e.g. `" pts"` for rate. */
   suffix?: string;
   goodWhenDown?: boolean;
   neutral?: boolean;
+  /** Human prior window, e.g. "Prior 30 days" or "2024-01-01 – 2024-01-10". */
+  priorLabel?: string | null;
+  /**
+   * Prior absolute for % change on count deltas.
+   * When non-zero: show `(±N%)`. Rate (pts) skips this — pp is already a difference.
+   */
+  priorAbsolute?: number | null;
 }) {
   const isZero = value === 0;
   const isUp = value > 0;
@@ -77,24 +105,96 @@ function TrendBadge({
         : "text-rose-600 dark:text-rose-400";
 
   const Icon = isZero ? IconMinus : isUp ? IconArrowUp : IconArrowDown;
-  const display = isZero
-    ? `0${suffix}`
-    : `${isUp ? "+" : ""}${Number.isInteger(value) ? value : value.toFixed(1)}${suffix}`;
 
-  return (
+  // Count deltas: integer + optional % of prior. Rate: one decimal + " pts".
+  const isRate = suffix.trim() === "pts";
+  let display: string;
+  if (isZero) {
+    display = isRate ? `0${suffix}` : "0";
+  } else if (isRate) {
+    const mag = Math.abs(value).toFixed(1);
+    display = `${isUp ? "+" : "−"}${mag}${suffix}`;
+  } else {
+    display = formatSignedInt(value);
+    if (
+      priorAbsolute != null &&
+      priorAbsolute !== 0 &&
+      Number.isFinite(priorAbsolute)
+    ) {
+      const pct = (value / priorAbsolute) * 100;
+      const pctAbs = Math.abs(pct);
+      const pctStr = pctAbs >= 1 ? pctAbs.toFixed(0) : pctAbs.toFixed(1);
+      const pctSigned =
+        pct > 0 ? `+${pctStr}` : pct < 0 ? `−${pctStr}` : pctStr;
+      display = `${display} (${pctSigned}%)`;
+    }
+  }
+
+  const vsLabel = priorLabel?.trim() ? `vs ${priorLabel}` : "vs prior period";
+  const tooltipDetail = isRate
+    ? `${vsLabel} · percentage points`
+    : vsLabel;
+
+  // O19: not color-only — icon + explicit aria-label with direction/quality
+  const directionWord = isZero ? "unchanged" : isUp ? "up" : "down";
+  const qualityWord =
+    isGood === null || isZero
+      ? ""
+      : isGood
+        ? ", improvement"
+        : ", worsening";
+  const ariaLabel = `${display} ${vsLabel}${qualityWord} (${directionWord})`;
+
+  const badge = (
     <span
       className={cn(
-        "inline-flex items-center gap-0.5 text-sm font-medium tabular-nums",
+        "inline-flex max-w-full items-center gap-0.5 truncate text-sm font-medium tabular-nums",
         color,
       )}
+      title={tooltipDetail}
+      aria-label={ariaLabel}
     >
       <Icon className="size-3.5 shrink-0" aria-hidden />
-      {display}
-      <span className="ml-1 font-normal text-muted-foreground">
-        vs prior period
+      <span className="truncate" aria-hidden>
+        {display}
       </span>
     </span>
   );
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-xs">
+        {tooltipDetail}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** O18: mild semantic tint for elevated failure rate (+ non-color cue). */
+const RATE_WARN_PCT = 2;
+const RATE_ALERT_PCT = 5;
+
+function failureRateTone(rate: number | null | undefined): {
+  valueClass: string;
+  cue: string | null;
+} {
+  if (rate == null || !Number.isFinite(rate)) {
+    return { valueClass: "", cue: null };
+  }
+  if (rate >= RATE_ALERT_PCT) {
+    return {
+      valueClass: "text-rose-600 dark:text-rose-400",
+      cue: "Elevated",
+    };
+  }
+  if (rate >= RATE_WARN_PCT) {
+    return {
+      valueClass: "text-amber-600 dark:text-amber-400",
+      cue: "Watch",
+    };
+  }
+  return { valueClass: "", cue: null };
 }
 
 /**
@@ -110,17 +210,18 @@ function TrendSlot({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Single caption line (O5/O12) — wrap on mobile, truncate only on wider cards. */
 function CaptionSlot({ children }: { children: React.ReactNode }) {
-  // Two text-xs lines (+ gap) reserved always
   return (
-    <div className="flex h-10 shrink-0 flex-col justify-start gap-0.5 overflow-hidden text-xs leading-5 text-muted-foreground">
+    <div className="flex min-h-5 shrink-0 items-start overflow-hidden text-xs leading-5 text-muted-foreground sm:items-center">
       {children}
     </div>
   );
 }
 
 const formatRate = (n: number) => n.toFixed(1);
-const formatInt = (n: number) => n.toLocaleString();
+/** Round first so continuous odometer ticks never render fractional totals. */
+const formatInt = (n: number) => Math.round(n).toLocaleString();
 
 export function HeroMetrics({
   dashboardRange,
@@ -131,25 +232,32 @@ export function HeroMetrics({
   enabled = true,
 }: HeroMetricsProps) {
   const [data, setData] = React.useState<CompareResponse | null>(null);
+  /** True only until the first successful payload (zeros → enter odometer). */
   const [pending, setPending] = React.useState(true);
   const [error, setError] = React.useState(false);
+  const hasDataRef = React.useRef(false);
 
   const epochRef = React.useRef(requestEpoch);
   epochRef.current = requestEpoch;
 
   React.useEffect(() => {
     if (!enabled) {
-      setPending(true);
+      if (!hasDataRef.current) setPending(true);
       return;
     }
 
     const abort = new AbortController();
     const epochAtStart = requestEpoch;
+    const isInitial = !hasDataRef.current;
 
     async function fetchStats() {
       try {
-        // Numbers only enter loading state — card chrome stays mounted
-        setPending(true);
+        // Initial load: odometer holds on 0. Later range changes: keep last
+        // numbers and roll from them when the new payload arrives.
+        // Only zero-out the odometer on the first load. Subsequent range
+        // changes keep the previous numbers mounted until the new payload
+        // arrives, then RollingNumber rolls previous → next.
+        if (isInitial) setPending(true);
         setError(false);
         const params = new URLSearchParams({
           view: "summary",
@@ -183,6 +291,7 @@ export function HeroMetrics({
             failurePercentageOfTotal: json.failurePercentageOfTotal ?? null,
           });
         }
+        hasDataRef.current = true;
       } catch (e) {
         if (abort.signal.aborted) return;
         console.error("Failed to fetch hero stats:", e);
@@ -200,47 +309,87 @@ export function HeroMetrics({
 
   const stats = data?.current ?? null;
   const delta = data?.delta ?? null;
+  const priorLabel = data?.labels?.previous ?? null;
+  // Odometer: zeros only on first paint; later swaps pass the live value so
+  // RollingNumber can roll previous → next without re-inserting 0.
+  const metricsPending = pending && !stats;
   const annotationOn = Boolean(
     annotationFilter && annotationFilter !== "all",
   );
-  const showPop = delta !== null && dashboardRange.kind !== "all";
+  const isAllTime = dashboardRange.kind === "all";
+  const showPop = delta !== null && !isAllTime;
   const periodLabel = dashboardRangeLabel(dashboardRange);
+  const failedCount = stats?.failed ?? null;
+  const rateTone = failureRateTone(
+    metricsPending ? null : stats?.failureRate,
+  );
 
   // Static card shells — only metric values / dynamic phrase fragments update
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-6">
       {/* FAILURE RATE */}
-      <Card className="@container/card from-rose-500/5 to-card bg-gradient-to-t shadow-xs md:col-span-1">
+      <Card
+        className={cn(
+          "@container/card to-card bg-gradient-to-t shadow-xs md:col-span-1",
+          rateTone.cue === "Elevated"
+            ? "from-rose-500/10"
+            : rateTone.cue === "Watch"
+              ? "from-amber-500/10"
+              : "from-rose-500/5",
+        )}
+      >
         <CardHeader className="gap-2">
-          <CardDescription className="text-xs font-medium uppercase tracking-wide">
+          <CardDescription className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide">
             Failure rate
+            {rateTone.cue && !metricsPending && (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-0.5 text-[10px] font-semibold normal-case tracking-normal",
+                  rateTone.cue === "Elevated"
+                    ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
+                    : "bg-amber-500/15 text-amber-800 dark:text-amber-300",
+                )}
+              >
+                {rateTone.cue}
+              </span>
+            )}
           </CardDescription>
-          <CardTitle className="text-5xl font-semibold tabular-nums tracking-tight leading-none sm:text-6xl">
+          <CardTitle
+            className={cn(
+              "text-5xl font-semibold tabular-nums tracking-tight leading-none sm:text-6xl",
+              rateTone.valueClass,
+            )}
+          >
             <RollingNumber
               value={stats ? stats.failureRate : null}
-              pending={pending || !stats}
+              pending={metricsPending}
               format={formatRate}
               variant="hero"
+              className={rateTone.valueClass || undefined}
               suffix={
-                <span className="text-3xl text-muted-foreground">%</span>
+                <span
+                  className={cn(
+                    "text-3xl",
+                    rateTone.valueClass || "text-muted-foreground",
+                  )}
+                >
+                  %
+                </span>
               }
             />
           </CardTitle>
           <TrendSlot>
-            {pending || !stats ? (
+            {metricsPending ? (
               <span className="text-sm leading-5 text-muted-foreground/70">
                 —
               </span>
             ) : showPop && delta ? (
               <TrendBadge
                 value={delta.failureRatePp}
-                suffix=" pp"
+                suffix=" pts"
                 goodWhenDown
+                priorLabel={priorLabel}
               />
-            ) : dashboardRange.kind === "all" ? (
-              <span className="text-sm leading-5 text-muted-foreground">
-                No prior period
-              </span>
             ) : (
               <span className="text-sm leading-5 text-muted-foreground/70">
                 —
@@ -248,31 +397,26 @@ export function HeroMetrics({
             )}
           </TrendSlot>
           <CaptionSlot>
-            {/* Always two lines reserved: annotation line may be invisible */}
-            <p className="h-5 truncate leading-5">
-              {annotationOn ? (
-                pending || stats?.failurePercentageOfTotal === undefined ? (
-                  <span className="tabular-nums text-muted-foreground/70">
-                    —% of all failures · tagged failures ÷ all tests
-                  </span>
-                ) : (
-                  <>
-                    <span className="tabular-nums">
-                      {stats.failurePercentageOfTotal}%
-                    </span>
-                    {" of all failures · tagged failures ÷ all tests"}
-                  </>
-                )
+            {annotationOn ? (
+              metricsPending ||
+              stats?.failurePercentageOfTotal === undefined ? (
+                <span className="truncate tabular-nums text-muted-foreground/70">
+                  —% of all failures
+                </span>
               ) : (
-                <span className="invisible">placeholder</span>
-              )}
-            </p>
-            <p className="h-5 truncate leading-5">
-              {chartMode === "recent"
-                ? "One result per inverter in "
-                : "All tests in "}
-              <span className="text-foreground/80">{periodLabel}</span>
-            </p>
+                <span className="truncate">
+                  <span className="tabular-nums">
+                    {stats.failurePercentageOfTotal}%
+                  </span>
+                  {" of all failures"}
+                </span>
+              )
+            ) : (
+              <span className="text-pretty sm:truncate">
+                {chartMode === "recent" ? "Latest · " : "All tests · "}
+                <span className="text-foreground/80">{periodLabel}</span>
+              </span>
+            )}
           </CaptionSlot>
         </CardHeader>
       </Card>
@@ -286,22 +430,23 @@ export function HeroMetrics({
           <CardTitle className="text-3xl font-semibold tabular-nums leading-none sm:text-4xl">
             <RollingNumber
               value={stats ? stats.total : null}
-              pending={pending || !stats}
+              pending={metricsPending}
               format={formatInt}
               variant="secondary"
             />
           </CardTitle>
           <TrendSlot>
-            {pending || !stats ? (
+            {metricsPending ? (
               <span className="text-sm leading-5 text-muted-foreground/70">
                 —
               </span>
             ) : showPop && delta ? (
-              <TrendBadge value={delta.total} neutral />
-            ) : dashboardRange.kind === "all" ? (
-              <span className="text-sm leading-5 text-muted-foreground">
-                No prior period
-              </span>
+              <TrendBadge
+                value={delta.total}
+                neutral
+                priorLabel={priorLabel}
+                priorAbsolute={data?.previous?.total ?? null}
+              />
             ) : (
               <span className="text-sm leading-5 text-muted-foreground/70">
                 —
@@ -309,18 +454,22 @@ export function HeroMetrics({
             )}
           </TrendSlot>
           <CaptionSlot>
-            <p className="h-5 truncate leading-5">
+            <span className="text-pretty sm:truncate">
               {chartMode === "recent"
-                ? "Latest valid result per inverter"
-                : "Every test in the selected period"}
-            </p>
-            <p className="invisible h-5 leading-5">placeholder</p>
+                ? "Latest per inverter"
+                : "Every test in period"}
+            </span>
           </CaptionSlot>
         </CardHeader>
       </Card>
 
-      {/* FAILURES */}
-      <Card className="@container/card from-rose-500/5 to-card bg-gradient-to-t shadow-xs">
+      {/* FAILURES — whole value is a table filter CTA (O13) */}
+      <Card
+        className={cn(
+          "@container/card from-rose-500/5 to-card bg-gradient-to-t shadow-xs transition-colors",
+          !metricsPending && "hover:border-rose-500/30",
+        )}
+      >
         <CardHeader className="gap-2">
           <CardDescription className="text-xs font-medium uppercase tracking-wide">
             Failures
@@ -328,34 +477,42 @@ export function HeroMetrics({
           <button
             type="button"
             onClick={onFailuresClick}
-            className="group rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="group -mx-1 cursor-pointer rounded-md px-1 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:cursor-not-allowed"
             title="Filter table to FAIL and scroll to tests"
-            disabled={pending || !stats}
+            disabled={metricsPending}
+            aria-label={
+              failedCount != null && !metricsPending
+                ? `View ${failedCount} failures in the table`
+                : "View failures in the table"
+            }
           >
             <CardTitle className="text-3xl font-semibold tabular-nums leading-none text-rose-600 transition-colors group-hover:underline dark:text-rose-400 sm:text-4xl">
               <RollingNumber
                 value={stats ? stats.failed : null}
-                pending={pending || !stats}
+                pending={metricsPending}
                 format={formatInt}
                 variant="secondary"
                 className="text-rose-600 dark:text-rose-400"
               />
             </CardTitle>
-            <span className="mt-1 block h-5 text-xs leading-5 text-muted-foreground group-hover:text-foreground">
-              Click to view in table ↓
+            <span className="mt-1 flex h-5 items-center text-xs font-medium leading-5 text-rose-600/80 underline-offset-2 group-hover:text-rose-600 group-hover:underline dark:text-rose-400/80 dark:group-hover:text-rose-400">
+              {failedCount != null && !metricsPending
+                ? `View ${formatInt(failedCount)} fails`
+                : "View fails"}
             </span>
           </button>
           <TrendSlot>
-            {pending || !stats ? (
+            {metricsPending ? (
               <span className="text-sm leading-5 text-muted-foreground/70">
                 —
               </span>
             ) : showPop && delta ? (
-              <TrendBadge value={delta.failed} goodWhenDown />
-            ) : dashboardRange.kind === "all" ? (
-              <span className="text-sm leading-5 text-muted-foreground">
-                No prior period
-              </span>
+              <TrendBadge
+                value={delta.failed}
+                goodWhenDown
+                priorLabel={priorLabel}
+                priorAbsolute={data?.previous?.failed ?? null}
+              />
             ) : (
               <span className="text-sm leading-5 text-muted-foreground/70">
                 —
@@ -363,23 +520,25 @@ export function HeroMetrics({
             )}
           </TrendSlot>
           <CaptionSlot>
-            <p className="h-5 truncate leading-5">
-              Table shows FAIL rows in the linked date range
-              {chartMode === "recent"
-                ? "; counts may differ from hero (latest-per-inverter)"
-                : ""}
-              .
-            </p>
-            <p className="h-5 truncate leading-5">
-              {error && !stats ? (
-                <span className="text-destructive">Could not load metrics.</span>
-              ) : (
-                <span className="invisible">placeholder</span>
-              )}
-            </p>
+            {error && !stats ? (
+              <span className="text-destructive">Could not load metrics.</span>
+            ) : (
+              <span className="text-pretty sm:truncate">
+                {chartMode === "recent"
+                  ? "Table may list more rows"
+                  : "FAIL rows in period"}
+              </span>
+            )}
           </CaptionSlot>
         </CardHeader>
       </Card>
+
+      {/* O16: single all-time compare note (not thrice) */}
+      {isAllTime && !metricsPending && (
+        <p className="text-xs text-muted-foreground md:col-span-3">
+          All-time view has no prior-period comparison.
+        </p>
+      )}
     </div>
   );
 }

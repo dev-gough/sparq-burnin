@@ -39,6 +39,9 @@ export default function TodoPage() {
   const [filterDateFrom, setFilterDateFrom] = React.useState("");
   const [filterDateTo, setFilterDateTo] = React.useState("");
 
+  /** True when opened from dashboard untagged chip (period-scoped). */
+  const [fromDashboard, setFromDashboard] = React.useState(false);
+
   // Client-side only: seed date filters from query string (no server date filter in v1)
   React.useEffect(() => {
     if (typeof window === "undefined") return;
@@ -49,6 +52,9 @@ export default function TodoPage() {
     const ymd = /^\d{4}-\d{2}-\d{2}$/;
     if (from && ymd.test(from)) setFilterDateFrom(from);
     if (to && ymd.test(to)) setFilterDateTo(to);
+    if ((from && ymd.test(from)) || (to && ymd.test(to))) {
+      setFromDashboard(true);
+    }
   }, []);
 
   React.useEffect(() => {
@@ -218,6 +224,22 @@ export default function TodoPage() {
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
           <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6 4xl:gap-8 5xl:gap-10 mx-auto w-full px-4 lg:px-6 4xl:px-8 5xl:px-12">
+            {fromDashboard && (
+              <div
+                className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-sm text-muted-foreground"
+                role="status"
+              >
+                <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <p>
+                  Opened from the dashboard. The list includes{" "}
+                  <span className="font-medium text-foreground">
+                    all unannotated fails
+                  </span>{" "}
+                  in the date range — not only the latest result per inverter.
+                  Date filters below are pre-filled from the command center.
+                </p>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-2xl font-bold">Todo - Unannotated Failed Tests</h1>

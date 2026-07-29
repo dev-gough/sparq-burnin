@@ -7,11 +7,18 @@ import type { EChartsOption } from "echarts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   burninChartColors,
+  chartEnterAnimation,
+  chartSeriesDelay,
   formatBucketLabel,
+  useCommittedChartOption,
+  useCommittedSeriesKey,
+  useSeriesRevealClass,
   type ChartBucket,
 } from "@/lib/chart-theme";
 import {
+  fillContinuousDayBuckets,
   hasStripFields,
+  shouldFillContinuousDays,
   type BucketStats,
 } from "@/hooks/useBucketStats";
 import {
@@ -32,16 +39,26 @@ interface FailureRateStripProps {
 /** Shared plot height — skeleton, empty, and chart use this so layout never jumps. */
 export const FAILURE_RATE_STRIP_HEIGHT_PX = 156;
 
-/** Nice upper bound for a 0–max axis with room above the peak rate. */
+/**
+ * Nice upper bound for a 0–max percentage axis with room above the peak rate.
+ * Uses percentage-friendly steps (5, 10, 15, …) instead of pure 1-2-5 decades
+ * so modest peaks (e.g. ~20%) land on 25, not leap to 50.
+ */
 function niceRateMax(peak: number): number {
-  if (!Number.isFinite(peak) || peak <= 0) return 1;
-  const padded = peak * 1.2;
-  // Prefer round steps: 1, 2, 5 × 10^n
-  const exp = Math.floor(Math.log10(padded));
-  const base = 10 ** exp;
-  const n = padded / base;
-  const nice = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
-  return nice * base;
+  // Empty / invalid → readable floor (not 0–1%)
+  if (!Number.isFinite(peak) || peak <= 0) return 5;
+
+  // Headroom, never tighter than 5% when there is any data
+  const padded = Math.max(peak * 1.2, 5);
+  // Cap at 100 — rates are percentages
+  if (padded >= 100) return 100;
+
+  // Prefer steps that keep mid-tick (yMax/2) readable on a short strip
+  const STEPS = [5, 10, 15, 20, 25, 30, 40, 50, 75, 100] as const;
+  for (const step of STEPS) {
+    if (padded <= step) return step;
+  }
+  return 100;
 }
 
 /** Compact y-axis labels: "0", "2.5%", "5%" — avoid long trailing zeros. */
@@ -89,9 +106,20 @@ export function FailureRateStrip({
 
   const fieldsMissing = annotationOn && !hasStripFields(data);
 
+  // Align domain with volume chart: fill missing calendar days on day bucket
+  // so both strip and volume share the same continuous axis (O9).
+  const plotData = React.useMemo(() => {
+    if (fieldsMissing) return [];
+    if (!dashboardRange) return data;
+    return fillContinuousDayBuckets(data, dashboardRange, bucket);
+  }, [data, dashboardRange, bucket, fieldsMissing]);
+
+  const continuousDays =
+    !!dashboardRange && shouldFillContinuousDays(dashboardRange, bucket);
+
   const series = React.useMemo(() => {
     if (fieldsMissing) return [];
-    return data.map((row) => {
+    return plotData.map((row) => {
       let rate = 0;
       if (
         typeof row.totalUnfiltered === "number" &&
@@ -110,7 +138,7 @@ export function FailureRateStrip({
         rate: Math.round(rate * 100) / 100,
       };
     });
-  }, [data, annotationOn, fieldsMissing]);
+  }, [plotData, annotationOn, fieldsMissing]);
 
   const chartOption: EChartsOption = React.useMemo(() => {
     const textColor = isDarkMode
@@ -129,6 +157,7 @@ export function FailureRateStrip({
     const yMax = niceRateMax(maxRate);
 
     return {
+      ...chartEnterAnimation,
       backgroundColor: "transparent",
       textStyle: {
         color: textColor,
@@ -193,7 +222,10 @@ export function FailureRateStrip({
           smooth: 0.35,
           symbol: "circle",
           symbolSize: 5,
-          showSymbol: series.length <= 40,
+          // Markers on sparse / short series so modest movement stays visible
+          showSymbol: series.length <= 30,
+          animationDelay: (idx: number) => chartSeriesDelay(idx, 24),
+          animationEasing: "cubicOut",
           lineStyle: {
             width: 2,
             color: fail,
@@ -244,9 +276,35 @@ export function FailureRateStrip({
     };
   }, [series, isDarkMode, bucket]);
 
+  // Derived series key — may thrash while refreshing if range/bucket changed.
+  const paintKey = React.useMemo(
+    () => series.map((s) => `${s.date}:${s.rate}`).join("|"),
+    [series],
+  );
+
+  // Only advance paint identity when data matches the current request.
+  const committedPaintKey = useCommittedSeriesKey(paintKey, refreshing);
+
+  // Freeze option while refreshing so period/bucket flips don't paint a
+  // transformed stale series before the new fetch lands.
+  const displayOption = useCommittedChartOption(
+    chartOption,
+    committedPaintKey,
+    refreshing,
+  );
+
+  const revealRef = useSeriesRevealClass(committedPaintKey);
+
   const CHART_HEIGHT_PX = FAILURE_RATE_STRIP_HEIGHT_PX;
-  const showSkeleton = loading && series.length < 2;
-  const showEmpty = !loading && !fieldsMissing && series.length < 2;
+  // After continuous fill, length can be large with all zeros — empty means
+  // no real activity in the unfilled source data.
+  const hasActivity = data.some(
+    (row) =>
+      (row.passed || 0) + (row.failed || 0) > 0 ||
+      (row.totalUnfiltered ?? 0) > 0,
+  );
+  const showSkeleton = loading && !hasActivity && series.length < 2;
+  const showEmpty = !loading && !fieldsMissing && !hasActivity;
   const periodPhrase = dashboardRange
     ? dashboardRangeLabel(dashboardRange)
     : "this period";
@@ -254,62 +312,57 @@ export function FailureRateStrip({
   // Always keep the same card chrome so period changes never collapse the page.
   // Annotation-unavailable: still full height with a one-line note.
   const emptyMessage = fieldsMissing && !loading
-    ? "Failure-rate trend unavailable for this filter"
-    : `No tests in ${periodPhrase}`;
+    ? "Failure-rate trend unavailable for this annotation filter"
+    : `No test activity in ${periodPhrase}`;
 
   return (
     <Card className="@container/card gap-0 overflow-hidden py-0 shadow-sm">
       <CardHeader className="flex shrink-0 flex-row items-center justify-between gap-0 space-y-0 px-4 pb-1 pt-2">
-        <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {/* O43/O44: Title Case section voice (match Test volume) */}
+        <CardTitle className="text-sm font-semibold">
           Failure rate over time
         </CardTitle>
-        {annotationOn && (
+        {(annotationOn || continuousDays) && (
           <span className="text-[11px] text-muted-foreground">
-            Tagged failures ÷ all tests (per period)
+            {annotationOn
+              ? "Tagged failures ÷ all tests"
+              : "All calendar days"}
           </span>
         )}
       </CardHeader>
       <CardContent className="px-3 pb-3 pt-0 sm:px-4">
         {showSkeleton ? (
           <div
-            className="flex flex-col justify-end gap-2 rounded-md bg-muted/30 px-2 py-3"
+            className="animate-pulse rounded-md bg-muted/40"
             style={{ height: CHART_HEIGHT_PX }}
             aria-hidden
-          >
-            <div className="flex flex-1 items-end gap-1.5 px-1">
-              {Array.from({ length: 12 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="flex-1 animate-pulse rounded-sm bg-muted"
-                  style={{
-                    height: `${28 + ((i * 17) % 55)}%`,
-                    opacity: 0.55 + (i % 3) * 0.1,
-                  }}
-                />
-              ))}
-            </div>
-            <div className="h-px w-full bg-border/60" />
-          </div>
+          />
         ) : showEmpty || (fieldsMissing && !loading) ? (
           <div
-            className="flex items-center justify-center rounded-md border border-dashed border-border/70 bg-muted/20 px-4"
+            className="flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border/70 bg-muted/15 px-4"
             style={{ height: CHART_HEIGHT_PX }}
             role="status"
           >
-            <p className="text-center text-sm text-muted-foreground">
+            <p className="text-center text-sm font-medium text-muted-foreground">
               {emptyMessage}
             </p>
+            {!fieldsMissing && (
+              <p className="text-center text-xs text-muted-foreground/80">
+                Widen the period above if you expected data here
+              </p>
+            )}
           </div>
         ) : (
           <div
+            ref={revealRef}
             className={
               refreshing
-                ? "opacity-60 transition-opacity duration-200"
-                : "opacity-100 transition-opacity duration-200"
+                ? "opacity-90 transition-opacity duration-200"
+                : "chart-reveal-ltr opacity-100"
             }
           >
             <ReactECharts
-              option={chartOption}
+              option={displayOption}
               style={{ height: CHART_HEIGHT_PX, width: "100%" }}
               opts={{ renderer: "canvas" }}
               notMerge

@@ -93,10 +93,11 @@ export function TimezoneProvider({ children }: { children: React.ReactNode }) {
     
     const config = getTimezoneConfig(selectedTimezone)
     
+    // O35: mon-day style (matches chart axis labels) + time
     return date.toLocaleString('en-US', {
       ...config,
-      month: 'numeric',
-      day: 'numeric', 
+      month: 'short',
+      day: 'numeric',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
@@ -117,7 +118,7 @@ export function TimezoneProvider({ children }: { children: React.ReactNode }) {
     
     return date.toLocaleDateString('en-US', {
       ...config,
-      month: 'numeric',
+      month: 'short',
       day: 'numeric',
       year: 'numeric'
     })

@@ -3,9 +3,119 @@
  * All date strings are API bucket starts (YYYY-MM-DD) interpreted as UTC.
  */
 
+import * as React from "react";
 import type { ChartBucket } from "@/lib/validation";
 
 export type { ChartBucket };
+
+/**
+ * Enter animation for dashboard charts.
+ * - Fresh mount / data change: cascade left → right via series `animationDelay`
+ * - Update morphs disabled so range switches never “wonk” between series shapes
+ * Pair with `.chart-reveal-ltr` clip wipe on the host for a clean repaint.
+ */
+export const chartEnterAnimation = {
+  animation: true,
+  animationThreshold: 8000,
+  animationDuration: 650,
+  animationEasing: "cubicOut" as const,
+  /** Disable morph between old/new series — remount + L→R wipe instead */
+  animationDurationUpdate: 0,
+  animationEasingUpdate: "linear" as const,
+};
+
+/** Stagger series points/bars so they paint left → right. */
+export function chartSeriesDelay(
+  idx: number,
+  stepMs = 26,
+  capMs = 450,
+): number {
+  return Math.min(idx * stepMs, capMs);
+}
+
+/**
+ * Freeze the ECharts option while a soft refetch is in flight.
+ *
+ * Period pills / Group-by change `bucket` and range immediately while SWR still
+ * shows the previous series. Re-deriving chart data with the *new* bucket
+ * (e.g. continuous day-fill of week aggregates) mutates `seriesKey` before the
+ * matching fetch lands — that used to commit a wrong intermediate chart.
+ *
+ * Rules:
+ * - **refreshing** → always keep last committed option (ignore seriesKey churn)
+ * - seriesKey change while idle → commit full option (enter animation OK)
+ * - same series + idle → soft commit with animation disabled (theme / highlight)
+ */
+export function useCommittedChartOption<T extends object>(
+  option: T,
+  seriesKey: string,
+  refreshing: boolean,
+): T {
+  const committedKeyRef = React.useRef(seriesKey);
+  const committedOptionRef = React.useRef(option);
+
+  // Hold last good paint for the whole soft-refetch window — even when
+  // seriesKey changes because transforms (bucket fill, labels) run on stale data.
+  if (refreshing) {
+    return committedOptionRef.current;
+  }
+
+  if (seriesKey !== committedKeyRef.current) {
+    committedKeyRef.current = seriesKey;
+    committedOptionRef.current = option;
+  } else {
+    committedOptionRef.current = {
+      ...option,
+      // Soft updates must not re-trigger series enter (blank flash)
+      animation: false,
+      animationDuration: 0,
+      animationDurationUpdate: 0,
+    } as T;
+  }
+
+  return committedOptionRef.current;
+}
+
+/**
+ * Stabilize a paint/series key across soft refetches.
+ * While `refreshing`, returns the last committed key so CSS reveals / dependent
+ * effects do not fire on intermediate transforms of stale data.
+ */
+export function useCommittedSeriesKey(
+  seriesKey: string,
+  refreshing: boolean,
+): string {
+  const committedRef = React.useRef(seriesKey);
+  if (!refreshing) {
+    committedRef.current = seriesKey;
+  }
+  return committedRef.current;
+}
+
+/**
+ * Re-trigger a CSS enter class (e.g. chart-reveal-ltr) when `seriesKey`
+ * changes, without remounting children (avoids a blank ECharts frame).
+ */
+export function useSeriesRevealClass(
+  seriesKey: string,
+  className = "chart-reveal-ltr",
+): React.RefObject<HTMLDivElement | null> {
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  const prevKeyRef = React.useRef(seriesKey);
+
+  React.useLayoutEffect(() => {
+    if (seriesKey === prevKeyRef.current) return;
+    prevKeyRef.current = seriesKey;
+    const el = ref.current;
+    if (!el || !seriesKey) return;
+    el.classList.remove(className);
+    // Force reflow so the next add restarts the animation
+    void el.offsetWidth;
+    el.classList.add(className);
+  }, [seriesKey, className]);
+
+  return ref;
+}
 
 export const burninChartColors = {
   passed: { base: "#10b981", top: "#34d399", dark: "#059669" },
@@ -17,10 +127,11 @@ export const burninChartColors = {
   accent: { indigo: "#6366f1" },
   grid: {
     light: "rgba(100, 116, 139, 0.14)",
-    dark: "rgba(148, 163, 184, 0.14)",
+    // O29: slightly brighter gridlines in dark mode for readability
+    dark: "rgba(148, 163, 184, 0.22)",
   },
-  text: { light: "#4b5563", dark: "#d1d5db" },
-  muted: { light: "#9ca3af", dark: "#6b7280" },
+  text: { light: "#4b5563", dark: "#e5e7eb" },
+  muted: { light: "#9ca3af", dark: "#9ca3af" },
 } as const;
 
 /**

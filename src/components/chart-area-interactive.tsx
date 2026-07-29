@@ -9,7 +9,6 @@ import type {
 
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -18,19 +17,35 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   type DashboardRange,
+  allowedBucketsForRange,
   dashboardRangeLabel,
 } from "@/lib/dashboard-range";
 import {
   burninChartColors,
+  chartEnterAnimation,
+  chartSeriesDelay,
   formatBucketLabel,
+  useCommittedChartOption,
+  useCommittedSeriesKey,
+  useSeriesRevealClass,
   type ChartBucket,
 } from "@/lib/chart-theme";
 import {
+  fillContinuousDayBuckets,
+  hasDayAxisGaps,
+  shouldFillContinuousDays,
   volumeSeriesFromBuckets,
   type BucketStats,
 } from "@/hooks/useBucketStats";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { cn } from "@/lib/utils";
 
 export const description = "Burnin Pass/Fail Results";
+
+/** Bucket total below this is treated as thin sample (opacity + tooltip cue). */
+const LOW_SAMPLE_N = 10;
+/** Failure rate at/above this (%) gets stronger point emphasis + bold rate row. */
+const HIGH_RATE_PCT = 5;
 
 const BUCKET_OPTIONS: { value: ChartBucket; label: string }[] = [
   { value: "day", label: "Day" },
@@ -56,7 +71,21 @@ interface ChartAreaInteractiveProps {
   refreshing?: boolean;
 }
 
-const FAILED_SERIES_NAME = "Failed (right scale)";
+const FAILED_SERIES_NAME = "Failed";
+
+/**
+ * Fail marker size from rate / low-n risk (B1).
+ * Zero fails → 0 (hidden); high rate or thin sample → larger markers.
+ */
+function failSymbolSize(failed: number, total: number): number {
+  if (failed <= 0) return 0;
+  const rate = total > 0 ? (failed / total) * 100 : 0;
+  let size = 7;
+  if (rate >= HIGH_RATE_PCT) size += 3;
+  if (total > 0 && total < LOW_SAMPLE_N) size += 2;
+  if (rate >= HIGH_RATE_PCT * 2) size += 2; // very high rate (e.g. ≥10%)
+  return Math.min(size, 14);
+}
 
 export function ChartAreaInteractive({
   onDateClick,
@@ -72,6 +101,8 @@ export function ChartAreaInteractive({
 }: ChartAreaInteractiveProps) {
   const [isDarkMode, setIsDarkMode] = React.useState(false);
   const chartRef = React.useRef<ReactECharts>(null);
+  const isMobile = useIsMobile();
+  const chartHeightPx = isMobile ? 360 : 320;
 
   React.useEffect(() => {
     const checkDarkMode = () => {
@@ -86,11 +117,23 @@ export function ChartAreaInteractive({
     return () => observer.disconnect();
   }, []);
 
-  // Volume only: drop strip-only empty buckets (FULL OUTER JOIN zeros under annotation)
+  // Volume only: drop strip-only empty buckets (FULL OUTER JOIN zeros under annotation),
+  // then fill calendar gaps on day bucket so Jul 8 → Jul 16 never looks adjacent.
   const chartData = React.useMemo(
-    () => volumeSeriesFromBuckets(data),
-    [data],
+    () =>
+      fillContinuousDayBuckets(
+        volumeSeriesFromBuckets(data),
+        dashboardRange,
+        bucket,
+      ),
+    [data, dashboardRange, bucket],
   );
+
+  const continuousDays = shouldFillContinuousDays(dashboardRange, bucket);
+  const activeDaysOnly =
+    bucket === "day" &&
+    !continuousDays &&
+    hasDayAxisGaps(volumeSeriesFromBuckets(data));
 
   const chartOption: EChartsOption = React.useMemo(() => {
     const textColor = isDarkMode
@@ -104,28 +147,79 @@ export function ChartAreaInteractive({
       : burninChartColors.grid.light;
     const colors = burninChartColors;
 
+    const maxFailed = chartData.reduce(
+      (m, item) => Math.max(m, item.failed || 0),
+      0,
+    );
+    // Integer right scale: at least 1, slight headroom so the top tick isn't flush
+    const failAxisMax = Math.max(1, maxFailed === 0 ? 1 : Math.ceil(maxFailed * 1.15));
+    // Soft / no pink wash when absolute fails are tiny (avoids 1–2 fails looking huge)
+    const failAreaTopAlpha =
+      maxFailed <= 0 ? 0 : maxFailed <= 3 ? 0.04 : maxFailed <= 8 ? 0.09 : 0.14;
+
+    const passBarData = chartData.map((item) => {
+      const total = (item.passed || 0) + (item.failed || 0);
+      const lowSample = total > 0 && total < LOW_SAMPLE_N;
+      return {
+        value: item.passed,
+        itemStyle: {
+          opacity: lowSample ? 0.55 : 1,
+          borderRadius: [5, 5, 0, 0] as [number, number, number, number],
+          color: {
+            type: "linear" as const,
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: colors.passed.top },
+              { offset: 1, color: colors.passed.dark },
+            ],
+          },
+        },
+      };
+    });
+
+    const failLineData = chartData.map((item) => {
+      const total = (item.passed || 0) + (item.failed || 0);
+      const failed = item.failed || 0;
+      const rate = total > 0 ? (failed / total) * 100 : 0;
+      const highRate = rate >= HIGH_RATE_PCT;
+      return {
+        value: failed,
+        symbolSize: failSymbolSize(failed, total),
+        itemStyle: {
+          color: colors.failed.base,
+          borderColor: isDarkMode ? "#18181b" : "#ffffff",
+          borderWidth: highRate ? 3 : 2,
+        },
+      };
+    });
+
     return {
+      ...chartEnterAnimation,
       backgroundColor: "transparent",
       textStyle: {
         color: textColor,
         fontFamily: "var(--font-geist-sans), sans-serif",
       },
       grid: {
-        left: 56,
-        right: 56,
-        bottom: 36,
-        top: 44,
+        left: isMobile ? 40 : 56,
+        right: isMobile ? 40 : 56,
+        bottom: isMobile ? 28 : 36,
+        top: isMobile ? 36 : 44,
         containLabel: false,
       },
+      // O42: legend pinned top-left of plot (avoids collision with tall bars)
       legend: {
         show: true,
         top: 0,
-        right: 8,
+        left: 0,
         icon: "roundRect",
-        itemWidth: 12,
-        itemHeight: 12,
-        itemGap: 20,
-        textStyle: { color: textColor, fontSize: 12 },
+        itemWidth: isMobile ? 10 : 12,
+        itemHeight: isMobile ? 10 : 12,
+        itemGap: isMobile ? 12 : 20,
+        textStyle: { color: textColor, fontSize: isMobile ? 11 : 12 },
         data: ["Passed", FAILED_SERIES_NAME],
       },
       xAxis: {
@@ -135,9 +229,10 @@ export function ChartAreaInteractive({
         axisTick: { show: false },
         axisLabel: {
           color: mutedColor,
-          margin: 12,
+          margin: isMobile ? 8 : 12,
           interval: "auto",
           hideOverlap: true,
+          fontSize: isMobile ? 10 : 12,
           formatter: (value: string) => formatBucketLabel(value, bucket),
         },
       },
@@ -149,7 +244,11 @@ export function ChartAreaInteractive({
           alignTicks: true,
           axisLine: { show: false },
           axisTick: { show: false },
-          axisLabel: { color: colors.passed.base, margin: 10 },
+          axisLabel: {
+            color: colors.passed.base,
+            margin: isMobile ? 6 : 10,
+            fontSize: isMobile ? 10 : 12,
+          },
           splitLine: {
             lineStyle: { color: gridColor, type: "solid" as const },
           },
@@ -157,11 +256,18 @@ export function ChartAreaInteractive({
         {
           type: "value",
           min: 0,
+          max: failAxisMax,
           minInterval: 1,
-          alignTicks: true,
+          // Prefer integer ticks; do not force align with left (pass) scale
+          alignTicks: false,
           axisLine: { show: false },
           axisTick: { show: false },
-          axisLabel: { color: colors.failed.base, margin: 10 },
+          axisLabel: {
+            color: colors.failed.base,
+            margin: isMobile ? 6 : 10,
+            fontSize: isMobile ? 10 : 12,
+            formatter: (v: number) => String(Math.round(v)),
+          },
           splitLine: { show: false },
         },
       ],
@@ -173,7 +279,7 @@ export function ChartAreaInteractive({
                 left: "center",
                 top: "middle",
                 style: {
-                  text: "No tests in the selected range",
+                  text: "No test activity in this range",
                   fontSize: 14,
                   fill: mutedColor,
                 },
@@ -185,25 +291,18 @@ export function ChartAreaInteractive({
           name: "Passed",
           type: "bar" as const,
           yAxisIndex: 0,
-          data: chartData.map((item) => item.passed),
+          // Series-level color so the legend stays green when per-bar itemStyle
+          // only carries gradient/opacity (ECharts otherwise falls back to palette).
+          color: colors.passed.base,
+          data: passBarData,
           barMaxWidth: 36,
-          itemStyle: {
-            borderRadius: [5, 5, 0, 0],
-            color: {
-              type: "linear" as const,
-              x: 0,
-              y: 0,
-              x2: 0,
-              y2: 1,
-              colorStops: [
-                { offset: 0, color: colors.passed.top },
-                { offset: 1, color: colors.passed.dark },
-              ],
-            },
-          },
+          // Paint bars left → right on enter (range / bucket change)
+          animationDelay: (idx: number) => chartSeriesDelay(idx, 28),
+          animationEasing: "cubicOut",
           emphasis: {
             itemStyle: {
               color: colors.passed.base,
+              opacity: 1,
             },
           },
           markLine: highlightDate
@@ -226,12 +325,17 @@ export function ChartAreaInteractive({
           name: FAILED_SERIES_NAME,
           type: "line" as const,
           yAxisIndex: 1,
-          data: chartData.map((item) => item.failed),
+          color: colors.failed.base,
+          data: failLineData,
           smooth: 0.3,
           symbol: "circle",
+          // Default; per-point symbolSize on data objects overrides (0 when no fails)
           symbolSize: 7,
-          showSymbol: chartData.length <= 60,
+          showSymbol: true,
+          showAllSymbol: true,
           z: 10,
+          animationDelay: (idx: number) => chartSeriesDelay(idx, 24),
+          animationEasing: "cubicOut",
           lineStyle: {
             width: 2.5,
             color: colors.failed.base,
@@ -244,19 +348,22 @@ export function ChartAreaInteractive({
             borderColor: isDarkMode ? "#18181b" : "#ffffff",
             borderWidth: 2,
           },
-          areaStyle: {
-            color: {
-              type: "linear" as const,
-              x: 0,
-              y: 0,
-              x2: 0,
-              y2: 1,
-              colorStops: [
-                { offset: 0, color: colors.failed.soft(0.14) },
-                { offset: 1, color: colors.failed.soft(0) },
-              ],
-            },
-          },
+          areaStyle:
+            maxFailed <= 0
+              ? undefined
+              : {
+                  color: {
+                    type: "linear" as const,
+                    x: 0,
+                    y: 0,
+                    x2: 0,
+                    y2: 1,
+                    colorStops: [
+                      { offset: 0, color: colors.failed.soft(failAreaTopAlpha) },
+                      { offset: 1, color: colors.failed.soft(0) },
+                    ],
+                  },
+                },
         },
       ],
       tooltip: {
@@ -289,32 +396,44 @@ export function ChartAreaInteractive({
           let passed = 0;
           let failed = 0;
           params.forEach((param) => {
-            if (param.seriesName === "Passed")
-              passed = Number(param.value) || 0;
-            if (
-              param.seriesName === FAILED_SERIES_NAME ||
-              param.seriesName === "Failed"
-            ) {
-              failed = Number(param.value) || 0;
-            }
+            // Per-point objects expose { value }; plain numbers work as-is
+            const raw = param.value;
+            const num =
+              typeof raw === "object" && raw !== null && "value" in (raw as object)
+                ? Number((raw as { value: number }).value)
+                : Number(raw);
+            if (param.seriesName === "Passed") passed = num || 0;
+            if (param.seriesName === FAILED_SERIES_NAME) failed = num || 0;
           });
           const total = passed + failed;
-          const rate =
-            total > 0 ? ((failed / total) * 100).toFixed(1) : "0.0";
+          const rateNum = total > 0 ? (failed / total) * 100 : 0;
+          const rate = rateNum.toFixed(1);
+          const lowSample = total > 0 && total < LOW_SAMPLE_N;
+          const highRate = rateNum >= HIGH_RATE_PCT;
 
           const row = (
             dot: string,
             label: string,
             value: string,
             bold = false,
+            valueColor?: string,
           ) =>
             `<div style="display:flex; align-items:center; gap:8px; margin:3px 0;">` +
             `${dot}<span style="flex:1; opacity:0.85;">${label}</span>` +
-            `<span style="font-weight:${bold ? 700 : 600}; margin-left:16px; font-variant-numeric:tabular-nums;">${value}</span></div>`;
+            `<span style="font-weight:${bold ? 700 : 600}; margin-left:16px; font-variant-numeric:tabular-nums;${valueColor ? ` color:${valueColor};` : ""}">${value}</span></div>`;
 
           const dot = (color: string) =>
             `<span style="display:inline-block; width:9px; height:9px; border-radius:3px; background:${color};"></span>`;
           const spacerDot = `<span style="display:inline-block; width:9px; height:9px;"></span>`;
+
+          const lowSampleBadge = lowSample
+            ? `<div style="margin:6px 0 2px; display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; background:${isDarkMode ? "rgba(251,191,36,0.15)" : "rgba(245,158,11,0.12)"}; color:${isDarkMode ? "#fbbf24" : "#b45309"};">Low sample (n&lt;${LOW_SAMPLE_N})</div>`
+            : "";
+
+          // O21: drill affordance in tooltip
+          const drillHint = onDateClick
+            ? `<div style="margin-top:8px; font-size:11px; opacity:0.75;">Click to filter table to ${heading}</div>`
+            : "";
 
           return (
             `<div style="min-width: 170px;">` +
@@ -323,13 +442,43 @@ export function ChartAreaInteractive({
             row(dot(colors.failed.base), "Failed", String(failed)) +
             `<div style="border-top:1px solid ${isDarkMode ? "rgba(148,163,184,0.25)" : "rgba(100,116,139,0.2)"}; margin:6px 0;"></div>` +
             row(spacerDot, "Total tests", String(total)) +
-            row(spacerDot, "Failure rate", `${rate}%`, true) +
+            row(
+              spacerDot,
+              "Failure rate",
+              `${rate}%`,
+              true,
+              highRate ? colors.failed.base : undefined,
+            ) +
+            lowSampleBadge +
+            drillHint +
             `</div>`
           );
         },
       },
     };
-  }, [chartData, isDarkMode, highlightDate, bucket]);
+  }, [chartData, isDarkMode, highlightDate, bucket, isMobile, onDateClick]);
+
+  // Identity of the *derived* series (may be wrong while refreshing if bucket
+  // flipped before the matching fetch landed — continuous day-fill of week data).
+  const paintKey = React.useMemo(
+    () => chartData.map((d) => `${d.date}:${d.passed}:${d.failed}`).join("|"),
+    [chartData],
+  );
+
+  // Only advance the painted key when SWR data matches the current request
+  // (not refreshing). Prevents Group-by flash: week→day fill of stale weeks.
+  const committedPaintKey = useCommittedSeriesKey(paintKey, refreshing);
+
+  // Hold the last painted option while refreshing — ignore paintKey churn from
+  // applying the new bucket transform to the previous series.
+  const displayOption = useCommittedChartOption(
+    chartOption,
+    committedPaintKey,
+    refreshing,
+  );
+
+  // L→R clip wipe only when the committed series actually changes
+  const revealRef = useSeriesRevealClass(committedPaintKey);
 
   // Day and multi-day buckets both drill via onDateClick; page uses bucketRange()
   // for non-day spans (linked → promote dashboardRange; unlinked → table only).
@@ -349,50 +498,47 @@ export function ChartAreaInteractive({
     [onDateClick],
   );
 
-  const modeCaption =
-    chartMode === "recent"
-      ? "Each bar is the latest test per inverter in that period (an inverter can appear in more than one week/month)."
-      : "Every test run in each period.";
+  // One short subtitle (O5); methodology lives in header help + Fails badge tooltip.
+  const subtitle = [
+    chartMode === "recent" ? "Latest per inverter" : "All tests",
+    `per ${bucket}`,
+    dashboardRangeLabel(dashboardRange),
+    continuousDays
+      ? "all calendar days"
+      : activeDaysOnly
+        ? "active test days only"
+        : null,
+    annotationFilter && annotationFilter !== "all" ? "annotation filter on" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
-  const annotationCaption =
-    annotationFilter && annotationFilter !== "all"
-      ? "Chart shows only tests tagged with the current annotation filter. Failure rate at top uses tagged failures ÷ all tests."
-      : null;
+  const allowedBuckets = React.useMemo(
+    () => new Set(allowedBucketsForRange(dashboardRange)),
+    [dashboardRange],
+  );
 
   return (
     <Card className="@container/card">
-      <CardHeader>
-        <div className="flex flex-wrap items-center gap-2">
-          <CardTitle>Test volume</CardTitle>
-          <span
-            className="inline-flex items-center rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] font-medium text-rose-600 dark:text-rose-400"
-            title="The red line uses an independent Y-axis so small failure counts stay visible next to large pass volumes"
-          >
-            Failed (right scale)
-          </span>
-        </div>
-        <CardDescription>
-          <span className="hidden @[540px]/card:block">
-            {chartMode === "recent"
-              ? "Latest result per inverter"
-              : "All test results"}{" "}
-            per {bucket} for {dashboardRangeLabel(dashboardRange)}
-          </span>
-          <span className="@[540px]/card:hidden">
-            {chartMode === "recent" ? "Latest per inverter" : "All tests"} ·{" "}
-            {dashboardRangeLabel(dashboardRange)}
-          </span>
-          <span className="mt-1 block text-xs text-muted-foreground">
-            {modeCaption}
-          </span>
-          {annotationCaption ? (
-            <span className="mt-0.5 block text-xs text-muted-foreground">
-              {annotationCaption}
-            </span>
-          ) : null}
-        </CardDescription>
-        <CardAction>
-          <div className="flex items-center justify-end gap-2">
+      <CardHeader className="gap-3 !grid-cols-1">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle>Test volume</CardTitle>
+              <span
+                className="inline-flex items-center rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] font-medium text-rose-600 dark:text-rose-400"
+                title="Fails use the right Y-axis (counts). Hover a bar for failure rate — a short bar with a large fail marker is riskier than a tall bar with one fail."
+              >
+                Fails →
+              </span>
+            </div>
+            {/* Mobile: wrap instead of mid-word truncate (O12) */}
+            <CardDescription className="text-pretty sm:truncate">
+              {subtitle}
+              {onDateClick ? " · click a bar to filter the table" : ""}
+            </CardDescription>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
               Group by
             </span>
@@ -400,19 +546,34 @@ export function ChartAreaInteractive({
               type="single"
               value={bucket}
               onValueChange={(value) => {
-                if (value) onBucketChange(value as ChartBucket);
+                if (value && allowedBuckets.has(value as ChartBucket)) {
+                  onBucketChange(value as ChartBucket);
+                }
               }}
               variant="outline"
-              className="*:data-[slot=toggle-group-item]:!px-3 *:data-[slot=toggle-group-item]:h-10"
+              className="max-w-full flex-wrap *:data-[slot=toggle-group-item]:!px-2.5 *:data-[slot=toggle-group-item]:h-10 *:data-[slot=toggle-group-item]:min-h-10 sm:*:data-[slot=toggle-group-item]:!px-3"
             >
-              {BUCKET_OPTIONS.map((option) => (
-                <ToggleGroupItem key={option.value} value={option.value}>
-                  {option.label}
-                </ToggleGroupItem>
-              ))}
+              {BUCKET_OPTIONS.map((option) => {
+                const allowed = allowedBuckets.has(option.value);
+                return (
+                  <ToggleGroupItem
+                    key={option.value}
+                    value={option.value}
+                    disabled={!allowed}
+                    title={
+                      allowed
+                        ? undefined
+                        : "Need a longer date range for this grouping"
+                    }
+                    className={cn(!allowed && "opacity-40")}
+                  >
+                    {option.label}
+                  </ToggleGroupItem>
+                );
+              })}
             </ToggleGroup>
           </div>
-        </CardAction>
+        </div>
       </CardHeader>
       <CardContent className="px-2 pt-2 sm:px-6 sm:pt-3">
         {/*
@@ -421,49 +582,31 @@ export function ChartAreaInteractive({
         */}
         {loading && chartData.length === 0 ? (
           <div
-            className="flex h-[320px] flex-col justify-end gap-2 rounded-md bg-muted/20 px-3 py-4"
+            className="animate-pulse rounded-md bg-muted/40"
+            style={{ height: chartHeightPx }}
             aria-hidden
-          >
-            <div className="flex flex-1 items-end gap-2">
-              {Array.from({ length: 14 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="flex-1 animate-pulse rounded-t-md bg-muted"
-                  style={{
-                    height: `${35 + ((i * 23) % 55)}%`,
-                    opacity: 0.5 + (i % 4) * 0.1,
-                  }}
-                />
-              ))}
-            </div>
-            <div className="flex justify-between gap-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="h-2.5 flex-1 animate-pulse rounded bg-muted/80"
-                />
-              ))}
-            </div>
-          </div>
+          />
         ) : (
           <div
+            ref={revealRef}
             className={
+              // Steady while holding stale series; L→R class re-triggered on paintKey
               refreshing
-                ? "opacity-60 transition-opacity duration-200"
-                : "opacity-100 transition-opacity duration-200"
+                ? "opacity-90 transition-opacity duration-200"
+                : "chart-reveal-ltr opacity-100"
             }
           >
             <ReactECharts
               ref={chartRef}
-              option={chartOption}
+              option={displayOption}
               style={{
-                height: "320px",
+                height: chartHeightPx,
                 width: "100%",
-                cursor: bucket === "day" ? "pointer" : "default",
+                cursor: onDateClick ? "pointer" : "default",
               }}
               opts={{ renderer: "canvas" }}
               onEvents={onEvents}
-              // Replace option data without remounting the chart instance/card
+              // Replace series only when displayOption commits a new paintKey
               notMerge={true}
               lazyUpdate={true}
             />

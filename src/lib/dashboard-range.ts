@@ -105,16 +105,70 @@ export function todoHrefFromDashboardRange(range: DashboardRange): string {
   return `/todo?dateFrom=${encodeURIComponent(from)}&dateTo=${encodeURIComponent(to)}`;
 }
 
-/** Default bucket for a dashboard range (smart defaults). */
+/** Inclusive span length in calendar days for a bounded range; null if open. */
+export function dashboardRangeDaySpan(range: DashboardRange): number | null {
+  if (range.kind === "all") return null;
+  if (range.kind === "custom") {
+    if (!range.from || !range.to || range.from > range.to) return null;
+    const from = new Date(range.from + "T00:00:00Z");
+    const to = new Date(range.to + "T00:00:00Z");
+    return Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1;
+  }
+  return range.kind === "7d" ? 7 : range.kind === "30d" ? 30 : 90;
+}
+
+/**
+ * Which volume Group-by options make sense for the current range (O20).
+ * Short windows cannot usefully show quarter/year (often a single bucket).
+ */
+export function allowedBucketsForRange(
+  range: DashboardRange,
+): Array<"day" | "week" | "month" | "quarter" | "year"> {
+  const all = ["day", "week", "month", "quarter", "year"] as const;
+  const span = dashboardRangeDaySpan(range);
+  if (span === null) return [...all]; // all-time: all options OK
+  if (span <= 45) return ["day", "week", "month"];
+  if (span <= 120) return ["day", "week", "month", "quarter"];
+  return [...all];
+}
+
+/** Short UTC span label for header context (O25), e.g. "Jun 29 – Jul 29". */
+export function dashboardRangeContextLabel(range: DashboardRange): string | null {
+  if (range.kind === "all") return "All time";
+  if (range.kind === "custom") {
+    return `${formatShortUtcYmd(range.from)} – ${formatShortUtcYmd(range.to)}`;
+  }
+  const { from, to } = tableDatesForPill(range.kind);
+  if (!from || !to) return null;
+  return `${formatShortUtcYmd(from)} – ${formatShortUtcYmd(to)}`;
+}
+
+function formatShortUtcYmd(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return ymd;
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  return `${months[m - 1]} ${d}`;
+}
+
+/** Default bucket for a dashboard range (initial prefs / strip only). */
 export function defaultBucketForDashboardRange(
   range: DashboardRange,
 ): "day" | "week" | "month" | "quarter" | "year" {
   if (range.kind === "custom") {
-    // crude span-based default
-    const from = new Date(range.from + "T00:00:00Z");
-    const to = new Date(range.to + "T00:00:00Z");
-    const days =
-      Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1;
+    const days = dashboardRangeDaySpan(range) ?? 30;
     if (days <= 45) return "day";
     if (days <= 180) return "week";
     if (days <= 800) return "month";

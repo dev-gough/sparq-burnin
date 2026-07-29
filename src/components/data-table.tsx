@@ -122,9 +122,12 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
   },
   {
     accessorKey: "firmware_version",
-    header: "Firmware Version",
+    // O36: dense header; full name on hover
+    header: () => <span title="Firmware Version">FW</span>,
     cell: ({ row }) => (
-      <div className="w-28">{row.original.firmware_version}</div>
+      <div className="w-20 truncate font-mono text-xs sm:w-28 sm:text-sm" title={row.original.firmware_version}>
+        {row.original.firmware_version}
+      </div>
     ),
     filterFn: (row, id, value) => {
       return row.getValue(id) === value;
@@ -132,7 +135,13 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
   },
   {
     accessorKey: "start_time",
-    header: "Test Date",
+    header: () => (
+      <span
+        title={`Shown in ${selectedTimezone === "utc" ? "UTC" : selectedTimezone === "delhi" ? "Delhi (IST)" : "local"} time · filters use UTC calendar days`}
+      >
+        Test Date
+      </span>
+    ),
     cell: ({ row }) => {
       return (
         <div className="w-36 text-sm">
@@ -141,48 +150,46 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
       );
     },
     filterFn: (row, id, value) => {
+      // Bounds are UTC calendar days (same as dashboard period / charts).
+      // Display timezone only affects how the cell is formatted, not the filter.
       const rowDate = new Date(row.getValue(id) as string);
       const { from, to } = value as { from: string; to: string };
 
-      // Helper function to create dates in the selected timezone
-      const createDateInTimezone = (dateString: string, endOfDay: boolean = false) => {
-        const time = endOfDay ? "T23:59:59.999" : "T00:00:00";
-        if (selectedTimezone === 'utc') {
-          return new Date(dateString + time + "Z");
-        } else if (selectedTimezone === 'delhi') {
-          // For Delhi time, we need to adjust for IST offset
-          const localDate = new Date(dateString + time);
-          return new Date(localDate.getTime() - (5.5 * 60 * 60 * 1000)); // Subtract IST offset
-        } else {
-          // For local timezone
-          return new Date(dateString + time);
-        }
-      };
+      const utcStart = (ymd: string) => new Date(`${ymd}T00:00:00.000Z`);
+      const utcEnd = (ymd: string) => new Date(`${ymd}T23:59:59.999Z`);
 
       if (from && to) {
-        const fromDate = createDateInTimezone(from, false);
-        const toDate = createDateInTimezone(to, true);
-        return rowDate >= fromDate && rowDate <= toDate;
-      } else if (from) {
-        const fromDate = createDateInTimezone(from, false);
-        return rowDate >= fromDate;
-      } else if (to) {
-        const toDate = createDateInTimezone(to, true);
-        return rowDate <= toDate;
+        return rowDate >= utcStart(from) && rowDate <= utcEnd(to);
       }
+      if (from) return rowDate >= utcStart(from);
+      if (to) return rowDate <= utcEnd(to);
       return true;
     },
   },
   {
     accessorKey: "duration",
-    header: "Test Duration",
+    header: "Duration",
     cell: ({ row }) => {
       const durationMs = row.original.duration;
       const hours = Math.floor(durationMs / (1000 * 60 * 60));
       const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
       const seconds = Math.floor((durationMs % (1000 * 60)) / 1000);
+      // O37: nominal aging target is currently 2h (was 24 → 16 → 12 → …)
+      const NOMINAL_AGING_MS = 2 * 60 * 60 * 1000;
+      const nearComplete = durationMs >= NOMINAL_AGING_MS;
       return (
-        <div className="w-24 text-right tabular-nums">
+        <div
+          className={
+            nearComplete
+              ? "w-24 text-right tabular-nums text-emerald-700 dark:text-emerald-400"
+              : "w-24 text-right tabular-nums"
+          }
+          title={
+            nearComplete
+              ? "At or above nominal aging duration (≥2h)"
+              : undefined
+          }
+        >
           {hours > 0 ? `${hours}h ` : ""}
           {minutes > 0 ? `${minutes}m ` : ""}
           {seconds}s
@@ -230,13 +237,19 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
   {
     accessorKey: "annotations",
     header: "Annotations",
+    // O26: keep column narrow when empty; expand only with content
+    size: 120,
     cell: ({ row }) => {
       const annotations = row.original.annotations;
-      if (!annotations) {
-        return <div className="text-muted-foreground text-sm">-</div>;
+      if (!annotations || annotations === "-") {
+        return (
+          <div className="w-8 text-muted-foreground/50 text-sm" aria-hidden>
+            —
+          </div>
+        );
       }
       return (
-        <div className="text-sm max-w-xs truncate" title={annotations}>
+        <div className="max-w-[10rem] truncate text-sm" title={annotations}>
           {annotations}
         </div>
       );
@@ -850,26 +863,34 @@ export function DataTable({
                 </Select>
               </div>
             </div>
-            {/* Date Range Filters */}
+            {/* Date Range Filters — UTC calendar days (match charts / hero) */}
             <div className="flex justify-between sm:gap-4">
               <div className="space-y-2">
-                <Label htmlFor="date-from">From Date</Label>
+                <Label htmlFor="date-from" className="text-xs sm:text-sm">
+                  From{" "}
+                  <span className="font-normal text-muted-foreground">(UTC)</span>
+                </Label>
                 <Input
                   id="date-from"
                   type="date"
                   value={dateFromFilter}
                   onChange={(e) => onDateFromFilterChange(e.target.value)}
-                  className="w-40 sm:px-3 px-1"
+                  className="h-10 min-h-10 w-36 sm:w-40 sm:px-3 px-1"
+                  title="UTC calendar day — matches dashboard period filters"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="date-to">To Date</Label>
+                <Label htmlFor="date-to" className="text-xs sm:text-sm">
+                  To{" "}
+                  <span className="font-normal text-muted-foreground">(UTC)</span>
+                </Label>
                 <Input
                   id="date-to"
                   type="date"
                   value={dateToFilter}
                   onChange={(e) => onDateToFilterChange(e.target.value)}
-                  className="w-40 sm:px-3 px-1"
+                  className="h-10 min-h-10 w-36 sm:w-40 sm:px-3 px-1"
+                  title="UTC calendar day — matches dashboard period filters"
                 />
               </div>
             </div>
@@ -983,9 +1004,19 @@ export function DataTable({
           </Table>
         </div>
         <div className="flex items-center justify-between px-4">
+          {/* O27: hide selection chrome until something is selected */}
           <div className="text-muted-foreground hidden flex-1 text-sm lg:flex">
-            {table.getFilteredSelectedRowModel().rows.length} of{" "}
-            {table.getFilteredRowModel().rows.length} row(s) selected.
+            {table.getFilteredSelectedRowModel().rows.length > 0 ? (
+              <span>
+                {table.getFilteredSelectedRowModel().rows.length} of{" "}
+                {table.getFilteredRowModel().rows.length} row(s) selected
+              </span>
+            ) : (
+              <span className="tabular-nums">
+                {table.getFilteredRowModel().rows.length} row
+                {table.getFilteredRowModel().rows.length === 1 ? "" : "s"}
+              </span>
+            )}
           </div>
           <div className="flex w-full items-center gap-8 lg:w-fit">
             <div className="hidden items-center gap-2 lg:flex">

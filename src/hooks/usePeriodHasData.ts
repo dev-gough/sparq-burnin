@@ -6,10 +6,34 @@ import {
   type DashboardRange,
 } from "@/lib/dashboard-range";
 
+function buildRequestKey(opts: {
+  dashboardRange: DashboardRange;
+  annotationFilter: string;
+  requestEpoch: number;
+  enabled: boolean;
+}): string {
+  const { dashboardRange, annotationFilter, requestEpoch, enabled } = opts;
+  return JSON.stringify({
+    enabled,
+    annotationFilter,
+    requestEpoch,
+    kind: dashboardRange.kind,
+    from: dashboardRange.kind === "custom" ? dashboardRange.from : null,
+    to: dashboardRange.kind === "custom" ? dashboardRange.to : null,
+  });
+}
+
 /**
  * Fast EXISTS probe: does this period (and optional annotation filter)
  * contain any non-INVALID tests? Used to choose empty-state vs full dashboard
  * before mounting heavy chart/KPI fetches.
+ *
+ * `hasData` is only definitive for the *current* request key:
+ * - true / false — probe finished for this period
+ * - null — initial load or period just changed (probe in flight)
+ *
+ * Returning null while the key is stale avoids flashing the previous empty
+ * state when switching 7d (empty) → 30d (has data).
  */
 export function usePeriodHasData(opts: {
   dashboardRange: DashboardRange;
@@ -17,7 +41,7 @@ export function usePeriodHasData(opts: {
   requestEpoch: number;
   enabled?: boolean;
 }): {
-  /** null while the probe is in flight */
+  /** null while the current period is unknown / probing */
   hasData: boolean | null;
   probing: boolean;
 } {
@@ -28,24 +52,40 @@ export function usePeriodHasData(opts: {
     enabled = true,
   } = opts;
 
-  const [hasData, setHasData] = React.useState<boolean | null>(null);
-  const [probing, setProbing] = React.useState(true);
+  const requestKey = React.useMemo(
+    () =>
+      buildRequestKey({
+        dashboardRange,
+        annotationFilter,
+        requestEpoch,
+        enabled,
+      }),
+    [dashboardRange, annotationFilter, requestEpoch, enabled],
+  );
 
-  const epochRef = React.useRef(requestEpoch);
-  epochRef.current = requestEpoch;
+  const [result, setResult] = React.useState<{
+    key: string;
+    hasData: boolean;
+  } | null>(null);
+
+  const requestKeyRef = React.useRef(requestKey);
+  requestKeyRef.current = requestKey;
+
+  // Synchronous: null as soon as period/annotation changes, not after useEffect
+  const hasData =
+    !enabled
+      ? null
+      : result && result.key === requestKey
+        ? result.hasData
+        : null;
+
+  const probing = enabled && hasData === null;
 
   React.useEffect(() => {
-    if (!enabled) {
-      setProbing(true);
-      return;
-    }
+    if (!enabled) return;
 
     const abort = new AbortController();
-    const epochAtStart = requestEpoch;
-
-    // Keep previous hasData while probing (stale-while-revalidate) so the
-    // dashboard shell does not unmount / re-animate mid-transition.
-    setProbing(true);
+    const keyAtStart = requestKey;
 
     async function probe() {
       try {
@@ -58,31 +98,30 @@ export function usePeriodHasData(opts: {
         const response = await fetch(`/api/test-stats?${params}`, {
           signal: abort.signal,
         });
-        if (abort.signal.aborted || epochRef.current !== epochAtStart) return;
+        if (abort.signal.aborted) return;
+        if (requestKeyRef.current !== keyAtStart) return;
 
         if (!response.ok) {
           // Fail open: allow full dashboard load rather than false empty
-          setHasData(true);
+          setResult({ key: keyAtStart, hasData: true });
           return;
         }
 
         const json = (await response.json()) as { hasData?: boolean };
-        if (abort.signal.aborted || epochRef.current !== epochAtStart) return;
-        setHasData(Boolean(json.hasData));
+        if (abort.signal.aborted) return;
+        if (requestKeyRef.current !== keyAtStart) return;
+        setResult({ key: keyAtStart, hasData: Boolean(json.hasData) });
       } catch (e) {
         if (abort.signal.aborted) return;
+        if (requestKeyRef.current !== keyAtStart) return;
         console.error("has-data probe failed:", e);
-        setHasData(true);
-      } finally {
-        if (!abort.signal.aborted && epochRef.current === epochAtStart) {
-          setProbing(false);
-        }
+        setResult({ key: keyAtStart, hasData: true });
       }
     }
 
     probe();
     return () => abort.abort();
-  }, [dashboardRange, annotationFilter, requestEpoch, enabled]);
+  }, [requestKey, dashboardRange, annotationFilter, enabled]);
 
   return { hasData, probing };
 }

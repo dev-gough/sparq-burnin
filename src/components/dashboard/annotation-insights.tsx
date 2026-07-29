@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { IconTag, IconAlertTriangle } from "@tabler/icons-react";
+import { IconAlertTriangle, IconTag } from "@tabler/icons-react";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   appendDashboardRangeParams,
@@ -113,6 +114,8 @@ function todoHrefFromSummary(
  * Compact top-causes strip for the command center.
  * Chips set annotationFilter (always applied to dashboard + table).
  * Untagged chip navigates to period-scoped /todo.
+ *
+ * Empty / untagged-only states (O7): clear CTA, no footnote clutter.
  */
 export function AnnotationInsights({
   dashboardRange,
@@ -147,7 +150,7 @@ export function AnnotationInsights({
         const params = new URLSearchParams({
           view: "annotation-summary",
           chartMode,
-          limit: "5",
+          limit: "8",
         });
         appendDashboardRangeParams(params, dashboardRange);
 
@@ -191,71 +194,93 @@ export function AnnotationInsights({
     }
   };
 
-  const empty =
+  const noFailures =
     !loading &&
     data &&
     data.totalFailed === 0 &&
     data.groups.length === 0 &&
     data.options.length === 0;
 
+  const groups = data ? dedupeByName(data.groups) : [];
+  const options = data ? dedupeByOption(data.options) : [];
+  const hasTags = groups.length > 0 || options.length > 0;
+  /** Fails exist but nothing is tagged — primary action is open /todo. */
+  const untaggedOnly =
+    !loading &&
+    data &&
+    data.totalFailed > 0 &&
+    !hasTags &&
+    data.untaggedFailed > 0;
+
   const tagCountTitle = (count: number, pct: number) =>
     `${count} annotation tag${count === 1 ? "" : "s"} across failed tests (${pct}% of ${data?.totalFailed ?? 0} failures)`;
 
+  // min-h-8 (≥32px) for touch targets (O12); O47 focus ring
+  const chipBase =
+    "inline-flex min-h-8 items-center gap-1 rounded-md border px-2 py-1.5 text-[11px] font-medium leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:py-1";
+
   return (
     <Card className="@container/card">
-      <CardHeader className="pb-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle className="text-base font-semibold">
-            Failure causes
-          </CardTitle>
-          <span className="text-xs text-muted-foreground">
-            Top tags in {dashboardRangeLabel(dashboardRange)}
-            {chartMode === "recent" ? " · latest per inverter" : ""}
-          </span>
-        </div>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 px-6 py-2">
+        <CardTitle className="text-sm font-semibold">Failure causes</CardTitle>
+        <span className="text-[11px] text-muted-foreground">
+          {dashboardRangeLabel(dashboardRange)}
+          {chartMode === "recent" ? " · latest" : ""}
+        </span>
       </CardHeader>
-      <CardContent className="pt-0">
+      <CardContent className="px-6 pb-3 pt-0">
         {loading && !data ? (
-          // Two chip rows ≈ loaded groups + causes layout (min height avoids jump)
-          <div className="flex min-h-[5.5rem] flex-col gap-3" aria-hidden>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="h-3 w-12 animate-pulse rounded bg-muted" />
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={`g-${i}`}
-                  className="h-7 w-36 animate-pulse rounded-full bg-muted"
-                />
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="h-3 w-12 animate-pulse rounded bg-muted" />
-              {[1, 2, 3, 4].map((i) => (
-                <div
-                  key={`c-${i}`}
-                  className="h-7 w-28 animate-pulse rounded-full bg-muted"
-                />
-              ))}
-            </div>
-            <div className="h-7 w-40 animate-pulse rounded-full bg-muted/70" />
+          <div className="flex flex-col gap-1.5" aria-hidden>
+            <div className="h-8 w-full animate-pulse rounded-md bg-muted" />
           </div>
-        ) : empty ? (
-          <p className="min-h-[5.5rem] text-sm text-muted-foreground">
+        ) : noFailures ? (
+          <p className="py-1 text-sm leading-5 text-muted-foreground" role="status">
             No failed tests in this period.
           </p>
+        ) : untaggedOnly && data ? (
+          <div
+            className={cn(
+              "flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2.5",
+              refreshing && "opacity-55",
+            )}
+            role="status"
+          >
+            <div className="flex min-w-0 items-start gap-2">
+              <IconAlertTriangle
+                className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400"
+                aria-hidden
+              />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">
+                  {data.untaggedFailed} untagged failure
+                  {data.untaggedFailed === 1 ? "" : "s"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  No cause tags yet for this period
+                </p>
+              </div>
+            </div>
+            <Button asChild size="sm" className="h-9 shrink-0 gap-1.5">
+              <Link href={todoHref}>
+                <IconTag className="size-3.5" aria-hidden />
+                Tag {data.untaggedFailed} fail
+                {data.untaggedFailed === 1 ? "" : "s"}
+              </Link>
+            </Button>
+          </div>
         ) : data ? (
           <div
             className={cn(
-              "flex min-h-[5.5rem] flex-col gap-3 transition-opacity duration-200",
+              "flex flex-col gap-1.5 transition-opacity duration-200",
               refreshing && "opacity-55",
             )}
           >
-            {/* Group chips */}
-            {data.groups.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {groups.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="mr-0.5 w-12 shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                   Groups
                 </span>
-                {dedupeByName(data.groups).map((g) => {
+                {groups.map((g) => {
                   const value = `group:${g.name}`;
                   const active = annotationFilter === value;
                   return (
@@ -265,14 +290,13 @@ export function AnnotationInsights({
                       onClick={() => toggleFilter(value)}
                       title={tagCountTitle(g.count, g.percentageOfFailed)}
                       className={cn(
-                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                        chipBase,
                         active
                           ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border bg-muted/40 text-foreground hover:bg-muted",
+                          : "border-border/80 bg-muted/50 text-foreground hover:bg-muted",
                       )}
                     >
-                      <IconTag className="size-3.5 shrink-0 opacity-70" />
-                      <span className="max-w-[14rem] truncate">{g.name}</span>
+                      <span className="max-w-[11rem] truncate">{g.name}</span>
                       <span
                         className={cn(
                           "tabular-nums",
@@ -289,13 +313,12 @@ export function AnnotationInsights({
               </div>
             )}
 
-            {/* Option chips */}
-            {data.options.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {options.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="mr-0.5 w-12 shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                   Causes
                 </span>
-                {dedupeByOption(data.options).map((o) => {
+                {options.map((o) => {
                   const active = annotationFilter === o.name;
                   return (
                     <button
@@ -304,13 +327,13 @@ export function AnnotationInsights({
                       onClick={() => toggleFilter(o.name)}
                       title={`${o.group_name} · ${tagCountTitle(o.count, o.percentageOfFailed)}`}
                       className={cn(
-                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                        chipBase,
                         active
                           ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border bg-background text-foreground hover:bg-muted",
+                          : "border-border/80 bg-background text-foreground hover:bg-muted",
                       )}
                     >
-                      <span className="max-w-[12rem] truncate">{o.name}</span>
+                      <span className="max-w-[11rem] truncate">{o.name}</span>
                       <span
                         className={cn(
                           "tabular-nums",
@@ -327,51 +350,36 @@ export function AnnotationInsights({
               </div>
             )}
 
-            {/* Untagged → period-scoped todo */}
-            <div className="flex flex-col gap-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href={todoHref}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-                    data.untaggedFailed > 0
-                      ? "border-amber-500/40 bg-amber-500/10 text-amber-800 hover:bg-amber-500/15 dark:text-amber-300"
-                      : "border-border bg-muted/30 text-muted-foreground hover:bg-muted",
-                  )}
-                  title={
-                    chartMode === "recent"
-                      ? "Count is latest-per-inverter in this period; todo list includes all unannotated fails in the date range"
-                      : "Open unannotated failures for this period"
-                  }
-                >
-                  <IconAlertTriangle className="size-3.5 shrink-0" />
-                  <span>
-                    Untagged failures
-                    <span className="ml-1.5 tabular-nums font-semibold">
-                      {data.untaggedFailed}
-                    </span>
-                  </span>
-                  {dashboardRange.kind !== "all" && (
-                    <span className="text-[10px] font-normal opacity-75">
-                      in this period
-                    </span>
-                  )}
-                </Link>
-                {data.totalFailed > 0 && (
-                  <span className="text-xs text-muted-foreground">
-                    of {data.totalFailed} failed
-                  </span>
+            {/* Untagged chip only — caveat lives on /todo (O7 / O30) */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              <Link
+                href={todoHref}
+                className={cn(
+                  chipBase,
+                  data.untaggedFailed > 0
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-800 hover:bg-amber-500/15 dark:text-amber-300"
+                    : "border-border/80 bg-muted/30 text-muted-foreground hover:bg-muted",
                 )}
-              </div>
-              {chartMode === "recent" && (
-                <p className="text-[11px] text-muted-foreground">
-                  Count: latest per inverter · list may include older runs
-                </p>
-              )}
+                title="Open unannotated failures for this period"
+              >
+                <IconAlertTriangle className="size-3 shrink-0" />
+                <span>
+                  Untagged
+                  <span className="ml-1 tabular-nums font-semibold">
+                    {data.untaggedFailed}
+                  </span>
+                  {data.totalFailed > 0 && (
+                    <span className="font-normal opacity-70">
+                      {" "}
+                      / {data.totalFailed}
+                    </span>
+                  )}
+                </span>
+              </Link>
             </div>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">
+          <p className="py-1 text-sm text-muted-foreground" role="status">
             Could not load failure causes.
           </p>
         )}
