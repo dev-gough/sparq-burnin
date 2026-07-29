@@ -18,6 +18,7 @@ import {
 interface FailureRateStripProps {
   data: BucketStats[];
   loading: boolean;
+  refreshing?: boolean;
   annotationFilter: string;
   bucket: ChartBucket;
 }
@@ -55,6 +56,7 @@ function formatRateAxisLabel(v: number): string {
 export function FailureRateStrip({
   data,
   loading,
+  refreshing = false,
   annotationFilter,
   bucket,
 }: FailureRateStripProps) {
@@ -232,7 +234,14 @@ export function FailureRateStrip({
     };
   }, [series, isDarkMode, bucket]);
 
-  if (fieldsMissing) {
+  // Keep overall card height similar to the original padded Card (~190px),
+  // but spend almost all of it on the plot (compact title, no gap/py waste).
+  const CHART_HEIGHT_PX = 156;
+  const showSkeleton = loading && series.length < 2;
+  const showEmpty =
+    !loading && !fieldsMissing && series.length < 2;
+  // Hide only when annotation fields missing and not mid-load
+  if (fieldsMissing && !loading) {
     return (
       <p className="px-1 text-xs text-muted-foreground">
         Failure-rate trend unavailable for this filter
@@ -240,13 +249,9 @@ export function FailureRateStrip({
     );
   }
 
-  if (!loading && series.length < 2) {
+  if (showEmpty) {
     return null;
   }
-
-  // Keep overall card height similar to the original padded Card (~190px),
-  // but spend almost all of it on the plot (compact title, no gap/py waste).
-  const CHART_HEIGHT_PX = 156;
 
   return (
     <Card className="@container/card gap-0 overflow-hidden py-0 shadow-sm">
@@ -261,7 +266,7 @@ export function FailureRateStrip({
         )}
       </CardHeader>
       <CardContent className="px-3 pb-3 pt-0 sm:px-4">
-        {loading ? (
+        {showSkeleton ? (
           <div
             className="flex flex-col justify-end gap-2 rounded-md bg-muted/30 px-2 py-3"
             style={{ height: CHART_HEIGHT_PX }}
@@ -282,13 +287,21 @@ export function FailureRateStrip({
             <div className="h-px w-full bg-border/60" />
           </div>
         ) : (
-          <ReactECharts
-            option={chartOption}
-            style={{ height: CHART_HEIGHT_PX, width: "100%" }}
-            opts={{ renderer: "canvas" }}
-            notMerge
-            lazyUpdate
-          />
+          <div
+            className={
+              refreshing
+                ? "opacity-60 transition-opacity duration-200"
+                : "opacity-100 transition-opacity duration-200"
+            }
+          >
+            <ReactECharts
+              option={chartOption}
+              style={{ height: CHART_HEIGHT_PX, width: "100%" }}
+              opts={{ renderer: "canvas" }}
+              notMerge
+              lazyUpdate
+            />
+          </div>
         )}
       </CardContent>
     </Card>

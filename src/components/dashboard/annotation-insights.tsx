@@ -83,22 +83,26 @@ export function AnnotationInsights({
 }: AnnotationInsightsProps) {
   const [data, setData] = React.useState<AnnotationSummary | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const hasDataRef = React.useRef(false);
 
   const epochRef = React.useRef(requestEpoch);
   epochRef.current = requestEpoch;
 
   React.useEffect(() => {
     if (!enabled) {
-      setLoading(true);
+      if (!hasDataRef.current) setLoading(true);
       return;
     }
 
     const abort = new AbortController();
     const epochAtStart = requestEpoch;
+    const isInitial = !hasDataRef.current;
 
     async function fetchSummary() {
       try {
-        setLoading(true);
+        if (isInitial) setLoading(true);
+        else setRefreshing(true);
         const params = new URLSearchParams({
           view: "annotation-summary",
           chartMode,
@@ -112,20 +116,22 @@ export function AnnotationInsights({
         if (abort.signal.aborted || epochRef.current !== epochAtStart) return;
 
         if (!response.ok) {
-          setData(null);
+          if (isInitial) setData(null);
           return;
         }
 
         const json = (await response.json()) as AnnotationSummary;
         if (abort.signal.aborted || epochRef.current !== epochAtStart) return;
         setData(json);
+        hasDataRef.current = true;
       } catch (e) {
         if (abort.signal.aborted) return;
         console.error("Error fetching annotation summary:", e);
-        setData(null);
+        if (isInitial) setData(null);
       } finally {
         if (!abort.signal.aborted && epochRef.current === epochAtStart) {
           setLoading(false);
+          setRefreshing(false);
         }
       }
     }
@@ -196,7 +202,12 @@ export function AnnotationInsights({
             No failed tests in this period.
           </p>
         ) : data ? (
-          <div className="flex min-h-[5.5rem] flex-col gap-3">
+          <div
+            className={cn(
+              "flex min-h-[5.5rem] flex-col gap-3 transition-opacity duration-200",
+              refreshing && "opacity-55",
+            )}
+          >
             {/* Group chips */}
             {data.groups.length > 0 && (
               <div className="flex flex-wrap items-center gap-2">

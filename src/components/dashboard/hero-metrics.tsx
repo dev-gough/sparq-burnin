@@ -99,6 +99,58 @@ function TrendBadge({
   );
 }
 
+/** Fixed-height slot so All (no PoP) and 90d (with PoP) cards match. */
+function TrendSlot({ children }: { children?: React.ReactNode }) {
+  return (
+    <div className="flex min-h-5 items-center">
+      {children ?? (
+        <span className="text-sm text-muted-foreground/70">—</span>
+      )}
+    </div>
+  );
+}
+
+/** Fixed caption stack so optional hint lines do not change card height. */
+function CaptionSlot({ children }: { children?: React.ReactNode }) {
+  return (
+    <div className="flex min-h-10 flex-col justify-start gap-0.5 text-xs text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+function HeroSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-6">
+      <Card className="@container/card from-muted/20 to-card bg-gradient-to-t shadow-xs">
+        <CardHeader className="gap-2">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-14 w-40 sm:h-16" />
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-10 w-52 max-w-full" />
+        </CardHeader>
+      </Card>
+      <Card className="@container/card from-primary/5 to-card bg-gradient-to-t shadow-xs">
+        <CardHeader className="gap-2">
+          <Skeleton className="h-3 w-28" />
+          <Skeleton className="h-9 w-28 sm:h-10" />
+          <Skeleton className="h-5 w-24" />
+          <div className="min-h-10" />
+        </CardHeader>
+      </Card>
+      <Card className="@container/card from-rose-500/5 to-card bg-gradient-to-t shadow-xs">
+        <CardHeader className="gap-2">
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-9 w-20 sm:h-10" />
+          <Skeleton className="h-3 w-36" />
+          <Skeleton className="h-5 w-24" />
+          <Skeleton className="h-10 w-full max-w-[16rem]" />
+        </CardHeader>
+      </Card>
+    </div>
+  );
+}
+
 export function HeroMetrics({
   dashboardRange,
   chartMode,
@@ -108,24 +160,31 @@ export function HeroMetrics({
   enabled = true,
 }: HeroMetricsProps) {
   const [data, setData] = React.useState<CompareResponse | null>(null);
-  const [loading, setLoading] = React.useState(true);
+  const [initialLoading, setInitialLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
   const [error, setError] = React.useState(false);
 
   const epochRef = React.useRef(requestEpoch);
   epochRef.current = requestEpoch;
+  const hasDataRef = React.useRef(false);
 
   React.useEffect(() => {
     if (!enabled) {
-      setLoading(true);
+      if (!hasDataRef.current) setInitialLoading(true);
       return;
     }
 
     const abort = new AbortController();
     const epochAtStart = requestEpoch;
+    const isInitial = !hasDataRef.current;
 
     async function fetchStats() {
       try {
-        setLoading(true);
+        if (isInitial) {
+          setInitialLoading(true);
+        } else {
+          setRefreshing(true);
+        }
         setError(false);
         const params = new URLSearchParams({
           view: "summary",
@@ -141,15 +200,16 @@ export function HeroMetrics({
         if (abort.signal.aborted || epochRef.current !== epochAtStart) return;
 
         if (!response.ok) {
-          setError(true);
-          setData(null);
+          if (isInitial) {
+            setError(true);
+            setData(null);
+          }
           return;
         }
 
         const json = await response.json();
         if (abort.signal.aborted || epochRef.current !== epochAtStart) return;
 
-        // Support flat (no compare) fallback shape
         if (json.current) {
           setData(json as CompareResponse);
         } else {
@@ -162,14 +222,18 @@ export function HeroMetrics({
               json.failurePercentageOfTotal ?? null,
           });
         }
+        hasDataRef.current = true;
       } catch (e) {
         if (abort.signal.aborted) return;
         console.error("Failed to fetch hero stats:", e);
-        setError(true);
-        setData(null);
+        if (isInitial) {
+          setError(true);
+          setData(null);
+        }
       } finally {
         if (!abort.signal.aborted && epochRef.current === epochAtStart) {
-          setLoading(false);
+          setInitialLoading(false);
+          setRefreshing(false);
         }
       }
     }
@@ -178,48 +242,12 @@ export function HeroMetrics({
     return () => abort.abort();
   }, [dashboardRange, chartMode, annotationFilter, requestEpoch, enabled]);
 
-  const stats = data?.current;
-  const delta = data?.delta;
-  const annotationOn = annotationFilter && annotationFilter !== "all";
-  const rateTint =
-    stats && stats.failureRate > 0
-      ? "from-rose-500/10 to-card"
-      : "from-emerald-500/10 to-card";
-
-  if (loading) {
-    // Match loaded layout: same grid, card chrome, title scale, and caption lines
-    // so hero row height does not jump when data arrives.
-    return (
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-6">
-        <Card className="@container/card from-muted/20 to-card bg-gradient-to-t shadow-xs">
-          <CardHeader className="gap-2">
-            <Skeleton className="h-3 w-24" />
-            <Skeleton className="h-14 w-40 sm:h-16" />
-            <Skeleton className="h-5 w-32" />
-            <Skeleton className="h-3 w-52 max-w-full" />
-          </CardHeader>
-        </Card>
-        <Card className="@container/card from-primary/5 to-card bg-gradient-to-t shadow-xs">
-          <CardHeader className="gap-2">
-            <Skeleton className="h-3 w-28" />
-            <Skeleton className="h-9 w-28 sm:h-10" />
-            <Skeleton className="h-5 w-24" />
-          </CardHeader>
-        </Card>
-        <Card className="@container/card from-rose-500/5 to-card bg-gradient-to-t shadow-xs">
-          <CardHeader className="gap-2">
-            <Skeleton className="h-3 w-20" />
-            <Skeleton className="h-9 w-20 sm:h-10" />
-            <Skeleton className="h-3 w-36" />
-            <Skeleton className="h-5 w-24" />
-            <Skeleton className="h-3 w-full max-w-[16rem]" />
-          </CardHeader>
-        </Card>
-      </div>
-    );
+  // First paint only — never tear down cards on period change
+  if (initialLoading && !data) {
+    return <HeroSkeleton />;
   }
 
-  if (error || !stats) {
+  if ((error && !data) || !data?.current) {
     return (
       <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-6 text-sm text-muted-foreground">
         Could not load summary metrics. Check your connection and try changing
@@ -228,9 +256,19 @@ export function HeroMetrics({
     );
   }
 
+  const stats = data.current;
+  const delta = data.delta;
+  const annotationOn = Boolean(
+    annotationFilter && annotationFilter !== "all",
+  );
+  const rateTint =
+    stats.failureRate > 0
+      ? "from-rose-500/10 to-card"
+      : "from-emerald-500/10 to-card";
   const volumeLabel =
     chartMode === "recent" ? "Inverters tested" : "Tests run";
   const showPop = delta !== null && dashboardRange.kind !== "all";
+  const soft = refreshing ? "opacity-55 transition-opacity duration-200" : "opacity-100 transition-opacity duration-200";
 
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-6">
@@ -245,28 +283,48 @@ export function HeroMetrics({
           <CardDescription className="text-xs font-medium uppercase tracking-wide">
             Failure rate
           </CardDescription>
-          <CardTitle className="text-5xl font-semibold tabular-nums tracking-tight sm:text-6xl">
+          <CardTitle
+            className={cn(
+              "text-5xl font-semibold tabular-nums tracking-tight sm:text-6xl",
+              soft,
+            )}
+          >
             {stats.failureRate.toFixed(1)}
             <span className="text-3xl text-muted-foreground">%</span>
           </CardTitle>
-          {showPop && delta && (
-            <TrendBadge
-              value={delta.failureRatePp}
-              suffix=" pp"
-              goodWhenDown
-            />
-          )}
-          {annotationOn && stats.failurePercentageOfTotal !== undefined && (
-            <p className="text-xs text-muted-foreground">
-              {stats.failurePercentageOfTotal}% of all failures · tagged
-              failures ÷ all tests
-            </p>
-          )}
-          {chartMode === "recent" && (
-            <p className="text-xs text-muted-foreground">
-              One result per inverter in {dashboardRangeLabel(dashboardRange)}
-            </p>
-          )}
+          <TrendSlot>
+            {showPop && delta ? (
+              <span className={soft}>
+                <TrendBadge
+                  value={delta.failureRatePp}
+                  suffix=" pp"
+                  goodWhenDown
+                />
+              </span>
+            ) : dashboardRange.kind === "all" ? (
+              <span className="text-sm text-muted-foreground">
+                No prior period
+              </span>
+            ) : null}
+          </TrendSlot>
+          <CaptionSlot>
+            {annotationOn && stats.failurePercentageOfTotal !== undefined && (
+              <p className={soft}>
+                {stats.failurePercentageOfTotal}% of all failures · tagged
+                failures ÷ all tests
+              </p>
+            )}
+            {chartMode === "recent" ? (
+              <p className={soft}>
+                One result per inverter in{" "}
+                {dashboardRangeLabel(dashboardRange)}
+              </p>
+            ) : (
+              <p className={soft}>
+                All tests in {dashboardRangeLabel(dashboardRange)}
+              </p>
+            )}
+          </CaptionSlot>
         </CardHeader>
       </Card>
 
@@ -276,12 +334,32 @@ export function HeroMetrics({
           <CardDescription className="text-xs font-medium uppercase tracking-wide">
             {volumeLabel}
           </CardDescription>
-          <CardTitle className="text-3xl font-semibold tabular-nums sm:text-4xl">
+          <CardTitle
+            className={cn(
+              "text-3xl font-semibold tabular-nums sm:text-4xl",
+              soft,
+            )}
+          >
             {stats.total.toLocaleString()}
           </CardTitle>
-          {showPop && delta && (
-            <TrendBadge value={delta.total} neutral />
-          )}
+          <TrendSlot>
+            {showPop && delta ? (
+              <span className={soft}>
+                <TrendBadge value={delta.total} neutral />
+              </span>
+            ) : dashboardRange.kind === "all" ? (
+              <span className="text-sm text-muted-foreground">
+                No prior period
+              </span>
+            ) : null}
+          </TrendSlot>
+          <CaptionSlot>
+            <p className={soft}>
+              {chartMode === "recent"
+                ? "Latest valid result per inverter"
+                : "Every test in the selected period"}
+            </p>
+          </CaptionSlot>
         </CardHeader>
       </Card>
 
@@ -297,23 +375,38 @@ export function HeroMetrics({
             className="group rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             title="Filter table to FAIL and scroll to tests"
           >
-            <CardTitle className="text-3xl font-semibold tabular-nums text-rose-600 transition-colors group-hover:underline dark:text-rose-400 sm:text-4xl">
+            <CardTitle
+              className={cn(
+                "text-3xl font-semibold tabular-nums text-rose-600 transition-colors group-hover:underline dark:text-rose-400 sm:text-4xl",
+                soft,
+              )}
+            >
               {stats.failed.toLocaleString()}
             </CardTitle>
             <span className="mt-1 block text-xs text-muted-foreground group-hover:text-foreground">
               Click to view in table ↓
             </span>
           </button>
-          {showPop && delta && (
-            <TrendBadge value={delta.failed} goodWhenDown />
-          )}
-          <p className="text-xs text-muted-foreground">
-            Table shows FAIL rows in the linked date range
-            {chartMode === "recent"
-              ? "; counts may differ from hero (latest-per-inverter)"
-              : ""}
-            .
-          </p>
+          <TrendSlot>
+            {showPop && delta ? (
+              <span className={soft}>
+                <TrendBadge value={delta.failed} goodWhenDown />
+              </span>
+            ) : dashboardRange.kind === "all" ? (
+              <span className="text-sm text-muted-foreground">
+                No prior period
+              </span>
+            ) : null}
+          </TrendSlot>
+          <CaptionSlot>
+            <p className={soft}>
+              Table shows FAIL rows in the linked date range
+              {chartMode === "recent"
+                ? "; counts may differ from hero (latest-per-inverter)"
+                : ""}
+              .
+            </p>
+          </CaptionSlot>
         </CardHeader>
       </Card>
     </div>

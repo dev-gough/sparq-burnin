@@ -19,6 +19,9 @@ export interface BucketStats {
  * Fetch bucketed pass/fail series for a chart surface.
  * Volume chart and failure-rate strip call this separately so "Group by"
  * on volume does not redraw the strip (different bucket args).
+ *
+ * Stale-while-revalidate: after the first successful load, `loading` stays
+ * false while refetching so charts stay mounted and only series data updates.
  */
 export function useBucketStats(opts: {
   dashboardRange: DashboardRange;
@@ -30,7 +33,10 @@ export function useBucketStats(opts: {
   enabled?: boolean;
 }): {
   data: BucketStats[];
+  /** True only on the initial load (no data yet). */
   loading: boolean;
+  /** True while a refetch is in flight with previous data still shown. */
+  refreshing: boolean;
   error: boolean;
 } {
   const {
@@ -44,24 +50,30 @@ export function useBucketStats(opts: {
 
   const [data, setData] = React.useState<BucketStats[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
   const [error, setError] = React.useState(false);
+  const hasDataRef = React.useRef(false);
 
-  // Ref tracks latest epoch so post-await checks can detect stale responses
   const epochRef = React.useRef(requestEpoch);
   epochRef.current = requestEpoch;
 
   React.useEffect(() => {
     if (!enabled) {
-      setLoading(true);
+      if (!hasDataRef.current) setLoading(true);
       return;
     }
 
     const abort = new AbortController();
     const epochAtStart = requestEpoch;
+    const isInitial = !hasDataRef.current;
 
     async function fetchStats() {
       try {
-        setLoading(true);
+        if (isInitial) {
+          setLoading(true);
+        } else {
+          setRefreshing(true);
+        }
         setError(false);
         const params = new URLSearchParams({
           chartMode,
@@ -76,22 +88,26 @@ export function useBucketStats(opts: {
         if (abort.signal.aborted || epochRef.current !== epochAtStart) return;
 
         if (!response.ok) {
-          setData([]);
+          // Keep previous series on soft refresh so the chart does not collapse
+          if (isInitial) setData([]);
           setError(true);
           return;
         }
 
         const json: BucketStats[] = await response.json();
         if (abort.signal.aborted || epochRef.current !== epochAtStart) return;
-        setData(Array.isArray(json) ? json : []);
+        const next = Array.isArray(json) ? json : [];
+        setData(next);
+        hasDataRef.current = true;
       } catch (e) {
         if (abort.signal.aborted) return;
         console.error("Error fetching bucket stats:", e);
-        setData([]);
+        if (isInitial) setData([]);
         setError(true);
       } finally {
         if (!abort.signal.aborted && epochRef.current === epochAtStart) {
           setLoading(false);
+          setRefreshing(false);
         }
       }
     }
@@ -107,7 +123,7 @@ export function useBucketStats(opts: {
     enabled,
   ]);
 
-  return { data, loading, error };
+  return { data, loading, refreshing, error };
 }
 
 /** Volume series: drop strip-only empty buckets (passed+failed === 0). */

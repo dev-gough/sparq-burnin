@@ -48,9 +48,12 @@ interface ChartAreaInteractiveProps {
   highlightDate?: string;
   bucket: ChartBucket;
   onBucketChange: (bucket: ChartBucket) => void;
-  /** Shared bucket stats from page (one fetch for strip + volume). */
+  /** Shared bucket stats from page. */
   data: BucketStats[];
+  /** Initial load only — do not unmount chart on period refresh. */
   loading: boolean;
+  /** Soft refetch with previous series still visible. */
+  refreshing?: boolean;
 }
 
 const FAILED_SERIES_NAME = "Failed (right scale)";
@@ -65,6 +68,7 @@ export function ChartAreaInteractive({
   onBucketChange,
   data,
   loading,
+  refreshing = false,
 }: ChartAreaInteractiveProps) {
   const [isDarkMode, setIsDarkMode] = React.useState(false);
   const chartRef = React.useRef<ReactECharts>(null);
@@ -411,7 +415,11 @@ export function ChartAreaInteractive({
         </CardAction>
       </CardHeader>
       <CardContent className="px-2 pt-2 sm:px-6 sm:pt-3">
-        {loading ? (
+        {/*
+          Keep a single mount for the plot: skeleton only on first load.
+          Period changes update `option` in place (ECharts animates series).
+        */}
+        {loading && chartData.length === 0 ? (
           <div
             className="flex h-[320px] flex-col justify-end gap-2 rounded-md bg-muted/20 px-3 py-4"
             aria-hidden
@@ -438,19 +446,28 @@ export function ChartAreaInteractive({
             </div>
           </div>
         ) : (
-          <ReactECharts
-            ref={chartRef}
-            option={chartOption}
-            style={{
-              height: "320px",
-              width: "100%",
-              cursor: bucket === "day" ? "pointer" : "default",
-            }}
-            opts={{ renderer: "canvas" }}
-            onEvents={onEvents}
-            notMerge={true}
-            lazyUpdate={true}
-          />
+          <div
+            className={
+              refreshing
+                ? "opacity-60 transition-opacity duration-200"
+                : "opacity-100 transition-opacity duration-200"
+            }
+          >
+            <ReactECharts
+              ref={chartRef}
+              option={chartOption}
+              style={{
+                height: "320px",
+                width: "100%",
+                cursor: bucket === "day" ? "pointer" : "default",
+              }}
+              opts={{ renderer: "canvas" }}
+              onEvents={onEvents}
+              // Replace option data without remounting the chart instance/card
+              notMerge={true}
+              lazyUpdate={true}
+            />
+          </div>
         )}
       </CardContent>
     </Card>

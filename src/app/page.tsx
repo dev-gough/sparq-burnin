@@ -174,6 +174,7 @@ export default function Page() {
   const {
     data: stripStats,
     loading: stripLoading,
+    refreshing: stripRefreshing,
   } = useBucketStats({
     dashboardRange,
     chartMode,
@@ -186,6 +187,7 @@ export default function Page() {
   const {
     data: volumeStats,
     loading: volumeLoading,
+    refreshing: volumeRefreshing,
   } = useBucketStats({
     dashboardRange,
     chartMode,
@@ -418,6 +420,7 @@ export default function Page() {
             <FailureRateStrip
               data={stripStats}
               loading={stripLoading || !filtersReady}
+              refreshing={stripRefreshing}
               annotationFilter={annotationFilter}
               bucket={stripBucket}
             />
@@ -432,6 +435,7 @@ export default function Page() {
               onBucketChange={handleBucketChange}
               data={volumeStats}
               loading={volumeLoading || !filtersReady}
+              refreshing={volumeRefreshing}
             />
 
             <AnnotationInsights
