@@ -122,14 +122,15 @@ export function FailureRateStrip({
         color: textColor,
         fontFamily: "var(--font-geist-sans), sans-serif",
       },
-      // containLabel gives y-labels room without a fixed cramped left gutter
+      // containLabel gives y-labels room; tight top/bottom so plot fills the card
       grid: {
         left: 4,
         right: 10,
-        top: 10,
-        bottom: 4,
+        top: 6,
+        bottom: 2,
         containLabel: true,
       },
+
       xAxis: {
         type: "category",
         data: series.map((s) => s.date),
@@ -243,9 +244,13 @@ export function FailureRateStrip({
     return null;
   }
 
+  // Keep overall card height similar to the original padded Card (~190px),
+  // but spend almost all of it on the plot (compact title, no gap/py waste).
+  const CHART_HEIGHT_PX = 156;
+
   return (
     <Card className="@container/card gap-0 overflow-hidden py-0 shadow-sm">
-      <CardHeader className="flex-row items-center justify-between gap-0 space-y-0 px-4 pb-0 pt-1.5">
+      <CardHeader className="flex shrink-0 flex-row items-center justify-between gap-0 space-y-0 px-4 pb-0 pt-2">
         <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Failure rate over time
         </CardTitle>
@@ -255,15 +260,18 @@ export function FailureRateStrip({
           </span>
         )}
       </CardHeader>
-      <CardContent className="px-3 pb-2 pt-0 sm:px-4">
+      <CardContent className="px-3 pb-3 pt-0 sm:px-4">
         {loading ? (
-          <div className="flex h-[112px] items-center justify-center">
+          <div
+            className="flex items-center justify-center"
+            style={{ height: CHART_HEIGHT_PX }}
+          >
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
         ) : (
           <ReactECharts
             option={chartOption}
-            style={{ height: "112px", width: "100%" }}
+            style={{ height: CHART_HEIGHT_PX, width: "100%" }}
             opts={{ renderer: "canvas" }}
             notMerge
             lazyUpdate
