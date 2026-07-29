@@ -412,8 +412,30 @@ export function ChartAreaInteractive({
       </CardHeader>
       <CardContent className="px-2 pt-2 sm:px-6 sm:pt-3">
         {loading ? (
-          <div className="flex h-[320px] items-center justify-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
+          <div
+            className="flex h-[320px] flex-col justify-end gap-2 rounded-md bg-muted/20 px-3 py-4"
+            aria-hidden
+          >
+            <div className="flex flex-1 items-end gap-2">
+              {Array.from({ length: 14 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="flex-1 animate-pulse rounded-t-md bg-muted"
+                  style={{
+                    height: `${35 + ((i * 23) % 55)}%`,
+                    opacity: 0.5 + (i % 4) * 0.1,
+                  }}
+                />
+              ))}
+            </div>
+            <div className="flex justify-between gap-2">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-2.5 flex-1 animate-pulse rounded bg-muted/80"
+                />
+              ))}
+            </div>
           </div>
         ) : (
           <ReactECharts

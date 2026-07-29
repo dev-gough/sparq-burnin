@@ -263,10 +263,23 @@ export function FailureRateStrip({
       <CardContent className="px-3 pb-3 pt-0 sm:px-4">
         {loading ? (
           <div
-            className="flex items-center justify-center"
+            className="flex flex-col justify-end gap-2 rounded-md bg-muted/30 px-2 py-3"
             style={{ height: CHART_HEIGHT_PX }}
+            aria-hidden
           >
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <div className="flex flex-1 items-end gap-1.5 px-1">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="flex-1 animate-pulse rounded-sm bg-muted"
+                  style={{
+                    height: `${28 + ((i * 17) % 55)}%`,
+                    opacity: 0.55 + (i % 3) * 0.1,
+                  }}
+                />
+              ))}
+            </div>
+            <div className="h-px w-full bg-border/60" />
           </div>
         ) : (
           <ReactECharts

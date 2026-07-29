@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   appendDashboardRangeParams,
   type DashboardRange,
@@ -186,18 +187,34 @@ export function HeroMetrics({
       : "from-emerald-500/10 to-card";
 
   if (loading) {
+    // Match loaded layout: same grid, card chrome, title scale, and caption lines
+    // so hero row height does not jump when data arrives.
     return (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-6">
-        {[0, 1, 2].map((i) => (
-          <Card key={i} className="@container/card animate-pulse">
-            <CardHeader>
-              <CardDescription>Loading…</CardDescription>
-              <CardTitle className="text-4xl font-semibold tabular-nums">
-                —
-              </CardTitle>
-            </CardHeader>
-          </Card>
-        ))}
+        <Card className="@container/card from-muted/20 to-card bg-gradient-to-t shadow-xs">
+          <CardHeader className="gap-2">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-14 w-40 sm:h-16" />
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-3 w-52 max-w-full" />
+          </CardHeader>
+        </Card>
+        <Card className="@container/card from-primary/5 to-card bg-gradient-to-t shadow-xs">
+          <CardHeader className="gap-2">
+            <Skeleton className="h-3 w-28" />
+            <Skeleton className="h-9 w-28 sm:h-10" />
+            <Skeleton className="h-5 w-24" />
+          </CardHeader>
+        </Card>
+        <Card className="@container/card from-rose-500/5 to-card bg-gradient-to-t shadow-xs">
+          <CardHeader className="gap-2">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-9 w-20 sm:h-10" />
+            <Skeleton className="h-3 w-36" />
+            <Skeleton className="h-5 w-24" />
+            <Skeleton className="h-3 w-full max-w-[16rem]" />
+          </CardHeader>
+        </Card>
       </div>
     );
   }

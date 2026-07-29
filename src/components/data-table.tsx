@@ -259,6 +259,138 @@ interface DataTableProps {
   onStatusFilterChange: (status: string) => void;
 }
 
+/** Default page size — skeleton rows match the loaded table footprint. */
+const TABLE_PAGE_SIZE = 30;
+
+/**
+ * Full-height skeleton matching the filter bar + table + pagination layout.
+ * Used for both in-table loading and the pre-hydrate page placeholder.
+ */
+export function DataTableSkeleton({
+  rowCount = TABLE_PAGE_SIZE,
+}: {
+  rowCount?: number;
+}) {
+  return (
+    <Tabs
+      id="test-table"
+      defaultValue="outline"
+      className="w-full flex-col justify-start gap-6 scroll-mt-4"
+    >
+      <TabsContent
+        value="outline"
+        className="relative flex flex-col gap-4 overflow-auto"
+      >
+        {/* Filters — same structure as loaded filter row */}
+        <div className="flex flex-col gap-4 rounded-lg border bg-muted/50 p-4">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end">
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-10 max-w-sm" />
+              <Skeleton className="h-3 w-32" />
+            </div>
+            <div className="flex flex-wrap gap-4">
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-12" />
+                <Skeleton className="h-10 w-32" />
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-10 w-64" />
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-10 w-40" />
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-10 w-40" />
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-10 w-40" />
+              </div>
+            </div>
+            <div className="flex items-end gap-2">
+              <Skeleton className="h-10 w-24" />
+              <Skeleton className="h-10 w-10" />
+              <Skeleton className="h-10 w-24" />
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-lg border">
+          <Table>
+            <TableHeader className="bg-muted sticky top-0 z-10">
+              <TableRow>
+                <TableHead>
+                  <Skeleton className="h-4 w-40" />
+                </TableHead>
+                <TableHead>
+                  <Skeleton className="h-4 w-32" />
+                </TableHead>
+                <TableHead>
+                  <Skeleton className="h-4 w-24" />
+                </TableHead>
+                <TableHead>
+                  <Skeleton className="h-4 w-28" />
+                </TableHead>
+                <TableHead>
+                  <Skeleton className="h-4 w-16" />
+                </TableHead>
+                <TableHead>
+                  <Skeleton className="h-4 w-24" />
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: rowCount }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell>
+                    <Skeleton className="h-5 w-32" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-5 w-24" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-5 w-36" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-5 w-20" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-6 w-16 rounded-full" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-5 w-40" />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="flex items-center justify-between px-4">
+          <Skeleton className="hidden h-4 w-48 lg:block" />
+          <div className="flex w-full items-center gap-8 lg:w-fit">
+            <div className="hidden items-center gap-2 lg:flex">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-8 w-20" />
+            </div>
+            <Skeleton className="h-4 w-32" />
+            <div className="ml-auto flex items-center gap-2 lg:ml-0">
+              <Skeleton className="hidden h-8 w-8 lg:block" />
+              <Skeleton className="h-8 w-8" />
+              <Skeleton className="h-8 w-8" />
+              <Skeleton className="hidden h-8 w-8 lg:block" />
+            </div>
+          </div>
+        </div>
+      </TabsContent>
+    </Tabs>
+  );
+}
+
 export function DataTable({
   onClearDateFilter,
   annotationFilter,
@@ -287,7 +419,7 @@ export function DataTable({
   );
   const [pagination, setPagination] = React.useState({
     pageIndex: 0,
-    pageSize: 30,
+    pageSize: TABLE_PAGE_SIZE,
   });
   // Table-only prefs from localStorage (status/dates/annotation owned by parent page)
   const [serialSearch, setSerialSearch] = React.useState(() => {
@@ -566,113 +698,7 @@ export function DataTable({
   }, [columnFilters, data, prefetchTests, table]);
 
   if (loading) {
-    return (
-      <Tabs
-        id="test-table"
-        defaultValue="outline"
-        className="w-full flex-col justify-start gap-6"
-      >
-        <TabsContent
-          value="outline"
-          className="relative flex flex-col gap-4 overflow-auto"
-        >
-          {/* Filters Section Skeleton */}
-          <div className="flex flex-col gap-4 rounded-lg border p-4 bg-muted/50">
-            <div className="flex flex-col gap-4 md:flex-row md:items-end">
-              <div className="flex-1 space-y-2">
-                <Skeleton className="h-4 w-40" />
-                <Skeleton className="h-10 max-w-sm" />
-                <Skeleton className="h-3 w-32" />
-              </div>
-              <div className="flex justify-between sm:gap-4">
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-12" />
-                  <Skeleton className="h-10 w-32" />
-                </div>
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-20" />
-                  <Skeleton className="h-10 w-64" />
-                </div>
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-16" />
-                  <Skeleton className="h-10 w-40" />
-                </div>
-              </div>
-              <div className="flex justify-between sm:gap-4">
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-20" />
-                  <Skeleton className="h-10 w-40" />
-                </div>
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-16" />
-                  <Skeleton className="h-10 w-40" />
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex flex-col items-center gap-1">
-                  <div className="h-4" />
-                  <Skeleton className="h-10 w-24" />
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                  <div className="h-4" />
-                  <Skeleton className="h-10 w-10" />
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                  <div className="h-4" />
-                  <Skeleton className="h-10 w-24" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Table Skeleton */}
-          <div className="overflow-hidden rounded-lg border">
-            <Table>
-              <TableHeader className="bg-muted sticky top-0 z-10">
-                <TableRow>
-                  <TableHead><Skeleton className="h-4 w-40" /></TableHead>
-                  <TableHead><Skeleton className="h-4 w-32" /></TableHead>
-                  <TableHead><Skeleton className="h-4 w-24" /></TableHead>
-                  <TableHead><Skeleton className="h-4 w-28" /></TableHead>
-                  <TableHead><Skeleton className="h-4 w-16" /></TableHead>
-                  <TableHead><Skeleton className="h-4 w-24" /></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Array.from({ length: 30 }).map((_, i) => (
-                  <TableRow key={i}>
-                    <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-20" /></TableCell>
-                    <TableCell><Skeleton className="h-6 w-16" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-40" /></TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Pagination Skeleton */}
-          <div className="flex items-center justify-between px-4">
-            <Skeleton className="h-4 w-48 hidden lg:block" />
-            <div className="flex w-full items-center gap-8 lg:w-fit">
-              <div className="hidden items-center gap-2 lg:flex">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-8 w-20" />
-              </div>
-              <Skeleton className="h-4 w-32" />
-              <div className="ml-auto flex items-center gap-2 lg:ml-0">
-                <Skeleton className="h-8 w-8 hidden lg:block" />
-                <Skeleton className="h-8 w-8" />
-                <Skeleton className="h-8 w-8" />
-                <Skeleton className="h-8 w-8 hidden lg:block" />
-              </div>
-            </div>
-          </div>
-        </TabsContent>
-      </Tabs>
-    );
+    return <DataTableSkeleton />;
   }
 
   return (

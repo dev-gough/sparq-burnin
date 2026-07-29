@@ -169,20 +169,34 @@ export function AnnotationInsights({
       </CardHeader>
       <CardContent className="pt-0">
         {loading && !data ? (
-          <div className="flex flex-wrap gap-2">
-            {[1, 2, 3, 4].map((i) => (
-              <div
-                key={i}
-                className="h-8 w-28 animate-pulse rounded-full bg-muted"
-              />
-            ))}
+          // Two chip rows ≈ loaded groups + causes layout (min height avoids jump)
+          <div className="flex min-h-[5.5rem] flex-col gap-3" aria-hidden>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="h-3 w-12 animate-pulse rounded bg-muted" />
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={`g-${i}`}
+                  className="h-7 w-36 animate-pulse rounded-full bg-muted"
+                />
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="h-3 w-12 animate-pulse rounded bg-muted" />
+              {[1, 2, 3, 4].map((i) => (
+                <div
+                  key={`c-${i}`}
+                  className="h-7 w-28 animate-pulse rounded-full bg-muted"
+                />
+              ))}
+            </div>
+            <div className="h-7 w-40 animate-pulse rounded-full bg-muted/70" />
           </div>
         ) : empty ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="min-h-[5.5rem] text-sm text-muted-foreground">
             No failed tests in this period.
           </p>
         ) : data ? (
-          <div className="flex flex-col gap-3">
+          <div className="flex min-h-[5.5rem] flex-col gap-3">
             {/* Group chips */}
             {data.groups.length > 0 && (
               <div className="flex flex-wrap items-center gap-2">

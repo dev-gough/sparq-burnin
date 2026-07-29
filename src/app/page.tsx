@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { ChartAreaInteractive } from "@/components/chart-area-interactive";
-import { DataTable } from "@/components/data-table";
+import { DataTable, DataTableSkeleton } from "@/components/data-table";
 import { AnnotationInsights } from "@/components/dashboard/annotation-insights";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { FailureRateStrip } from "@/components/dashboard/failure-rate-strip";
@@ -458,11 +458,7 @@ export default function Page() {
                 onStatusFilterChange={setStatusFilter}
               />
             ) : (
-              <div
-                id="test-table"
-                className="min-h-[240px] animate-pulse rounded-xl border bg-card"
-                aria-hidden
-              />
+              <DataTableSkeleton />
             )}
           </div>
         </div>
