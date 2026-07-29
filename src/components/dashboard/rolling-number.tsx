@@ -1,12 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 type RollingNumberProps = {
   /** Numeric value to show; null while waiting for first payload. */
   value: number | null;
+  /** While true, reels sit on zeros; when false, they roll to `value`. */
   pending: boolean;
   /** Format the number into display characters (digits, commas, decimal). */
   format: (n: number) => string;
@@ -17,8 +17,9 @@ type RollingNumberProps = {
 };
 
 /**
- * Odometer-style digit reel: each digit column slides vertically to the
- * target numeral. Non-digit characters (commas, decimals) stay fixed.
+ * Odometer-style digit reel: always shows digits (starting at zeros — no
+ * skeleton bar). When data arrives or the period changes, columns roll
+ * to the new value with a light left-to-right cascade.
  */
 export function RollingNumber({
   value,
@@ -32,64 +33,57 @@ export function RollingNumber({
     variant === "hero"
       ? "flex h-12 shrink-0 items-center sm:h-[3.75rem]"
       : "flex h-[1.875rem] shrink-0 items-center sm:h-9";
-  const bar =
-    variant === "hero"
-      ? "h-10 w-32 sm:h-12 sm:w-36"
-      : "h-7 w-24 sm:h-8 sm:w-28";
 
-  // Drive CSS transitions: first paint as zeros, then snap to target.
-  const [display, setDisplay] = React.useState<string | null>(null);
-  const prevFormatted = React.useRef<string | null>(null);
+  const zeroStr = format(0);
+  const targetStr =
+    pending || value === null ? zeroStr : format(value);
+
+  // What the reels currently show (drives CSS transform)
+  const [display, setDisplay] = React.useState(zeroStr);
+  const prevTarget = React.useRef<string | null>(null);
 
   React.useEffect(() => {
+    // Pending / no value → park on zeros
     if (pending || value === null) {
-      setDisplay(null);
-      prevFormatted.current = null;
+      setDisplay(zeroStr);
+      prevTarget.current = zeroStr;
       return;
     }
 
     const next = format(value);
-    const prev = prevFormatted.current;
 
-    if (prev === null) {
-      // Entrance: start on zeros of the same shape, then roll to value
+    // First real value, or width/shape change: zeros of new shape → roll
+    if (
+      prevTarget.current === null ||
+      prevTarget.current === zeroStr ||
+      prevTarget.current.replace(/\d/g, "0") !== next.replace(/\d/g, "0")
+    ) {
       const zeros = next.replace(/\d/g, "0");
       setDisplay(zeros);
+      prevTarget.current = next;
       const id = requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setDisplay(next);
-          prevFormatted.current = next;
-        });
+        requestAnimationFrame(() => setDisplay(next));
       });
       return () => cancelAnimationFrame(id);
     }
 
-    if (prev !== next) {
+    // Same digit width — roll in place
+    if (prevTarget.current !== next) {
+      prevTarget.current = next;
       setDisplay(next);
-      prevFormatted.current = next;
     }
-  }, [value, pending, format]);
-
-  if (pending || value === null || display === null) {
-    return (
-      <div className={shell}>
-        <Skeleton className={cn("rounded-md", bar)} aria-hidden />
-      </div>
-    );
-  }
+  }, [value, pending, format, zeroStr]);
 
   const chars = display.split("");
+  const a11y = pending || value === null ? zeroStr : format(value);
 
   return (
-    <div
-      className={cn(shell, "tabular-nums", className)}
-      aria-label={display}
-    >
+    <div className={cn(shell, "tabular-nums", className)} aria-label={a11y}>
       <span className="inline-flex items-center leading-none" aria-hidden>
         {chars.map((ch, i) =>
           /\d/.test(ch) ? (
             <DigitReel
-              key={`d-${i}-${chars.length}`}
+              key={`col-${i}-${chars.length}`}
               digit={Number(ch)}
               delayMs={i * 35}
             />
@@ -104,18 +98,14 @@ export function RollingNumber({
         )}
         {suffix}
       </span>
-      {/* Accessible live value for screen readers */}
-      <span className="sr-only">{display}</span>
+      <span className="sr-only">{a11y}</span>
     </div>
   );
 }
 
 function DigitReel({ digit, delayMs }: { digit: number; delayMs: number }) {
-  // Slightly wider than a digit so 1 vs 0 don't reflow mid-roll
   return (
-    <span
-      className="relative inline-block h-[1em] w-[0.62em] shrink-0 overflow-hidden align-bottom leading-none"
-    >
+    <span className="relative inline-block h-[1em] w-[0.62em] shrink-0 overflow-hidden align-bottom leading-none">
       <span
         className="absolute left-0 top-0 flex w-full flex-col will-change-transform"
         style={{

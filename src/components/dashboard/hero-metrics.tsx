@@ -9,7 +9,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { RollingNumber } from "@/components/dashboard/rolling-number";
 import {
   appendDashboardRangeParams,
@@ -229,7 +228,9 @@ export function HeroMetrics({
           </CardTitle>
           <TrendSlot>
             {pending || !stats ? (
-              <Skeleton className="h-4 w-32 shrink-0" />
+              <span className="text-sm leading-5 text-muted-foreground/70">
+                —
+              </span>
             ) : showPop && delta ? (
               <TrendBadge
                 value={delta.failureRatePp}
@@ -251,7 +252,9 @@ export function HeroMetrics({
             <p className="h-5 truncate leading-5">
               {annotationOn ? (
                 pending || stats?.failurePercentageOfTotal === undefined ? (
-                  <Skeleton className="inline-block h-3 w-40 align-middle" />
+                  <span className="tabular-nums text-muted-foreground/70">
+                    —% of all failures · tagged failures ÷ all tests
+                  </span>
                 ) : (
                   <>
                     <span className="tabular-nums">
@@ -290,7 +293,9 @@ export function HeroMetrics({
           </CardTitle>
           <TrendSlot>
             {pending || !stats ? (
-              <Skeleton className="h-4 w-28 shrink-0" />
+              <span className="text-sm leading-5 text-muted-foreground/70">
+                —
+              </span>
             ) : showPop && delta ? (
               <TrendBadge value={delta.total} neutral />
             ) : dashboardRange.kind === "all" ? (
@@ -342,7 +347,9 @@ export function HeroMetrics({
           </button>
           <TrendSlot>
             {pending || !stats ? (
-              <Skeleton className="h-4 w-28 shrink-0" />
+              <span className="text-sm leading-5 text-muted-foreground/70">
+                —
+              </span>
             ) : showPop && delta ? (
               <TrendBadge value={delta.failed} goodWhenDown />
             ) : dashboardRange.kind === "all" ? (
