@@ -56,6 +56,11 @@ interface DashboardHeaderProps {
   onChartModeChange: (mode: string) => void;
   filterLinked: boolean;
   onFilterLinkedChange: (linked: boolean) => void;
+  /**
+   * When false, period controls show no selection (avoids flashing SSR default
+   * 30d before localStorage prefs apply).
+   */
+  prefsReady?: boolean;
 }
 
 export function DashboardHeader({
@@ -66,6 +71,7 @@ export function DashboardHeader({
   onChartModeChange,
   filterLinked,
   onFilterLinkedChange,
+  prefsReady = true,
 }: DashboardHeaderProps) {
   const [moreOpen, setMoreOpen] = React.useState(false);
   const [customFrom, setCustomFrom] = React.useState(
@@ -86,8 +92,10 @@ export function DashboardHeader({
   }, [dashboardRange]);
 
   const activePill =
-    dashboardRange.kind === "custom" ? null : dashboardRange.kind;
-  const isCustom = dashboardRange.kind === "custom";
+    !prefsReady || dashboardRange.kind === "custom"
+      ? null
+      : dashboardRange.kind;
+  const isCustom = prefsReady && dashboardRange.kind === "custom";
   const exportRange = exportTimeRange(dashboardRange);
   // Always show export limitation note (APIs are timeRange-only; ignore annotation)
   const showExportLimitation = true;
@@ -184,7 +192,11 @@ export function DashboardHeader({
             if (value) onPeriodPill(value as DashboardPill);
           }}
           variant="outline"
-          className="hidden sm:flex"
+          className={cn(
+            "hidden sm:flex",
+            !prefsReady && "pointer-events-none opacity-60",
+          )}
+          aria-busy={!prefsReady}
         >
           {PERIOD_PILLS.map((p) => (
             <ToggleGroupItem
@@ -200,7 +212,13 @@ export function DashboardHeader({
 
         {/* Mobile: select instead of pills */}
         <Select
-          value={isCustom ? "custom" : (activePill ?? "30d")}
+          value={
+            !prefsReady
+              ? undefined
+              : isCustom
+                ? "custom"
+                : (activePill ?? undefined)
+          }
           onValueChange={(value) => {
             if (value === "custom") {
               setMoreOpen(true);
@@ -208,12 +226,13 @@ export function DashboardHeader({
             }
             onPeriodPill(value as DashboardPill);
           }}
+          disabled={!prefsReady}
         >
           <SelectTrigger
             className="h-10 w-[9.5rem] sm:hidden"
             aria-label="Select period"
           >
-            <SelectValue />
+            <SelectValue placeholder="Period…" />
           </SelectTrigger>
           <SelectContent>
             {PERIOD_PILLS.map((p) => (

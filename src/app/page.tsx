@@ -65,8 +65,10 @@ export default function Page() {
   /** False until localStorage prefs applied — gates stats fetch. */
   const [filtersReady, setFiltersReady] = React.useState(false);
 
-  // Apply persisted filters after mount (client-only localStorage)
-  React.useEffect(() => {
+  // Apply persisted filters before the browser paints (avoids 30d → All flash).
+  // First render still uses SSR defaults so hydration matches; layout effect then
+  // applies localStorage synchronously prior to paint.
+  React.useLayoutEffect(() => {
     const saved = loadDashboardPrefs();
     const linked = saved.filterLinked !== false; // default true
 
@@ -394,6 +396,7 @@ export default function Page() {
         onChartModeChange={setChartMode}
         filterLinked={filterLinked}
         onFilterLinkedChange={setFilterLinked}
+        prefsReady={filtersReady}
       />
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
