@@ -4,6 +4,7 @@ import * as React from "react";
 import { ChartAreaInteractive } from "@/components/chart-area-interactive";
 import { DataTable, DataTableSkeleton } from "@/components/data-table";
 import { AnnotationInsights } from "@/components/dashboard/annotation-insights";
+import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-state";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { FailureRateStrip } from "@/components/dashboard/failure-rate-strip";
 import { HeroMetrics } from "@/components/dashboard/hero-metrics";
@@ -357,8 +358,14 @@ export default function Page() {
     selectedDate || (isSingleDayFilter ? tableDateFrom : "");
   const dayDrillActive = Boolean(selectedDate);
 
+  // Period has zero volume buckets → whole dashboard is empty (not partial load)
+  const periodStatsReady = filtersReady && !volumeLoading;
+  const isPeriodEmpty =
+    periodStatsReady &&
+    volumeStats.every((row) => (row.passed || 0) + (row.failed || 0) === 0);
+
   return (
-    <div className="ml-10">
+    <div className="ml-10 flex min-h-dvh flex-col">
       <DashboardHeader
         dashboardRange={dashboardRange}
         onPeriodPill={handlePeriodPill}
@@ -370,32 +377,22 @@ export default function Page() {
       />
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
-          <div className="mx-auto flex w-full flex-col gap-4 px-4 py-4 md:gap-6 md:py-6 lg:px-6 4xl:gap-8 4xl:px-8 5xl:gap-10 5xl:px-12">
-            {/* Day-drill chip: linked stays on, but table dates ≠ dashboard period */}
-            {dayDrillActive && (
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">
-                  Table: {selectedDate}
-                </span>
-                <span>· dashboard period unchanged</span>
-                <button
-                  type="button"
-                  className="ml-auto text-primary underline-offset-2 hover:underline"
-                  onClick={handleClearDateFilter}
-                >
-                  Clear day filter
-                </button>
-              </div>
-            )}
-
-            {/* Unlinked multi-day bucket drill: table dates only */}
-            {!dayDrillActive &&
-              bucketDrillUnlinked &&
-              tableDateFrom &&
-              tableDateTo && (
+          {isPeriodEmpty ? (
+            <DashboardEmptyState
+              dashboardRange={dashboardRange}
+              onShowAllTime={
+                dashboardRange.kind !== "all"
+                  ? () => handlePeriodPill("all")
+                  : undefined
+              }
+            />
+          ) : (
+            <div className="mx-auto flex w-full flex-col gap-4 px-4 py-4 md:gap-6 md:py-6 lg:px-6 4xl:gap-8 4xl:px-8 5xl:gap-10 5xl:px-12">
+              {/* Day-drill chip: linked stays on, but table dates ≠ dashboard period */}
+              {dayDrillActive && (
                 <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
                   <span className="font-medium text-foreground">
-                    Table: {tableDateFrom} – {tableDateTo}
+                    Table: {selectedDate}
                   </span>
                   <span>· dashboard period unchanged</span>
                   <button
@@ -403,69 +400,90 @@ export default function Page() {
                     className="ml-auto text-primary underline-offset-2 hover:underline"
                     onClick={handleClearDateFilter}
                   >
-                    Clear table dates
+                    Clear day filter
                   </button>
                 </div>
               )}
 
-            <HeroMetrics
-              dashboardRange={dashboardRange}
-              chartMode={chartMode}
-              annotationFilter={annotationFilter}
-              requestEpoch={requestEpoch}
-              onFailuresClick={handleFailuresClick}
-              enabled={filtersReady}
-            />
+              {/* Unlinked multi-day bucket drill: table dates only */}
+              {!dayDrillActive &&
+                bucketDrillUnlinked &&
+                tableDateFrom &&
+                tableDateTo && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">
+                      Table: {tableDateFrom} – {tableDateTo}
+                    </span>
+                    <span>· dashboard period unchanged</span>
+                    <button
+                      type="button"
+                      className="ml-auto text-primary underline-offset-2 hover:underline"
+                      onClick={handleClearDateFilter}
+                    >
+                      Clear table dates
+                    </button>
+                  </div>
+                )}
 
-            <FailureRateStrip
-              data={stripStats}
-              loading={stripLoading || !filtersReady}
-              refreshing={stripRefreshing}
-              annotationFilter={annotationFilter}
-              bucket={stripBucket}
-              dashboardRange={dashboardRange}
-            />
+              <HeroMetrics
+                dashboardRange={dashboardRange}
+                chartMode={chartMode}
+                annotationFilter={annotationFilter}
+                requestEpoch={requestEpoch}
+                onFailuresClick={handleFailuresClick}
+                enabled={filtersReady}
+              />
 
-            <ChartAreaInteractive
-              onDateClick={handleDateClick}
-              chartMode={chartMode}
-              dashboardRange={dashboardRange}
-              annotationFilter={annotationFilter}
-              highlightDate={highlightDate}
-              bucket={bucket}
-              onBucketChange={handleBucketChange}
-              data={volumeStats}
-              loading={volumeLoading || !filtersReady}
-              refreshing={volumeRefreshing}
-            />
+              <FailureRateStrip
+                data={stripStats}
+                loading={stripLoading || !filtersReady}
+                refreshing={stripRefreshing}
+                annotationFilter={annotationFilter}
+                bucket={stripBucket}
+                dashboardRange={dashboardRange}
+              />
 
-            <AnnotationInsights
-              dashboardRange={dashboardRange}
-              chartMode={chartMode}
-              annotationFilter={annotationFilter}
-              onAnnotationFilterChange={setAnnotationFilter}
-              requestEpoch={requestEpoch}
-              enabled={filtersReady}
-            />
+              <ChartAreaInteractive
+                onDateClick={handleDateClick}
+                chartMode={chartMode}
+                dashboardRange={dashboardRange}
+                annotationFilter={annotationFilter}
+                highlightDate={highlightDate}
+                bucket={bucket}
+                onBucketChange={handleBucketChange}
+                data={volumeStats}
+                loading={volumeLoading || !filtersReady}
+                refreshing={volumeRefreshing}
+              />
 
-            {filtersReady ? (
-              <DataTable
-                onClearDateFilter={handleClearDateFilter}
+              <AnnotationInsights
+                dashboardRange={dashboardRange}
+                chartMode={chartMode}
                 annotationFilter={annotationFilter}
                 onAnnotationFilterChange={setAnnotationFilter}
-                filterLinked={filterLinked}
-                onFilterLinkedChange={setFilterLinked}
-                dateFromFilter={tableDateFrom}
-                onDateFromFilterChange={handleTableDateFromChange}
-                dateToFilter={tableDateTo}
-                onDateToFilterChange={handleTableDateToChange}
-                statusFilter={statusFilter}
-                onStatusFilterChange={setStatusFilter}
+                requestEpoch={requestEpoch}
+                enabled={filtersReady}
               />
-            ) : (
-              <DataTableSkeleton />
-            )}
-          </div>
+
+              {filtersReady ? (
+                <DataTable
+                  onClearDateFilter={handleClearDateFilter}
+                  annotationFilter={annotationFilter}
+                  onAnnotationFilterChange={setAnnotationFilter}
+                  filterLinked={filterLinked}
+                  onFilterLinkedChange={setFilterLinked}
+                  dateFromFilter={tableDateFrom}
+                  onDateFromFilterChange={handleTableDateFromChange}
+                  dateToFilter={tableDateTo}
+                  onDateToFilterChange={handleTableDateToChange}
+                  statusFilter={statusFilter}
+                  onStatusFilterChange={setStatusFilter}
+                />
+              ) : (
+                <DataTableSkeleton />
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
