@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import ReactECharts from "echarts-for-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { IconAlertTriangle, IconCircleX, IconClipboardList } from "@tabler/icons-react";
+import { burninChartColors, burninSeriesPalette } from "@/lib/chart-theme";
 
 interface FailureData {
   name: string;
@@ -45,6 +47,8 @@ interface AnalyticsData {
 type PercentageMode = "all" | "failed";
 
 type TimeGrouping = "daily" | "weekly" | "biweekly" | "monthly" | "quarterly";
+
+const tooltipCss = "border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);";
 
 export default function FailureAnalyticsPage() {
   const { resolvedTheme } = useTheme();
@@ -137,6 +141,19 @@ export default function FailureAnalyticsPage() {
       </div>
     );
   }
+
+  const isDark = resolvedTheme === "dark";
+  const textColor = isDark ? burninChartColors.text.dark : burninChartColors.text.light;
+  const mutedColor = isDark ? burninChartColors.muted.dark : burninChartColors.muted.light;
+  const gridColor = isDark ? burninChartColors.grid.dark : burninChartColors.grid.light;
+  const emptyChartGraphic = (message: string) => [
+    {
+      type: "text" as const,
+      left: "center" as const,
+      top: "middle" as const,
+      style: { text: message, fontSize: 14, fill: mutedColor },
+    },
+  ];
 
   // Helper function to group data by time period
   const groupDataByTime = (timeline: TimelineData[], grouping: TimeGrouping): TimelineData[] => {
@@ -236,22 +253,22 @@ export default function FailureAnalyticsPage() {
   const getCategoryTimelineOption = () => {
     const categories = Array.from(new Set(data.categories.map(c => c.name)));
     const groupedData = groupDataByTime(data.categoryTimeline, timeGrouping);
+    const isEmpty = categories.length === 0 || groupedData.length === 0;
 
     return {
+      color: [...burninSeriesPalette],
       title: {
         text: "Failures by Category Over Time",
         left: "center",
-        textStyle: {
-          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-        },
+        textStyle: { color: textColor },
       },
       tooltip: {
         trigger: "axis",
-        backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
-        borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
-        textStyle: {
-          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-        },
+        backgroundColor: isDark ? "rgba(24, 24, 27, 0.92)" : "rgba(255, 255, 255, 0.95)",
+        borderColor: isDark ? "rgba(148, 163, 184, 0.25)" : "rgba(100, 116, 139, 0.2)",
+        padding: [10, 14],
+        extraCssText: tooltipCss,
+        textStyle: { color: textColor },
         formatter: (params: Array<{ axisValue?: string; value: number; marker: string; seriesName: string }>) => {
           const date = params[0]?.axisValue || "";
           const lines = [`<strong>${date}</strong>`];
@@ -272,10 +289,9 @@ export default function FailureAnalyticsPage() {
         data: categories,
         top: 30,
         type: "scroll",
-        textStyle: {
-          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-        },
+        textStyle: { color: textColor },
       },
+      graphic: isEmpty ? emptyChartGraphic("No failures in this range") : [],
       grid: { left: "3%", right: "4%", bottom: "3%", top: 80, containLabel: true },
       xAxis: {
         type: "category",
@@ -283,9 +299,17 @@ export default function FailureAnalyticsPage() {
         data: groupedData.map(d => formatDateLabel(d.date as string, timeGrouping)),
         axisLabel: {
           rotate: timeGrouping === "daily" ? 45 : 0,
+          hideOverlap: true,
+          color: mutedColor,
         },
       },
-      yAxis: { type: "value", name: "Number of Incidents" },
+      yAxis: {
+        type: "value",
+        name: "Number of Incidents",
+        nameTextStyle: { color: mutedColor },
+        axisLabel: { color: mutedColor },
+        splitLine: { lineStyle: { color: gridColor } },
+      },
       series: categories.map(category => ({
         name: category,
         type: "bar",
@@ -298,6 +322,7 @@ export default function FailureAnalyticsPage() {
   const getGroupTimelineOption = () => {
     const groups = Array.from(new Set(data.groups.map(g => g.name)));
     const groupedData = groupDataByTime(data.groupTimeline, timeGrouping);
+    const isEmpty = groups.length === 0 || groupedData.length === 0;
 
     // Create a color map from group names to colors
     const groupColorMap: Record<string, string> = {};
@@ -308,20 +333,19 @@ export default function FailureAnalyticsPage() {
     });
 
     return {
+      color: [...burninSeriesPalette],
       title: {
         text: "Failures by Group Over Time",
         left: "center",
-        textStyle: {
-          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-        },
+        textStyle: { color: textColor },
       },
       tooltip: {
         trigger: "axis",
-        backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
-        borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
-        textStyle: {
-          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-        },
+        backgroundColor: isDark ? "rgba(24, 24, 27, 0.92)" : "rgba(255, 255, 255, 0.95)",
+        borderColor: isDark ? "rgba(148, 163, 184, 0.25)" : "rgba(100, 116, 139, 0.2)",
+        padding: [10, 14],
+        extraCssText: tooltipCss,
+        textStyle: { color: textColor },
         formatter: (params: Array<{ axisValue?: string; value: number; marker: string; seriesName: string }>) => {
           const date = params[0]?.axisValue || "";
           const lines = [`<strong>${date}</strong>`];
@@ -341,10 +365,9 @@ export default function FailureAnalyticsPage() {
       legend: {
         data: groups,
         top: 30,
-        textStyle: {
-          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-        },
+        textStyle: { color: textColor },
       },
+      graphic: isEmpty ? emptyChartGraphic("No failures in this range") : [],
       grid: { left: "3%", right: "4%", bottom: "3%", top: 80, containLabel: true },
       xAxis: {
         type: "category",
@@ -352,9 +375,17 @@ export default function FailureAnalyticsPage() {
         data: groupedData.map(d => formatDateLabel(d.date as string, timeGrouping)),
         axisLabel: {
           rotate: timeGrouping === "daily" ? 45 : 0,
+          hideOverlap: true,
+          color: mutedColor,
         },
       },
-      yAxis: { type: "value", name: "Number of Incidents" },
+      yAxis: {
+        type: "value",
+        name: "Number of Incidents",
+        nameTextStyle: { color: mutedColor },
+        axisLabel: { color: mutedColor },
+        splitLine: { lineStyle: { color: gridColor } },
+      },
       series: groups.map(group => ({
         name: group,
         type: "bar",
@@ -409,22 +440,21 @@ export default function FailureAnalyticsPage() {
     // Calculate 7-period moving average (or fewer if less data available)
     const windowSize = Math.min(7, Math.max(3, Math.floor(failureRates.length / 4)));
     const movingAvg = calculateMovingAverageFromCounts(totals, failures, windowSize);
+    const isEmpty = groupedData.length === 0;
 
     return {
       title: {
         text: "Failure Rate Over Time",
         left: "center",
-        textStyle: {
-          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-        },
+        textStyle: { color: textColor },
       },
       tooltip: {
         trigger: "axis",
-        backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
-        borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
-        textStyle: {
-          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-        },
+        backgroundColor: isDark ? "rgba(24, 24, 27, 0.92)" : "rgba(255, 255, 255, 0.95)",
+        borderColor: isDark ? "rgba(148, 163, 184, 0.25)" : "rgba(100, 116, 139, 0.2)",
+        padding: [10, 14],
+        extraCssText: tooltipCss,
+        textStyle: { color: textColor },
         formatter: (params: Array<{ axisValue?: string; value: number; marker: string; seriesName: string }>) => {
           const date = params[0]?.axisValue || "";
           const lines = [`<strong>${date}</strong>`];
@@ -443,10 +473,9 @@ export default function FailureAnalyticsPage() {
       legend: {
         data: ["Failure Rate", `${windowSize}-Period Moving Average`],
         top: 30,
-        textStyle: {
-          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-        },
+        textStyle: { color: textColor },
       },
+      graphic: isEmpty ? emptyChartGraphic("No failures in this range") : [],
       grid: { left: "3%", right: "4%", bottom: "3%", top: 80, containLabel: true },
       xAxis: {
         type: "category",
@@ -454,13 +483,19 @@ export default function FailureAnalyticsPage() {
         data: groupedData.map(d => formatDateLabel(d.date as string, timeGrouping)),
         axisLabel: {
           rotate: timeGrouping === "daily" ? 45 : 0,
+          hideOverlap: true,
+          color: mutedColor,
         },
       },
       yAxis: {
         type: "value",
         name: "Failure Rate (%)",
         min: 0,
-        max: 100,
+        // No fixed max: failure rates live in the low single digits and a
+        // 0-100 scale flattened the trend into the x-axis
+        nameTextStyle: { color: mutedColor },
+        axisLabel: { color: mutedColor, formatter: "{value}%" },
+        splitLine: { lineStyle: { color: gridColor } },
       },
       series: [
         {
@@ -468,7 +503,7 @@ export default function FailureAnalyticsPage() {
           type: "line",
           data: failureRates,
           itemStyle: {
-            color: "#ef4444",
+            color: burninChartColors.failed.base,
           },
           lineStyle: {
             width: 2,
@@ -482,7 +517,7 @@ export default function FailureAnalyticsPage() {
           type: "line",
           data: movingAvg,
           itemStyle: {
-            color: "#3b82f6",
+            color: burninChartColors.accent.indigo,
           },
           lineStyle: {
             width: 3,
@@ -494,56 +529,58 @@ export default function FailureAnalyticsPage() {
     };
   };
 
+  const categoryPieData = getCategoryPieData();
   const categoryPieOption = {
+    color: [...burninSeriesPalette],
     title: {
       text: "Failures by Category",
       left: "center",
-      textStyle: {
-        color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-      },
+      textStyle: { color: textColor },
     },
     tooltip: {
       trigger: "item",
       formatter: (params: { name: string; value: number; percent: number; seriesName: string }) => {
         return `${params.seriesName}<br/>${params.name}: ${params.value.toFixed(2)}%`;
       },
-      backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
-      borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
-      textStyle: {
-        color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-      },
+      backgroundColor: isDark ? "rgba(24, 24, 27, 0.92)" : "rgba(255, 255, 255, 0.95)",
+      borderColor: isDark ? "rgba(148, 163, 184, 0.25)" : "rgba(100, 116, 139, 0.2)",
+      padding: [10, 14],
+      extraCssText: tooltipCss,
+      textStyle: { color: textColor },
     },
     legend: {
       orient: "vertical",
       left: "left",
       top: 30,
       type: "scroll",
-      textStyle: {
-        color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-      },
+      textStyle: { color: textColor },
     },
+    graphic: categoryPieData.length === 0 ? emptyChartGraphic("No failures in this range") : [],
     series: [
       {
         name: percentageMode === "all" ? "% of All Tests" : "% of Failed Tests",
         type: "pie",
-        radius: "50%",
-        data: getCategoryPieData(),
-        label: {
-          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-          textShadowColor: "transparent",
-          textShadowBlur: 0,
+        // Donut without per-slice labels: with ~20 categories the outward
+        // labels overlap into noise — the legend and tooltip carry the names
+        radius: ["42%", "68%"],
+        center: ["58%", "55%"],
+        itemStyle: {
+          borderRadius: 4,
+          borderColor: isDark ? "#18181b" : "#ffffff",
+          borderWidth: 2,
         },
+        data: categoryPieData,
+        label: { show: false },
+        labelLine: { show: false },
         emphasis: {
           itemStyle: {
             shadowBlur: 10,
             shadowOffsetX: 0,
             shadowColor: "rgba(0, 0, 0, 0.5)",
           },
-          label: {
-            show: true,
-            fontSize: 14,
-            fontWeight: "bold",
-          },
+          // Keep labels off on hover — legend + tooltip identify slices;
+          // unstyled emphasis labels flash poorly on dark slices
+          label: { show: false },
         },
       },
     ],
@@ -560,55 +597,69 @@ export default function FailureAnalyticsPage() {
     setExpandedGroup(null);
   };
 
+  const groupPieData = getGroupPieData();
+  // Fewer group slices keep labels; drill-down categories can grow large
+  const hideGroupSliceLabels = groupPieData.length > 8;
   const groupPieOption = {
+    color: [...burninSeriesPalette],
     title: {
       text: expandedGroup ? expandedGroup : "Failures by Group",
       left: "center",
-      textStyle: {
-        color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-      },
+      textStyle: { color: textColor },
     },
     tooltip: {
       trigger: "item",
       formatter: (params: { name: string; value: number; percent: number; seriesName: string }) => {
         return `${params.seriesName}<br/>${params.name}: ${params.value.toFixed(2)}%`;
       },
-      backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
-      borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
-      textStyle: {
-        color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-      },
+      backgroundColor: isDark ? "rgba(24, 24, 27, 0.92)" : "rgba(255, 255, 255, 0.95)",
+      borderColor: isDark ? "rgba(148, 163, 184, 0.25)" : "rgba(100, 116, 139, 0.2)",
+      padding: [10, 14],
+      extraCssText: tooltipCss,
+      textStyle: { color: textColor },
     },
     legend: {
       orient: "vertical",
       left: "left",
       top: 30,
-      textStyle: {
-        color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-      },
+      textStyle: { color: textColor },
     },
+    graphic: groupPieData.length === 0 ? emptyChartGraphic("No failures in this range") : [],
     series: [
       {
         name: percentageMode === "all" ? "% of All Tests" : "% of Failed Tests",
         type: "pie",
-        radius: "50%",
-        data: getGroupPieData(),
-        label: {
-          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-          textShadowColor: "transparent",
-          textShadowBlur: 0,
+        radius: ["42%", "68%"],
+        center: ["55%", "55%"],
+        itemStyle: {
+          borderRadius: 4,
+          borderColor: isDark ? "#18181b" : "#ffffff",
+          borderWidth: 2,
         },
+        data: groupPieData,
+        label: hideGroupSliceLabels
+          ? { show: false }
+          : {
+              color: textColor,
+              formatter: "{b}\n{c}%",
+              textShadowColor: "transparent",
+              textShadowBlur: 0,
+            },
+        labelLine: hideGroupSliceLabels ? { show: false } : undefined,
         emphasis: {
           itemStyle: {
             shadowBlur: 10,
             shadowOffsetX: 0,
             shadowColor: "rgba(0, 0, 0, 0.5)",
           },
-          label: {
-            show: true,
-            fontSize: 14,
-            fontWeight: "bold",
-          },
+          label: hideGroupSliceLabels
+            ? { show: false }
+            : {
+                show: true,
+                fontSize: 14,
+                fontWeight: "bold",
+                color: textColor,
+              },
         },
       },
     ],
@@ -733,24 +784,31 @@ export default function FailureAnalyticsPage() {
         <div className="grid gap-6 md:grid-cols-3 mb-6">
         <Card className="p-6">
           <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+              <IconClipboardList className="size-4" />
               {chartMode === "recent" ? "Unique Inverters" : "Total Tests"}
             </p>
-            <p className="text-3xl font-bold">{data.totalTests.toLocaleString()}</p>
+            <p className="text-3xl font-bold tabular-nums">{data.totalTests.toLocaleString()}</p>
           </div>
         </Card>
         <Card className="p-6">
           <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+              <IconCircleX className="size-4 text-rose-500" />
               Failed {chartMode === "recent" ? "(Most Recent)" : ""}
             </p>
-            <p className="text-3xl font-bold">{data.totalFailedTests.toLocaleString()}</p>
+            <p className={`text-3xl font-bold tabular-nums ${data.totalFailedTests > 0 ? "text-rose-600 dark:text-rose-400" : ""}`}>
+              {data.totalFailedTests.toLocaleString()}
+            </p>
           </div>
         </Card>
         <Card className="p-6">
           <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">Failure Rate</p>
-            <p className="text-3xl font-bold">
+            <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+              <IconAlertTriangle className="size-4 text-amber-500" />
+              Failure Rate
+            </p>
+            <p className={`text-3xl font-bold tabular-nums ${data.totalFailedTests > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}>
               {data.totalTests > 0
                 ? ((data.totalFailedTests / data.totalTests) * 100).toFixed(1)
                 : 0}%

@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import ReactECharts from "echarts-for-react";
 import { Users, FileText, Target, TrendingUp, Calendar, Award } from "lucide-react";
 import Link from "next/link";
+import { burninChartColors, burninSeriesPalette } from "@/lib/chart-theme";
 
 interface ContributorStats {
   contributor_name: string;
@@ -102,6 +103,11 @@ export default function ContributorsPage() {
   const activityChartOption = React.useMemo(() => {
     if (!data?.activity) return {};
 
+    const isDark = resolvedTheme === "dark";
+    const textColor = isDark ? burninChartColors.text.dark : burninChartColors.text.light;
+    const mutedColor = isDark ? burninChartColors.muted.dark : burninChartColors.muted.light;
+    const gridColor = isDark ? burninChartColors.grid.dark : burninChartColors.grid.light;
+
     // Group by date and sum all contributors
     const dateMap: Record<string, number> = {};
     data.activity.forEach((item) => {
@@ -118,42 +124,57 @@ export default function ContributorsPage() {
       title: {
         text: "Annotation Activity (Last 30 Days)",
         left: "center",
-        textStyle: {
-          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-        },
+        textStyle: { color: textColor },
       },
       tooltip: {
         trigger: "axis",
         axisPointer: {
           type: "shadow",
         },
-        backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
-        borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
-        textStyle: {
-          color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-        },
+        backgroundColor: isDark ? "rgba(24, 24, 27, 0.92)" : "rgba(255, 255, 255, 0.95)",
+        borderColor: isDark ? "rgba(148, 163, 184, 0.25)" : "rgba(100, 116, 139, 0.2)",
+        padding: [10, 14],
+        extraCssText: "border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);",
+        textStyle: { color: textColor },
       },
       xAxis: {
         type: "category",
         data: dates,
         axisLabel: {
           rotate: 45,
+          color: mutedColor,
+          hideOverlap: true,
         },
       },
       yAxis: {
         type: "value",
         name: "Annotations",
+        nameTextStyle: { color: mutedColor },
+        axisLabel: { color: mutedColor },
+        splitLine: { lineStyle: { color: gridColor } },
       },
       series: [
         {
           name: "Annotations",
           type: "bar",
           data: counts,
+          barMaxWidth: 36,
           itemStyle: {
-            color: "#3b82f6",
+            color: burninChartColors.accent.indigo,
+            borderRadius: [5, 5, 0, 0],
           },
         },
       ],
+      graphic: dates.length === 0 ? [{
+        type: "text",
+        left: "center",
+        top: "middle",
+        style: {
+          text: "No annotations in the last 30 days",
+          fontSize: 14,
+          fill: mutedColor,
+        },
+      }] : [],
       grid: {
         left: "3%",
         right: "4%",
@@ -446,31 +467,39 @@ export default function ContributorsPage() {
                   showBackButton = false;
                 }
 
+                const isDark = resolvedTheme === "dark";
+                const textColor = isDark ? burninChartColors.text.dark : burninChartColors.text.light;
                 const chartOption = {
+                  color: [...burninSeriesPalette],
                   title: {
                     text: expandedGroup ? expandedGroup : "Annotation Groups",
                     left: "center",
                     textStyle: {
                       fontSize: 14,
-                      color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+                      color: textColor,
                     },
                   },
                   tooltip: {
                     trigger: "item",
                     formatter: "{b}: {c} ({d}%)",
-                    backgroundColor: resolvedTheme === "dark" ? "rgba(30, 30, 30, 0.95)" : "rgba(255, 255, 255, 0.95)",
-                    borderColor: resolvedTheme === "dark" ? "#4b5563" : "#e5e7eb",
-                    textStyle: {
-                      color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
-                    },
+                    backgroundColor: isDark ? "rgba(24, 24, 27, 0.92)" : "rgba(255, 255, 255, 0.95)",
+                    borderColor: isDark ? "rgba(148, 163, 184, 0.25)" : "rgba(100, 116, 139, 0.2)",
+                    padding: [10, 14],
+                    extraCssText: "border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);",
+                    textStyle: { color: textColor },
                   },
                   series: [
                     {
                       type: "pie",
-                      radius: "60%",
+                      radius: ["42%", "68%"],
                       data: chartData,
+                      itemStyle: {
+                        borderRadius: 4,
+                        borderColor: isDark ? "#18181b" : "#ffffff",
+                        borderWidth: 2,
+                      },
                       label: {
-                        color: resolvedTheme === "dark" ? "#e5e7eb" : "#374151",
+                        color: textColor,
                         fontSize: 12,
                         textShadowColor: "transparent",
                         textShadowBlur: 0,
@@ -485,6 +514,7 @@ export default function ContributorsPage() {
                           show: true,
                           fontSize: 14,
                           fontWeight: "bold",
+                          color: textColor,
                         },
                       },
                     },
