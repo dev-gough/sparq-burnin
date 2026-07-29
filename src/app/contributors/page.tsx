@@ -149,11 +149,23 @@ export default function ContributorsPage() {
           name: "Annotations",
           type: "bar",
           data: counts,
+          barMaxWidth: 36,
           itemStyle: {
-            color: "#3b82f6",
+            color: "#6366f1",
+            borderRadius: [5, 5, 0, 0],
           },
         },
       ],
+      graphic: dates.length === 0 ? [{
+        type: "text",
+        left: "center",
+        top: "middle",
+        style: {
+          text: "No annotations in the last 30 days",
+          fontSize: 14,
+          fill: resolvedTheme === "dark" ? "#6b7280" : "#9ca3af",
+        },
+      }] : [],
       grid: {
         left: "3%",
         right: "4%",
