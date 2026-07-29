@@ -162,10 +162,30 @@ export default function Page() {
     tableDateTo,
   ]);
 
-  // Shared bucket series for volume chart + rate strip (one API call)
+  /**
+   * Failure-rate strip uses period-based bucketing only (smart default).
+   * Volume "Group by" must not refetch/redraw the strip.
+   */
+  const stripBucket = React.useMemo(
+    () => defaultBucketForDashboardRange(dashboardRange),
+    [dashboardRange],
+  );
+
   const {
-    data: bucketStats,
-    loading: bucketLoading,
+    data: stripStats,
+    loading: stripLoading,
+  } = useBucketStats({
+    dashboardRange,
+    chartMode,
+    annotationFilter,
+    bucket: stripBucket,
+    requestEpoch,
+    enabled: filtersReady,
+  });
+
+  const {
+    data: volumeStats,
+    loading: volumeLoading,
   } = useBucketStats({
     dashboardRange,
     chartMode,
@@ -396,10 +416,10 @@ export default function Page() {
             />
 
             <FailureRateStrip
-              data={bucketStats}
-              loading={bucketLoading || !filtersReady}
+              data={stripStats}
+              loading={stripLoading || !filtersReady}
               annotationFilter={annotationFilter}
-              bucket={bucket}
+              bucket={stripBucket}
             />
 
             <ChartAreaInteractive
@@ -410,8 +430,8 @@ export default function Page() {
               highlightDate={highlightDate}
               bucket={bucket}
               onBucketChange={handleBucketChange}
-              data={bucketStats}
-              loading={bucketLoading || !filtersReady}
+              data={volumeStats}
+              loading={volumeLoading || !filtersReady}
             />
 
             <AnnotationInsights

@@ -16,8 +16,9 @@ export interface BucketStats {
 }
 
 /**
- * Single shared fetch for volume chart + failure-rate strip
- * (same range/mode/annotation/bucket — avoid double chart-query load).
+ * Fetch bucketed pass/fail series for a chart surface.
+ * Volume chart and failure-rate strip call this separately so "Group by"
+ * on volume does not redraw the strip (different bucket args).
  */
 export function useBucketStats(opts: {
   dashboardRange: DashboardRange;
