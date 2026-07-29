@@ -35,8 +35,6 @@ export function RollingNumber({
       : "flex h-[1.875rem] shrink-0 items-center sm:h-9";
 
   const zeroStr = format(0);
-  const targetStr =
-    pending || value === null ? zeroStr : format(value);
 
   // What the reels currently show (drives CSS transform)
   const [display, setDisplay] = React.useState(zeroStr);
