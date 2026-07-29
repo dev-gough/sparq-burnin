@@ -150,10 +150,28 @@ const columnGroups = {
   }
 }
 
-const colors = [
-  "#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#8dd1e1",
-  "#d084d0", "#82d982", "#ffb347", "#87ceeb", "#dda0dd"
+// Prefer shared `burninChartColors` from `@/lib/chart-theme` when that file
+// exists (PR2). Local fallback keeps this PR independent until theme merges.
+const seriesPalette = [
+  "#6366f1", // indigo
+  "#10b981", // emerald
+  "#f59e0b", // amber
+  "#ef4444", // red
+  "#06b6d4", // cyan
+  "#d946ef", // fuchsia
+  "#84cc16", // lime
+  "#f97316", // orange
+  "#0ea5e9", // sky
+  "#a855f7", // purple
+  "#14b8a6", // teal
+  "#eab308", // yellow
+  "#64748b", // slate
 ]
+
+// Stable color per column (keyed to its position in the chart's column list),
+// so a series keeps its color no matter which subset is selected.
+const seriesColor = (column: string, orderedColumns: string[]) =>
+  seriesPalette[Math.max(0, orderedColumns.indexOf(column)) % seriesPalette.length]
 
 // Component for navigating between failed tests
 function FailedTestNavigation({
@@ -164,7 +182,7 @@ function FailedTestNavigation({
   onNavigate: (testId: number) => void
 }) {
   const { navigation } = testData
-  const { formatDateInTimezone, formatInTimezone } = useTimezone()
+  const { formatDateInTimezone, formatTimeInTimezone } = useTimezone()
 
   // Don't show if navigation info is missing (from cached batch data)
   if (!navigation) {
@@ -176,91 +194,71 @@ function FailedTestNavigation({
     return null
   }
 
-  const formatDate = (dateString: string) => {
-    return formatDateInTimezone(dateString)
+  const describe = (info?: FailureInfo) => {
+    if (!info) return undefined
+    const desc = info.failure_description ? ` — ${info.failure_description}` : ''
+    return `${formatDateInTimezone(info.start_time)} ${formatTimeInTimezone(info.start_time)}${desc}`
   }
 
-  const formatTime = (dateString: string) => {
-    return formatInTimezone(dateString)
-  }
+  const prevLabel = navigation.previous_failed_test
+    ? `Previous failure: ${describe(navigation.previous_failed_test)}`
+    : 'No previous failures'
+  const nextLabel = navigation.next_failed_test
+    ? `Next failure: ${describe(navigation.next_failed_test)}`
+    : 'No next failures'
 
   return (
-    <Card className="border-orange-200 bg-orange-50 dark:border-orange-900 dark:bg-orange-950 w-full">
-      <CardHeader className="pb-3">
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
-            <CardTitle className="text-orange-800 dark:text-orange-200 text-base">Failed Test History</CardTitle>
-          </div>
-          {navigation.current_failure_index && (
-            <span className="text-sm text-orange-600 dark:text-orange-400 font-medium">
-              {navigation.current_failure_index} of {navigation.total_failed_tests} failures
-            </span>
-          )}
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => navigation.previous_failed_test && onNavigate(navigation.previous_failed_test.test_id)}
-              disabled={!navigation.previous_failed_test}
-              title={navigation.previous_failed_test ?
-                `Previous failure: ${formatTime(navigation.previous_failed_test.start_time)}` :
-                'No previous failures'
-              }
-              className="flex-1"
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              Previous
-            </Button>
+    <div className="flex items-center gap-2 rounded-lg border border-amber-300/70 bg-amber-50 py-1.5 pr-1.5 pl-3 dark:border-amber-700/60 dark:bg-amber-950/40">
+      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+      <span className="whitespace-nowrap text-sm font-medium text-amber-800 dark:text-amber-200">
+        {navigation.current_failure_index
+          ? `Failure ${navigation.current_failure_index} of ${navigation.total_failed_tests} for this S/N`
+          : `${navigation.total_failed_tests} failures for this S/N`}
+      </span>
+      <div className="ml-1 flex items-center gap-1">
+        <Button
+          size="icon"
+          variant="outline"
+          onClick={() => navigation.previous_failed_test && onNavigate(navigation.previous_failed_test.test_id)}
+          disabled={!navigation.previous_failed_test}
+          title={prevLabel}
+          aria-label={prevLabel}
+          className="h-7 w-7"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="outline"
+          onClick={() => navigation.next_failed_test && onNavigate(navigation.next_failed_test.test_id)}
+          disabled={!navigation.next_failed_test}
+          title={nextLabel}
+          aria-label={nextLabel}
+          className="h-7 w-7"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  )
+}
 
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => navigation.next_failed_test && onNavigate(navigation.next_failed_test.test_id)}
-              disabled={!navigation.next_failed_test}
-              title={navigation.next_failed_test ?
-                `Next failure: ${formatTime(navigation.next_failed_test.start_time)}` :
-                'No next failures'
-              }
-              className="flex-1"
-            >
-              Next
-              <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="pt-0">
-        {(navigation.previous_failed_test || navigation.next_failed_test) && (
-          <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-            <div>
-              {navigation.previous_failed_test && (
-                <>
-                  <div>← {formatDate(navigation.previous_failed_test.start_time)}</div>
-                  {navigation.previous_failed_test.failure_description && (
-                    <div className="truncate">
-                      {navigation.previous_failed_test.failure_description.substring(0, 30)}...
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-            <div>
-              {navigation.next_failed_test && (
-                <>
-                  <div>→ {formatDate(navigation.next_failed_test.start_time)}</div>
-                  {navigation.next_failed_test.failure_description && (
-                    <div className="truncate">
-                      {navigation.next_failed_test.failure_description.substring(0, 30)}...
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+// Label-over-value item for the dense test metadata band
+function MetaItem({
+  label,
+  value,
+  valueClassName = "tabular-nums",
+}: {
+  label: string
+  value: string
+  /** Override value styling (e.g. drop tabular-nums for non-numeric strings). */
+  valueClassName?: string
+}) {
+  return (
+    <div className="flex flex-col">
+      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className={`font-medium ${valueClassName}`}>{value}</dd>
+    </div>
   )
 }
 
@@ -277,9 +275,10 @@ function createTooltipFormatter(chartData: Array<{ originalDataPoint?: DataPoint
     const dataPoint = chartData[dataIndex]?.originalDataPoint
     const timestamp = params[0].name
 
-    let html = `<div style="font-weight: 600; margin-bottom: 8px; color: ${textColor};">Time: ${timestamp}</div>`
+    let html = `<div style="min-width: 150px;">`
+    html += `<div style="font-weight: 700; margin-bottom: 6px; color: ${textColor};">${timestamp}</div>`
 
-    // Filter out null/undefined values and sort by series name for consistent display
+    // Filter out null/undefined values
     const validParams = params.filter((param: { value?: number | number[] | null }) => {
       if (Array.isArray(param.value)) {
         return param.value[param.value.length - 1] != null
@@ -301,8 +300,10 @@ function createTooltipFormatter(chartData: Array<{ originalDataPoint?: DataPoint
       } else {
         displayValue = String(param.value)
       }
-      html += `<div style="margin: 4px 0; color: ${param.color}; font-size: 14px;">`
-      html += `${name}: ${displayValue}`
+      html += `<div style="display: flex; align-items: center; gap: 8px; margin: 3px 0; font-size: 13px; color: ${textColor};">`
+      html += `<span style="display: inline-block; width: 9px; height: 9px; border-radius: 3px; background: ${param.color}; flex-shrink: 0;"></span>`
+      html += `<span style="flex: 1; opacity: 0.85;">${name}</span>`
+      html += `<span style="font-weight: 600; margin-left: 14px; font-variant-numeric: tabular-nums;">${displayValue}</span>`
       html += `</div>`
     })
 
@@ -313,6 +314,7 @@ function createTooltipFormatter(chartData: Array<{ originalDataPoint?: DataPoint
       html += `</div>`
     }
 
+    html += `</div>`
     return html
   }
 }
@@ -556,17 +558,19 @@ function FullScreenChart({
 
   // ECharts configuration
   const chartOption: EChartsOption = useMemo(() => {
-    const textColor = isDarkMode ? "#e5e7eb" : "#374151"
-    const gridColor = isDarkMode ? "#374151" : "#e5e7eb"
+    const textColor = isDarkMode ? "#d1d5db" : "#4b5563"
+    const mutedColor = isDarkMode ? "#6b7280" : "#9ca3af"
+    const gridColor = isDarkMode ? "rgba(148, 163, 184, 0.16)" : "rgba(100, 116, 139, 0.16)"
 
-    const series = Array.from(selectedColumns).map((column, index) => ({
+    // Series follow allColumns order so colors stay stable per column
+    const series = allColumns.filter((col) => selectedColumns.has(col)).map((column) => ({
       name: getDisplayName(column),
       type: "line" as const,
       data: chartData.map((point) => (point as Record<string, unknown>)[column] as number | null),
       smooth: false,
       symbol: "none",
-      lineStyle: { width: 2, color: colors[index % colors.length] },
-      itemStyle: { color: colors[index % colors.length] },
+      lineStyle: { width: 1.8, color: seriesColor(column, allColumns) },
+      itemStyle: { color: seriesColor(column, allColumns) },
       connectNulls: false,
       // Progressive rendering for large datasets
       progressive: 1000,
@@ -580,31 +584,32 @@ function FullScreenChart({
 
     return {
       backgroundColor: "transparent",
-      textStyle: { color: textColor },
+      textStyle: { color: textColor, fontFamily: "var(--font-geist-sans), sans-serif" },
       grid: {
-        left: 60,
-        right: 50,
-        bottom: 80,
-        top: 40,
+        left: 56,
+        right: 24,
+        bottom: 76,
+        top: 44,
       },
       xAxis: {
         type: "category",
         data: chartData.map((point) => point.timestamp),
         axisLabel: {
-          color: textColor,
-          fontSize: 12,
+          color: mutedColor,
+          fontSize: 11,
           rotate: -45,
+          hideOverlap: true,
           interval: Math.max(0, Math.ceil(chartData.length / 12)),
         },
-        axisTick: { show: true },
+        axisTick: { show: false },
         axisLine: { show: true, lineStyle: { color: gridColor } },
       },
       yAxis: {
         type: "value",
         scale: true, // Enable autoscaling to fit visible data range
-        axisLabel: { color: textColor },
-        axisLine: { show: true, lineStyle: { color: gridColor } },
-        splitLine: { lineStyle: { color: gridColor, type: "dashed" } },
+        axisLabel: { color: mutedColor, fontSize: 11 },
+        axisLine: { show: false },
+        splitLine: { lineStyle: { color: gridColor, type: "dashed" as const } },
       },
       series,
       axisPointer: {
@@ -614,13 +619,14 @@ function FullScreenChart({
         snap: true,
         label: {
           show: true,
-          backgroundColor: isDarkMode ? "#1f2937" : "#374151",
+          backgroundColor: isDarkMode ? "#27272a" : "#3f3f46",
           color: "#ffffff",
-          borderColor: isDarkMode ? "#374151" : "#6b7280",
-          borderWidth: 1,
-          padding: [5, 8],
-          fontSize: 12,
+          borderColor: "transparent",
+          borderWidth: 0,
+          padding: [4, 8],
+          fontSize: 11,
           fontWeight: "bold",
+          borderRadius: 4,
         },
         crossStyle: {
           type: "dashed",
@@ -632,14 +638,18 @@ function FullScreenChart({
         show: true,
         trigger: "axis",
         backgroundColor: tooltipEnabled
-          ? (isDarkMode ? "rgba(17, 24, 39, 0.85)" : "rgba(255, 255, 255, 0.85)")
+          ? (isDarkMode ? "rgba(24, 24, 27, 0.92)" : "rgba(255, 255, 255, 0.95)")
           : "rgba(0, 0, 0, 0)",
         borderColor: tooltipEnabled
-          ? (isDarkMode ? "#374151" : "#e5e7eb")
+          ? (isDarkMode ? "rgba(148, 163, 184, 0.25)" : "rgba(100, 116, 139, 0.2)")
           : "rgba(0, 0, 0, 0)",
         borderWidth: tooltipEnabled ? 1 : 0,
+        padding: tooltipEnabled ? [10, 14] : 0,
+        extraCssText: tooltipEnabled
+          ? "border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);"
+          : "",
         textStyle: {
-          color: tooltipEnabled ? "inherit" : "rgba(0, 0, 0, 0)",
+          color: tooltipEnabled ? textColor : "rgba(0, 0, 0, 0)",
         },
         formatter: createTooltipFormatter(chartData, isDarkMode, tooltipEnabled),
         axisPointer: {
@@ -653,9 +663,12 @@ function FullScreenChart({
       },
       legend: {
         show: true,
-        textStyle: { color: textColor },
+        textStyle: { color: textColor, fontSize: 12 },
         top: 5,
         type: "scroll",
+        icon: "roundRect",
+        itemWidth: 12,
+        itemHeight: 12,
       },
       dataZoom: [
         {
@@ -673,39 +686,41 @@ function FullScreenChart({
           type: "slider",
           start: 0,
           end: 100,
-          height: 25,
-          bottom: 10,
+          height: 22,
+          bottom: 8,
           handleSize: "80%",
-          textStyle: { color: textColor },
-          borderColor: gridColor,
-          fillerColor: isDarkMode ? "rgba(59, 130, 246, 0.2)" : "rgba(59, 130, 246, 0.15)",
+          textStyle: { color: mutedColor, fontSize: 10 },
+          borderColor: "transparent",
+          backgroundColor: isDarkMode ? "rgba(148, 163, 184, 0.08)" : "rgba(100, 116, 139, 0.06)",
+          fillerColor: isDarkMode ? "rgba(99, 102, 241, 0.22)" : "rgba(99, 102, 241, 0.15)",
           handleStyle: {
-            color: "#3b82f6",
-            borderColor: "#3b82f6",
+            color: "#6366f1",
+            borderColor: "#6366f1",
           },
         },
       ],
     }
-  }, [chartData, selectedColumns, isDarkMode, tooltipEnabled])
+  }, [chartData, selectedColumns, isDarkMode, tooltipEnabled, decimationEnabled])
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-background rounded-lg shadow-xl w-[95vw] h-[95vh] p-4 flex flex-col">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-background rounded-xl border shadow-2xl w-[96vw] h-[96vh] p-4 flex flex-col">
         {/* Header */}
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex justify-between items-center mb-3">
           <div>
-            <h2 className="text-xl font-bold">Full Screen - {initialState.sourceChartTitle}</h2>
-            <span className="text-sm text-muted-foreground">
-              Showing {chartData.length} of {data.length} data points
-              {decimationEnabled && processedData.length < data.length && " (decimated for performance)"}
+            <h2 className="text-lg font-bold">{initialState.sourceChartTitle} — Full Screen</h2>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {chartData.length.toLocaleString()} of {data.length.toLocaleString()} points
+              {decimationEnabled && processedData.length < data.length && " · decimated for performance"}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {data.length > 1000 && (
               <Button
                 size="sm"
                 variant={decimationEnabled ? "default" : "outline"}
                 onClick={toggleDecimation}
+                className="h-7 px-2.5 text-xs"
                 title={decimationEnabled ? "Disable decimation (show all data points)" : "Enable decimation (improve performance)"}
               >
                 {decimationEnabled ? "Decimated" : "Full Data"}
@@ -715,18 +730,19 @@ function FullScreenChart({
               size="sm"
               variant={tooltipEnabled ? "default" : "outline"}
               onClick={() => setTooltipEnabled(!tooltipEnabled)}
+              className="h-7 px-2.5 text-xs"
               title={tooltipEnabled ? "Disable tooltip" : "Enable tooltip"}
             >
               Tooltip
             </Button>
-            <Button size="sm" variant="outline" onClick={onClose}>
-              <X className="h-4 w-4" />
+            <Button size="sm" variant="outline" onClick={onClose} className="h-7 w-7 p-0" title="Close (Esc)">
+              <X className="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>
 
         {/* Chart */}
-        <div className="flex-1 min-h-0 max-h-[calc(100vh-400px)]">
+        <div className="flex-1 min-h-0">
           <ReactECharts
             ref={chartRef}
             option={chartOption}
@@ -785,8 +801,8 @@ function FullScreenChart({
             </div>
           </div>
 
-          {/* Ultra-Compact Single-Row Layout */}
-          <div className="grid grid-cols-6 gap-1">
+          {/* Compact grouped column selector */}
+          <div className="grid grid-cols-2 gap-1.5 md:grid-cols-3 xl:grid-cols-6">
             {Object.entries(columnGroups).map(([groupName, group]) => {
               const selectedCount = getGroupSelectedCount(group.columns)
               const totalCount = group.columns.length
@@ -1004,17 +1020,19 @@ function ConfigurableChart({
 
   // ECharts configuration
   const chartOption: EChartsOption = useMemo(() => {
-    const textColor = isDarkMode ? "#e5e7eb" : "#374151"
-    const gridColor = isDarkMode ? "#374151" : "#e5e7eb"
+    const textColor = isDarkMode ? "#d1d5db" : "#4b5563"
+    const mutedColor = isDarkMode ? "#6b7280" : "#9ca3af"
+    const gridColor = isDarkMode ? "rgba(148, 163, 184, 0.16)" : "rgba(100, 116, 139, 0.16)"
 
-    const series = Array.from(selectedColumns).map((column, index) => ({
+    // Series follow availableColumns order so colors stay stable per column
+    const series = availableColumns.filter((col) => selectedColumns.has(col)).map((column) => ({
       name: getDisplayName(column),
       type: "line" as const,
       data: chartData.map((point) => (point as Record<string, unknown>)[column] as number | null),
       smooth: false,
       symbol: "none",
-      lineStyle: { width: 2, color: colors[index % colors.length] },
-      itemStyle: { color: colors[index % colors.length] },
+      lineStyle: { width: 1.8, color: seriesColor(column, availableColumns) },
+      itemStyle: { color: seriesColor(column, availableColumns) },
       connectNulls: false,
       // Progressive rendering for large datasets
       progressive: 1000,
@@ -1028,31 +1046,32 @@ function ConfigurableChart({
 
     return {
       backgroundColor: "transparent",
-      textStyle: { color: textColor },
+      textStyle: { color: textColor, fontFamily: "var(--font-geist-sans), sans-serif" },
       grid: {
-        left: 60,
-        right: 50,
-        bottom: 80,
-        top: 40,
+        left: 56,
+        right: 20,
+        bottom: 74,
+        top: 16,
       },
       xAxis: {
         type: "category",
         data: chartData.map((point) => point.timestamp),
         axisLabel: {
-          color: textColor,
-          fontSize: 12,
+          color: mutedColor,
+          fontSize: 11,
           rotate: -45,
+          hideOverlap: true,
           interval: Math.max(0, Math.ceil(chartData.length / 8)),
         },
-        axisTick: { show: true },
+        axisTick: { show: false },
         axisLine: { show: true, lineStyle: { color: gridColor } },
       },
       yAxis: {
         type: "value",
         scale: true, // Enable autoscaling to fit visible data range
-        axisLabel: { color: textColor },
-        axisLine: { show: true, lineStyle: { color: gridColor } },
-        splitLine: { lineStyle: { color: gridColor, type: "dashed" } },
+        axisLabel: { color: mutedColor, fontSize: 11 },
+        axisLine: { show: false },
+        splitLine: { lineStyle: { color: gridColor, type: "dashed" as const } },
       },
       series,
       axisPointer: {
@@ -1062,13 +1081,14 @@ function ConfigurableChart({
         snap: true,
         label: {
           show: true,
-          backgroundColor: isDarkMode ? "#1f2937" : "#374151",
+          backgroundColor: isDarkMode ? "#27272a" : "#3f3f46",
           color: "#ffffff",
-          borderColor: isDarkMode ? "#374151" : "#6b7280",
-          borderWidth: 1,
-          padding: [5, 8],
-          fontSize: 12,
+          borderColor: "transparent",
+          borderWidth: 0,
+          padding: [4, 8],
+          fontSize: 11,
           fontWeight: "bold",
+          borderRadius: 4,
         },
         crossStyle: {
           type: "dashed",
@@ -1080,14 +1100,18 @@ function ConfigurableChart({
         show: true,
         trigger: "axis",
         backgroundColor: tooltipEnabled
-          ? (isDarkMode ? "rgba(17, 24, 39, 0.85)" : "rgba(255, 255, 255, 0.85)")
+          ? (isDarkMode ? "rgba(24, 24, 27, 0.92)" : "rgba(255, 255, 255, 0.95)")
           : "rgba(0, 0, 0, 0)",
         borderColor: tooltipEnabled
-          ? (isDarkMode ? "#374151" : "#e5e7eb")
+          ? (isDarkMode ? "rgba(148, 163, 184, 0.25)" : "rgba(100, 116, 139, 0.2)")
           : "rgba(0, 0, 0, 0)",
         borderWidth: tooltipEnabled ? 1 : 0,
+        padding: tooltipEnabled ? [10, 14] : 0,
+        extraCssText: tooltipEnabled
+          ? "border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.15);"
+          : "",
         textStyle: {
-          color: tooltipEnabled ? "inherit" : "rgba(0, 0, 0, 0)",
+          color: tooltipEnabled ? textColor : "rgba(0, 0, 0, 0)",
         },
         formatter: createTooltipFormatter(chartData, isDarkMode, tooltipEnabled),
         axisPointer: {
@@ -1099,12 +1123,8 @@ function ConfigurableChart({
         // Show all series in tooltip regardless of count
         confine: true,
       },
-      legend: {
-        show: true,
-        textStyle: { color: textColor },
-        top: 5,
-        type: "scroll",
-      },
+      // Column chips below the title carry the color key; a legend would duplicate it
+      legend: { show: false },
       dataZoom: [
         {
           type: "inside",
@@ -1121,38 +1141,40 @@ function ConfigurableChart({
           type: "slider",
           start: 0,
           end: 100,
-          height: 25,
-          bottom: 10,
+          height: 22,
+          bottom: 8,
           handleSize: "80%",
-          textStyle: { color: textColor },
-          borderColor: gridColor,
-          fillerColor: isDarkMode ? "rgba(59, 130, 246, 0.2)" : "rgba(59, 130, 246, 0.15)",
+          textStyle: { color: mutedColor, fontSize: 10 },
+          borderColor: "transparent",
+          backgroundColor: isDarkMode ? "rgba(148, 163, 184, 0.08)" : "rgba(100, 116, 139, 0.06)",
+          fillerColor: isDarkMode ? "rgba(99, 102, 241, 0.22)" : "rgba(99, 102, 241, 0.15)",
           handleStyle: {
-            color: "#3b82f6",
-            borderColor: "#3b82f6",
+            color: "#6366f1",
+            borderColor: "#6366f1",
           },
         },
       ],
     }
-  }, [chartData, selectedColumns, isDarkMode, tooltipEnabled])
+  }, [chartData, selectedColumns, availableColumns, isDarkMode, tooltipEnabled, decimationEnabled])
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex justify-between items-start">
+    <Card className="gap-3 py-4">
+      <CardHeader className="gap-2 px-4">
+        <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="flex flex-col">
-            <CardTitle>{title}</CardTitle>
-            <span className="text-xs text-muted-foreground">
-              Showing {chartData.length} of {data.length} data points
-              {decimationEnabled && processedData.length < data.length && " (decimated for performance)"}
+            <CardTitle className="text-base">{title}</CardTitle>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {chartData.length.toLocaleString()} of {data.length.toLocaleString()} points
+              {decimationEnabled && processedData.length < data.length && " · decimated for performance"}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {data.length > 1000 && (
               <Button
                 size="sm"
                 variant={decimationEnabled ? "default" : "outline"}
                 onClick={toggleDecimation}
+                className="h-7 px-2.5 text-xs"
                 title={decimationEnabled ? "Disable decimation (show all data points)" : "Enable decimation (improve performance)"}
               >
                 {decimationEnabled ? "Decimated" : "Full Data"}
@@ -1162,6 +1184,7 @@ function ConfigurableChart({
               size="sm"
               variant={tooltipEnabled ? "default" : "outline"}
               onClick={() => setTooltipEnabled(!tooltipEnabled)}
+              className="h-7 px-2.5 text-xs"
               title={tooltipEnabled ? "Disable tooltip" : "Enable tooltip"}
             >
               Tooltip
@@ -1178,29 +1201,40 @@ function ConfigurableChart({
                   decimationEnabled,
                   sourceChartTitle: title
                 })}
+                className="h-7 w-7 p-0"
                 title="Open in full screen"
               >
-                <Maximize2 className="h-4 w-4" />
+                <Maximize2 className="h-3.5 w-3.5" />
               </Button>
             )}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {availableColumns.map(column => (
-            <div key={column} className="flex items-center space-x-2">
-              <Checkbox
-                id={column}
-                checked={selectedColumns.has(column)}
-                onCheckedChange={() => toggleColumn(column)}
-              />
-              <label
-                htmlFor={column}
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+        <div className="flex flex-wrap items-center gap-1.5">
+          {availableColumns.map(column => {
+            const isSelected = selectedColumns.has(column)
+            const color = seriesColor(column, availableColumns)
+            return (
+              <button
+                key={column}
+                type="button"
+                onClick={() => toggleColumn(column)}
+                aria-pressed={isSelected}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  isSelected
+                    ? "text-foreground"
+                    : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+                style={isSelected ? { backgroundColor: `${color}1f`, borderColor: `${color}80` } : undefined}
               >
+                <span
+                  className="size-2 rounded-full"
+                  style={{ backgroundColor: color, opacity: isSelected ? 1 : 0.35 }}
+                />
                 {getDisplayName(column)}
-              </label>
-            </div>
-          ))}
+              </button>
+            )
+          })}
+          <div className="mx-1 h-4 w-px bg-border" />
           {/* VPV toggle buttons - works for both vpv and vpv_inst_latch columns */}
           {availableColumns.some(col => col.includes('vpv')) && (
             <Button
@@ -1221,7 +1255,7 @@ function ConfigurableChart({
                 }
                 setSelectedColumns(newSelected)
               }}
-              className="ml-2"
+              className="h-7 rounded-full px-3 text-xs"
             >
               VPV
             </Button>
@@ -1246,7 +1280,7 @@ function ConfigurableChart({
                 }
                 setSelectedColumns(newSelected)
               }}
-              className="ml-1"
+              className="h-7 rounded-full px-3 text-xs"
             >
               PPV
             </Button>
@@ -1271,14 +1305,14 @@ function ConfigurableChart({
                 }
                 setSelectedColumns(newSelected)
               }}
-              className="ml-1"
+              className="h-7 rounded-full px-3 text-xs"
             >
               IPV
             </Button>
           )}
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-2 sm:px-4">
         <div className="h-80">
           <ReactECharts
             ref={chartRef}
@@ -1305,9 +1339,20 @@ export default function TestPage() {
   const [fullScreenState, setFullScreenState] = useState<FullScreenState | null>(null)
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const { formatInTimezone } = useTimezone()
+  const chartsLayoutRef = useRef<HTMLDivElement>(null)
 
   // Cache hook
   const { getTest, setTest } = useTestDataCache()
+
+  // Nudge ECharts to match the animating charts column. echarts-for-react
+  // observes element resize, but intermediate CSS grid frames can lag the
+  // canvas; a final window resize after the transition settles the size.
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      window.dispatchEvent(new Event("resize"))
+    }, 320)
+    return () => window.clearTimeout(id)
+  }, [sidebarVisible])
 
   const openFullScreen = useCallback((state: FullScreenState) => {
     setFullScreenState(state)
@@ -1476,34 +1521,33 @@ export default function TestPage() {
         </div>
 
         <div className="space-y-4 4xl:space-y-6 5xl:space-y-8">
-          {/* Test Info Header Skeleton */}
-          <div className="grid grid-cols-2 gap-6 4xl:gap-8 5xl:gap-12">
-            {/* Left Column - Test Information */}
-            <div className="space-y-2">
-              <Skeleton className="h-10 w-96" />
-              <Skeleton className="h-7 w-32" />
-              <Skeleton className="h-6 w-64" />
-              <Skeleton className="h-6 w-64" />
-              <div className="flex items-center gap-4 mt-2">
-                <div className="flex items-center gap-2">
-                  <Skeleton className="h-6 w-16" />
-                  <Skeleton className="h-10 w-32" />
-                </div>
+          {/* Test Info Header Skeleton — mirrors dense flex header + meta row */}
+          <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+            <div className="min-w-0 space-y-3">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <Skeleton className="h-8 w-56 4xl:h-9 4xl:w-72" />
+                <Skeleton className="h-6 w-14 rounded-full" />
+                <Skeleton className="h-8 w-28" />
+              </div>
+              <div className="flex flex-wrap gap-x-8 gap-y-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="flex flex-col gap-1">
+                    <Skeleton className="h-3 w-14" />
+                    <Skeleton className="h-5 w-24" />
+                  </div>
+                ))}
               </div>
             </div>
-
-            {/* Right Column - Navigation & Toggle */}
-            <div className="flex flex-col gap-2">
-              <div className="flex justify-end">
-                <Skeleton className="h-9 w-9" />
-              </div>
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-9 w-52 rounded-lg" />
+              <Skeleton className="h-9 w-9" />
             </div>
           </div>
 
           {/* Charts Grid Skeleton */}
-          <div className="grid grid-cols-[1fr_320px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px] gap-6 4xl:gap-8 5xl:gap-12">
+          <div className="grid grid-cols-[1fr_360px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px] gap-6 4xl:gap-8 5xl:gap-12">
             {/* Charts Column */}
-            <div className="space-y-6 4xl:space-y-8 5xl:space-y-10">
+            <div className="min-w-0 space-y-6 4xl:space-y-8 5xl:space-y-10">
               {/* Chart 1 Skeleton */}
               <Card>
                 <CardHeader>
@@ -1624,6 +1668,16 @@ export default function TestPage() {
 
   const startDate = formatInTimezone(testData.start_time)
   const endDate = formatInTimezone(testData.end_time)
+  const durationMs = new Date(testData.end_time).getTime() - new Date(testData.start_time).getTime()
+  const durationLabel = (() => {
+    if (!Number.isFinite(durationMs) || durationMs <= 0) return '—'
+    if (durationMs < 60_000) return `${Math.floor(durationMs / 1000)}s`
+    const hours = Math.floor(durationMs / 3_600_000)
+    const minutes = Math.floor((durationMs % 3_600_000) / 60_000)
+    if (hours === 0) return `${minutes}m`
+    return `${hours}h ${minutes}m`
+  })()
+  const totalPoints = testData._metadata?.total_points ?? testData.data_points.length
 
   const downloadCSV = () => {
     // Create CSV filename based on test data
@@ -1690,68 +1744,101 @@ export default function TestPage() {
       </div>
 
       <div className="space-y-4 4xl:space-y-6 5xl:space-y-8">
-        <div className="grid grid-cols-2 gap-6 4xl:gap-8 5xl:gap-12">
-          {/* Test Information - Left Column */}
-          <div>
-            <h1 className="text-3xl 4xl:text-4xl 5xl:text-5xl font-bold">Inverter S/N: {testData.serial_number}</h1>
-            <h2 className="text-xl 4xl:text-2xl text-muted-foreground">Test {testData.test_id}</h2>
-            <p className="text-lg 4xl:text-xl text-muted-foreground">Started: {startDate}</p>
-            <p className="text-lg 4xl:text-xl text-muted-foreground">Ended: {endDate}</p>
-            <div className="flex items-center gap-4 mt-2">
-              <div className="flex items-center gap-2">
-                <Badge variant={
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+          {/* Test Information */}
+          <div className="min-w-0 space-y-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h1 className="text-2xl 4xl:text-3xl 5xl:text-4xl font-bold tracking-tight">
+                <span className="font-medium text-muted-foreground">S/N</span>{" "}
+                {testData.serial_number}
+              </h1>
+              <Badge
+                variant={
                   testData.overall_status === 'PASS' ? 'default' :
                     testData.overall_status === 'FAIL' ? 'destructive' :
                       'secondary'
-                }>
-                  {testData.overall_status}
-                </Badge>
-                <Select
-                  value={testData.overall_status}
-                  onValueChange={updateTestStatus}
-                  disabled={updatingStatus}
-                >
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PASS">PASS</SelectItem>
-                    <SelectItem value="FAIL">FAIL</SelectItem>
-                    <SelectItem value="INVALID">INVALID</SelectItem>
-                  </SelectContent>
-                </Select>
-                {updatingStatus && <span className="text-sm text-muted-foreground">Updating...</span>}
-              </div>
-              {testData.failure_description && (
-                <span className="text-sm text-muted-foreground">
-                  {testData.failure_description}
-                </span>
-              )}
+                }
+                className={
+                  testData.overall_status === 'PASS'
+                    ? 'bg-emerald-600 text-white dark:bg-emerald-500 dark:text-emerald-950'
+                    : undefined
+                }
+              >
+                {testData.overall_status}
+              </Badge>
+              <Select
+                value={testData.overall_status}
+                onValueChange={updateTestStatus}
+                disabled={updatingStatus}
+              >
+                <SelectTrigger size="sm" className="w-28" aria-label="Test status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PASS">PASS</SelectItem>
+                  <SelectItem value="FAIL">FAIL</SelectItem>
+                  <SelectItem value="INVALID">INVALID</SelectItem>
+                </SelectContent>
+              </Select>
+              {updatingStatus && <span className="text-sm text-muted-foreground">Updating...</span>}
             </div>
+            <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+              <MetaItem label="Test" value={`#${testData.test_id}`} />
+              <MetaItem
+                label="Firmware"
+                value={testData.firmware_version || '—'}
+                valueClassName=""
+              />
+              <MetaItem label="Started" value={startDate} />
+              <MetaItem label="Ended" value={endDate} />
+              <MetaItem label="Duration" value={durationLabel} />
+              <MetaItem label="Data points" value={totalPoints.toLocaleString()} />
+            </dl>
+            {testData.failure_description && (
+              <div className="flex items-start gap-2 rounded-lg border border-rose-300/70 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-800/60 dark:bg-rose-950/40 dark:text-rose-200">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                <span className="min-w-0">{testData.failure_description}</span>
+              </div>
+            )}
           </div>
 
-          {/* Failed Test Navigation - Right Column */}
-          <div className="flex flex-col gap-2">
+          {/* Failed-test navigation + annotations toggle */}
+          <div className="flex items-center gap-2">
             <FailedTestNavigation testData={testData} onNavigate={navigateToTest} />
-            <div className="flex justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSidebarVisible(!sidebarVisible)}
-                title={sidebarVisible ? "Hide annotations" : "Show annotations"}
-              >
-                {sidebarVisible ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-              </Button>
-            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setSidebarVisible(!sidebarVisible)}
+              title={sidebarVisible ? "Hide annotations" : "Show annotations"}
+              aria-label={sidebarVisible ? "Hide annotations" : "Show annotations"}
+              aria-expanded={sidebarVisible}
+              aria-controls="test-annotations-panel"
+              className="h-8 w-8"
+            >
+              {sidebarVisible ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+            </Button>
           </div>
         </div>
 
+        {/* No key here: remounting would destroy the ECharts instances (blank
+            redraw, lost zoom) and refetch annotations. The column collapse is
+            animated instead; charts follow along via their container resize
+            observer, plus a post-transition window resize nudge. */}
         <div
-          key={`layout-${sidebarVisible}`}
-          className={`grid gap-6 4xl:gap-8 5xl:gap-12 ${sidebarVisible ? 'grid-cols-[1fr_320px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px]' : 'grid-cols-1'}`}
+          ref={chartsLayoutRef}
+          onTransitionEnd={(e) => {
+            if (e.target === chartsLayoutRef.current && e.propertyName.includes("grid")) {
+              window.dispatchEvent(new Event("resize"))
+            }
+          }}
+          className={`grid transition-[grid-template-columns,gap] duration-300 ease-in-out ${
+            sidebarVisible
+              ? 'gap-6 4xl:gap-8 5xl:gap-12 grid-cols-[1fr_360px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px]'
+              : 'gap-0 grid-cols-[1fr_0px] 4xl:grid-cols-[1fr_0px] 5xl:grid-cols-[1fr_0px]'
+          }`}
         >
           {/* Charts Column */}
-          <div className="space-y-6 4xl:space-y-8 5xl:space-y-10">
+          <div className="min-w-0 space-y-6 4xl:space-y-8 5xl:space-y-10">
             <ConfigurableChart
               title="PV Data"
               data={testData.data_points}
@@ -1774,16 +1861,26 @@ export default function TestPage() {
             />
           </div>
 
-          {/* Annotations Sidebar */}
-          {sidebarVisible && (
-            <div className="sticky top-6 h-fit">
+          {/* Annotations Sidebar — stays mounted while hidden so reopening is
+              instant (no refetch) and the column width can animate closed.
+              inert removes focusable children from the tab order when collapsed. */}
+          <div
+            id="test-annotations-panel"
+            aria-hidden={!sidebarVisible}
+            inert={!sidebarVisible ? true : undefined}
+            className={`sticky top-6 h-fit min-w-0 overflow-hidden transition-opacity duration-300 ${
+              sidebarVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+            }`}
+          >
+            <div className="w-[360px] 4xl:w-[400px] 5xl:w-[480px]">
               <TestAnnotations
                 testId={testData.test_id}
                 serialNumber={testData.serial_number}
                 startTime={testData.start_time}
+                overallStatus={testData.overall_status}
               />
             </div>
-          )}
+          </div>
         </div>
 
         {/* Full Screen Modal */}
