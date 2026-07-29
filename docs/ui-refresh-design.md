@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Draft (rev 3 — re-review issues addressed) |
+| **Status** | Implemented on `grok/ui-refresh` (execute-plan ae4b7703, 2026-07-29) |
 | **Author** | TBD |
 | **Date** | 2026-07-28 |
 | **Branch** | `grok/ui-refresh` (from `master`; clean baseline) |
