@@ -28,7 +28,8 @@ vi.mock("pg", () => {
   };
 });
 
-import { GET, buildSummaryDelta } from "@/app/api/test-stats/route";
+import { GET } from "@/app/api/test-stats/route";
+import { buildSummaryDelta } from "@/lib/summary-delta";
 
 function req(qs: string) {
   return new NextRequest(`http://localhost/api/test-stats?${qs}`);

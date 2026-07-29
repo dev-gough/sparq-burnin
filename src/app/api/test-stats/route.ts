@@ -15,6 +15,11 @@ import {
   buildWindowTimeFilter,
   type StatsWindow,
 } from '@/lib/stats-windows';
+import {
+  buildSummaryDelta,
+  type SummaryDelta,
+  type SummaryStats,
+} from '@/lib/summary-delta';
 
 interface TestStats {
   date: string;
@@ -28,22 +33,6 @@ interface TestStats {
    */
   totalUnfiltered: number;
   failedFiltered: number;
-}
-
-interface SummaryStats {
-  total: number;
-  passed: number;
-  failed: number;
-  failureRate: number;
-  failurePercentageOfTotal?: number; // Only present when annotation filter is active - % of total failures
-}
-
-interface SummaryDelta {
-  total: number;
-  passed: number;
-  failed: number;
-  /** Percentage-point change in failure rate (1 decimal) */
-  failureRatePp: number;
 }
 
 interface SummaryCompareResponse {
@@ -308,28 +297,6 @@ async function querySummaryStats(
   }
 
   return summaryStats;
-}
-
-/** Raw failure rate % from counts (0 when total is 0). */
-function rawFailureRate(stats: SummaryStats): number {
-  return stats.total > 0 ? (stats.failed / stats.total) * 100 : 0;
-}
-
-/**
- * Delta between current and previous summary windows.
- * failureRatePp is computed from raw counts (not already-rounded failureRate).
- */
-export function buildSummaryDelta(
-  current: SummaryStats,
-  previous: SummaryStats
-): SummaryDelta {
-  return {
-    total: current.total - previous.total,
-    passed: current.passed - previous.passed,
-    failed: current.failed - previous.failed,
-    failureRatePp:
-      Math.round((rawFailureRate(current) - rawFailureRate(previous)) * 10) / 10,
-  };
 }
 
 export async function GET(request: NextRequest) {
