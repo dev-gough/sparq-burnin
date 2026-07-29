@@ -98,41 +98,62 @@ function TrendBadge({
   );
 }
 
-/** Fixed-height slot so All / 90d cards stay aligned. */
+/**
+ * Fixed-height slots so skeleton → data does not change card height.
+ * Heights match the largest type size used in each slot (leading-none titles).
+ */
 function TrendSlot({ children }: { children: React.ReactNode }) {
-  return <div className="flex min-h-5 items-center">{children}</div>;
-}
-
-/** Fixed caption stack so card height does not depend on optional lines. */
-function CaptionSlot({ children }: { children: React.ReactNode }) {
+  // text-sm + icon ≈ 20px; keep exact so “—” / badge / skeleton share one box
   return (
-    <div className="flex min-h-10 flex-col justify-start gap-0.5 text-xs text-muted-foreground">
+    <div className="flex h-5 shrink-0 items-center overflow-hidden">
       {children}
     </div>
   );
 }
 
-/** Number placeholder — only this region swaps to skeleton, not the card. */
+function CaptionSlot({ children }: { children: React.ReactNode }) {
+  // Two text-xs lines (+ gap) reserved always
+  return (
+    <div className="flex h-10 shrink-0 flex-col justify-start gap-0.5 overflow-hidden text-xs leading-5 text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Number region: outer box height is locked to the real title line-box
+ * (text-5xl/6xl or text-3xl/4xl with leading-none) so skeletons cannot be taller.
+ */
 function MetricValue({
   pending,
+  variant,
   className,
-  skeletonClassName,
   children,
 }: {
   pending: boolean;
+  variant: "hero" | "secondary";
   className?: string;
-  skeletonClassName: string;
   children: React.ReactNode;
 }) {
-  if (pending) {
-    return (
-      <Skeleton
-        className={cn("inline-block align-middle", skeletonClassName)}
-        aria-hidden
-      />
-    );
-  }
-  return <span className={className}>{children}</span>;
+  // text-5xl=3rem, text-6xl=3.75rem; text-3xl=1.875rem, text-4xl=2.25rem
+  const shell =
+    variant === "hero"
+      ? "flex h-12 shrink-0 items-center sm:h-[3.75rem]" // text-5xl / text-6xl
+      : "flex h-[1.875rem] shrink-0 items-center sm:h-9"; // text-3xl / text-4xl
+  const bar =
+    variant === "hero"
+      ? "h-10 w-32 sm:h-12 sm:w-36"
+      : "h-7 w-24 sm:h-8 sm:w-28";
+
+  return (
+    <div className={shell}>
+      {pending ? (
+        <Skeleton className={cn("rounded-md", bar)} aria-hidden />
+      ) : (
+        <span className={cn("leading-none", className)}>{children}</span>
+      )}
+    </div>
+  );
 }
 
 export function HeroMetrics({
@@ -228,10 +249,10 @@ export function HeroMetrics({
           <CardDescription className="text-xs font-medium uppercase tracking-wide">
             Failure rate
           </CardDescription>
-          <CardTitle className="text-5xl font-semibold tabular-nums tracking-tight sm:text-6xl">
+          <CardTitle className="text-5xl font-semibold tabular-nums tracking-tight leading-none sm:text-6xl">
             <MetricValue
               pending={pending || !stats}
-              skeletonClassName="h-14 w-36 sm:h-16"
+              variant="hero"
               className="tabular-nums"
             >
               {stats ? (
@@ -244,7 +265,7 @@ export function HeroMetrics({
           </CardTitle>
           <TrendSlot>
             {pending || !stats ? (
-              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-4 w-32 shrink-0" />
             ) : showPop && delta ? (
               <TrendBadge
                 value={delta.failureRatePp}
@@ -252,18 +273,21 @@ export function HeroMetrics({
                 goodWhenDown
               />
             ) : dashboardRange.kind === "all" ? (
-              <span className="text-sm text-muted-foreground">
+              <span className="text-sm leading-5 text-muted-foreground">
                 No prior period
               </span>
             ) : (
-              <span className="text-sm text-muted-foreground/70">—</span>
+              <span className="text-sm leading-5 text-muted-foreground/70">
+                —
+              </span>
             )}
           </TrendSlot>
           <CaptionSlot>
-            {annotationOn && (
-              <p>
-                {pending || stats?.failurePercentageOfTotal === undefined ? (
-                  <Skeleton className="inline-block h-3 w-40" />
+            {/* Always two lines reserved: annotation line may be invisible */}
+            <p className="h-5 truncate leading-5">
+              {annotationOn ? (
+                pending || stats?.failurePercentageOfTotal === undefined ? (
+                  <Skeleton className="inline-block h-3 w-40 align-middle" />
                 ) : (
                   <>
                     <span className="tabular-nums">
@@ -271,10 +295,12 @@ export function HeroMetrics({
                     </span>
                     {" of all failures · tagged failures ÷ all tests"}
                   </>
-                )}
-              </p>
-            )}
-            <p>
+                )
+              ) : (
+                <span className="invisible">placeholder</span>
+              )}
+            </p>
+            <p className="h-5 truncate leading-5">
               {chartMode === "recent"
                 ? "One result per inverter in "
                 : "All tests in "}
@@ -290,10 +316,10 @@ export function HeroMetrics({
           <CardDescription className="text-xs font-medium uppercase tracking-wide">
             Inverters tested
           </CardDescription>
-          <CardTitle className="text-3xl font-semibold tabular-nums sm:text-4xl">
+          <CardTitle className="text-3xl font-semibold tabular-nums leading-none sm:text-4xl">
             <MetricValue
               pending={pending || !stats}
-              skeletonClassName="h-9 w-28 sm:h-10"
+              variant="secondary"
               className="tabular-nums"
             >
               {stats ? stats.total.toLocaleString() : null}
@@ -301,23 +327,26 @@ export function HeroMetrics({
           </CardTitle>
           <TrendSlot>
             {pending || !stats ? (
-              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-4 w-28 shrink-0" />
             ) : showPop && delta ? (
               <TrendBadge value={delta.total} neutral />
             ) : dashboardRange.kind === "all" ? (
-              <span className="text-sm text-muted-foreground">
+              <span className="text-sm leading-5 text-muted-foreground">
                 No prior period
               </span>
             ) : (
-              <span className="text-sm text-muted-foreground/70">—</span>
+              <span className="text-sm leading-5 text-muted-foreground/70">
+                —
+              </span>
             )}
           </TrendSlot>
           <CaptionSlot>
-            <p>
+            <p className="h-5 truncate leading-5">
               {chartMode === "recent"
                 ? "Latest valid result per inverter"
                 : "Every test in the selected period"}
             </p>
+            <p className="invisible h-5 leading-5">placeholder</p>
           </CaptionSlot>
         </CardHeader>
       </Card>
@@ -335,43 +364,49 @@ export function HeroMetrics({
             title="Filter table to FAIL and scroll to tests"
             disabled={pending || !stats}
           >
-            <CardTitle className="text-3xl font-semibold tabular-nums text-rose-600 transition-colors group-hover:underline dark:text-rose-400 sm:text-4xl">
+            <CardTitle className="text-3xl font-semibold tabular-nums leading-none text-rose-600 transition-colors group-hover:underline dark:text-rose-400 sm:text-4xl">
               <MetricValue
                 pending={pending || !stats}
-                skeletonClassName="h-9 w-20 sm:h-10"
+                variant="secondary"
                 className="tabular-nums text-rose-600 dark:text-rose-400"
               >
                 {stats ? stats.failed.toLocaleString() : null}
               </MetricValue>
             </CardTitle>
-            <span className="mt-1 block text-xs text-muted-foreground group-hover:text-foreground">
+            <span className="mt-1 block h-5 text-xs leading-5 text-muted-foreground group-hover:text-foreground">
               Click to view in table ↓
             </span>
           </button>
           <TrendSlot>
             {pending || !stats ? (
-              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-4 w-28 shrink-0" />
             ) : showPop && delta ? (
               <TrendBadge value={delta.failed} goodWhenDown />
             ) : dashboardRange.kind === "all" ? (
-              <span className="text-sm text-muted-foreground">
+              <span className="text-sm leading-5 text-muted-foreground">
                 No prior period
               </span>
             ) : (
-              <span className="text-sm text-muted-foreground/70">—</span>
+              <span className="text-sm leading-5 text-muted-foreground/70">
+                —
+              </span>
             )}
           </TrendSlot>
           <CaptionSlot>
-            <p>
+            <p className="h-5 truncate leading-5">
               Table shows FAIL rows in the linked date range
               {chartMode === "recent"
                 ? "; counts may differ from hero (latest-per-inverter)"
                 : ""}
               .
             </p>
-            {error && !stats && (
-              <p className="text-destructive">Could not load metrics.</p>
-            )}
+            <p className="h-5 truncate leading-5">
+              {error && !stats ? (
+                <span className="text-destructive">Could not load metrics.</span>
+              ) : (
+                <span className="invisible">placeholder</span>
+              )}
+            </p>
           </CaptionSlot>
         </CardHeader>
       </Card>
