@@ -20,6 +20,14 @@ interface TestStats {
   date: string;
   passed: number;
   failed: number;
+  /**
+   * Rank-then-tag strip fields (PR4):
+   * totalUnfiltered = unfiltered bucket population (latest per serial per bucket when recent)
+   * failedFiltered  = FAILs in that population matching annotation (all FAILs when annotation=all)
+   * stripRate = failedFiltered / totalUnfiltered
+   */
+  totalUnfiltered: number;
+  failedFiltered: number;
 }
 
 interface SummaryStats {
@@ -620,9 +628,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Build annotation filter
+    // Annotation match for volume prefilter (legacy) and strip rank-then-tag EXISTS
+    const annotationActive =
+      !!chartAnnotationFilter && chartAnnotationFilter !== "all";
+
+    // Build annotation filter for volume series (prefilter — legacy path)
     let annotationFilter = "";
-    if (chartAnnotationFilter && chartAnnotationFilter !== 'all') {
+    if (annotationActive) {
       const chartAnnotationParamIndex = chartTimeParams.length + 1;
       if (isGroupFilter) {
         annotationFilter = `
@@ -642,57 +654,149 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // EXISTS clause for rank-then-tag failedFiltered (applied AFTER rank, on test_id).
+    // Uses same param index as volume annotation when active.
+    let stripTagExists = "TRUE"; // annotation=all → all FAILs count
+    if (annotationActive) {
+      const stripAnnIdx = chartTimeParams.length + 1;
+      if (isGroupFilter) {
+        stripTagExists = `EXISTS (
+          SELECT 1 FROM TestAnnotations ta
+          JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
+          WHERE ta.current_test_id = bl.test_id
+            AND aqo.group_name = $${stripAnnIdx}
+        )`;
+      } else {
+        stripTagExists = `EXISTS (
+          SELECT 1 FROM TestAnnotations ta
+          WHERE ta.current_test_id = bl.test_id
+            AND ta.annotation_text = $${stripAnnIdx}
+        )`;
+      }
+    }
+
     // Bucket expression — `bucket` is whitelisted by validateBucket, safe to interpolate
     const bucketExpr = `DATE_TRUNC('${bucket}', t.start_time_utc)::date`;
 
+    /**
+     * Combined volume + strip query.
+     * - volume: may annotation-prefilter before rank (legacy)
+     * - strip (rank-then-tag A): unfiltered rank/population, then tag FAIL for failedFiltered
+     * Join on test_date so buckets present in either side appear.
+     */
     let query: string;
     if (chartMode === "recent") {
-      // Show bucketed statistics for most recent valid test per serial number (excluding INVALID)
       query = `
-        WITH bucket_latest_tests AS (
+        WITH volume_ranked AS (
           SELECT
-            ${bucketExpr} as test_date,
+            ${bucketExpr} AS test_date,
             t.overall_status,
-            i.serial_number,
-            t.test_id,
             ROW_NUMBER() OVER (
               PARTITION BY i.serial_number, ${bucketExpr}
               ORDER BY t.start_time_utc DESC
-            ) as rn
+            ) AS rn
           FROM Tests t
           JOIN Inverters i ON t.inv_id = i.inv_id
           WHERE ${timeFilter}
             t.overall_status != 'INVALID'
             ${annotationFilter}
+        ),
+        volume AS (
+          SELECT
+            test_date,
+            COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) AS passed,
+            COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) AS failed
+          FROM volume_ranked
+          WHERE rn = 1
+          GROUP BY test_date
+        ),
+        strip_ranked AS (
+          SELECT
+            ${bucketExpr} AS test_date,
+            t.test_id,
+            t.overall_status,
+            ROW_NUMBER() OVER (
+              PARTITION BY i.serial_number, ${bucketExpr}
+              ORDER BY t.start_time_utc DESC
+            ) AS rn
+          FROM Tests t
+          JOIN Inverters i ON t.inv_id = i.inv_id
+          WHERE ${timeFilter}
+            t.overall_status != 'INVALID'
+            -- intentionally NO annotation filter (rank-then-tag)
+        ),
+        strip AS (
+          SELECT
+            bl.test_date,
+            COUNT(*) AS total_unfiltered,
+            COUNT(*) FILTER (
+              WHERE bl.overall_status = 'FAIL'
+                AND (${stripTagExists})
+            ) AS failed_filtered
+          FROM strip_ranked bl
+          WHERE bl.rn = 1
+          GROUP BY bl.test_date
         )
         SELECT
-          to_char(test_date, 'YYYY-MM-DD') as test_date,
-          COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
-          COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
-        FROM bucket_latest_tests
-        WHERE rn = 1
-        GROUP BY test_date
-        ORDER BY test_date ASC
+          to_char(COALESCE(v.test_date, s.test_date), 'YYYY-MM-DD') AS test_date,
+          COALESCE(v.passed, 0) AS passed,
+          COALESCE(v.failed, 0) AS failed,
+          COALESCE(s.total_unfiltered, 0) AS total_unfiltered,
+          COALESCE(s.failed_filtered, 0) AS failed_filtered
+        FROM volume v
+        FULL OUTER JOIN strip s ON v.test_date = s.test_date
+        ORDER BY COALESCE(v.test_date, s.test_date) ASC
       `;
     } else {
-      // Show bucketed statistics for all tests
+      // All-tests mode: no per-serial rank; strip population = all valid tests in bucket
       query = `
+        WITH volume AS (
+          SELECT
+            ${bucketExpr} AS test_date,
+            COUNT(CASE WHEN t.overall_status = 'PASS' THEN 1 END) AS passed,
+            COUNT(CASE WHEN t.overall_status = 'FAIL' THEN 1 END) AS failed
+          FROM Tests t
+          WHERE ${timeFilter}
+            t.overall_status != 'INVALID'
+            ${annotationFilter}
+          GROUP BY ${bucketExpr}
+        ),
+        strip_base AS (
+          SELECT
+            ${bucketExpr} AS test_date,
+            t.test_id,
+            t.overall_status
+          FROM Tests t
+          WHERE ${timeFilter}
+            t.overall_status != 'INVALID'
+            -- intentionally NO annotation filter (rank-then-tag)
+        ),
+        strip AS (
+          SELECT
+            bl.test_date,
+            COUNT(*) AS total_unfiltered,
+            COUNT(*) FILTER (
+              WHERE bl.overall_status = 'FAIL'
+                AND (${stripTagExists})
+            ) AS failed_filtered
+          FROM strip_base bl
+          GROUP BY bl.test_date
+        )
         SELECT
-          to_char(${bucketExpr}, 'YYYY-MM-DD') as test_date,
-          COUNT(CASE WHEN t.overall_status = 'PASS' THEN 1 END) as passed,
-          COUNT(CASE WHEN t.overall_status = 'FAIL' THEN 1 END) as failed
-        FROM Tests t
-        WHERE ${timeFilter}
-          t.overall_status != 'INVALID'
-          ${annotationFilter}
-        GROUP BY ${bucketExpr}
-        ORDER BY ${bucketExpr} ASC
+          to_char(COALESCE(v.test_date, s.test_date), 'YYYY-MM-DD') AS test_date,
+          COALESCE(v.passed, 0) AS passed,
+          COALESCE(v.failed, 0) AS failed,
+          COALESCE(s.total_unfiltered, 0) AS total_unfiltered,
+          COALESCE(s.failed_filtered, 0) AS failed_filtered
+        FROM volume v
+        FULL OUTER JOIN strip s ON v.test_date = s.test_date
+        ORDER BY COALESCE(v.test_date, s.test_date) ASC
       `;
     }
 
     // Build final params array combining time and annotation filters
     const chartParams = [...chartTimeParams];
-    if (chartAnnotationFilter && chartAnnotationFilter !== 'all') {
+    if (annotationActive) {
       chartParams.push(filterValue!);
     }
 
@@ -704,6 +808,8 @@ export async function GET(request: NextRequest) {
       date: row.test_date,
       passed: parseInt(row.passed) || 0,
       failed: parseInt(row.failed) || 0,
+      totalUnfiltered: parseInt(row.total_unfiltered) || 0,
+      failedFiltered: parseInt(row.failed_filtered) || 0,
     }));
 
     return NextResponse.json(stats);

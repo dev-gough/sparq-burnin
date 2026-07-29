@@ -2,10 +2,11 @@
 
 import * as React from "react";
 import ReactECharts from "echarts-for-react";
-import type { EChartsOption, TooltipComponentFormatterCallbackParams } from "echarts";
-import { IconDownload, IconFileZip } from "@tabler/icons-react";
+import type {
+  EChartsOption,
+  TooltipComponentFormatterCallbackParams,
+} from "echarts";
 
-import { useIsMobile } from "@/hooks/use-mobile";
 import {
   Card,
   CardAction,
@@ -14,20 +15,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Button } from "@/components/ui/button";
-import { InfoTooltip } from "@/components/ui/info-tooltip";
+import {
+  appendDashboardRangeParams,
+  type DashboardRange,
+  dashboardRangeLabel,
+} from "@/lib/dashboard-range";
 import {
   burninChartColors,
   formatBucketLabel,
-  defaultBucketForTimeRange,
   type ChartBucket,
 } from "@/lib/chart-theme";
 
@@ -37,6 +33,8 @@ interface TestStats {
   date: string;
   passed: number;
   failed: number;
+  totalUnfiltered?: number;
+  failedFiltered?: number;
 }
 
 const BUCKET_OPTIONS: { value: ChartBucket; label: string }[] = [
@@ -50,13 +48,12 @@ const BUCKET_OPTIONS: { value: ChartBucket; label: string }[] = [
 interface ChartAreaInteractiveProps {
   onDateClick?: (date: string) => void;
   chartMode: string;
-  onChartModeChange: (mode: string) => void;
-  timeRange: string;
-  onTimeRangeChange: (range: string) => void;
+  dashboardRange: DashboardRange;
   annotationFilter: string;
-  dateFrom: string;
-  dateTo: string;
   highlightDate?: string;
+  bucket: ChartBucket;
+  onBucketChange: (bucket: ChartBucket) => void;
+  requestEpoch: number;
 }
 
 const FAILED_SERIES_NAME = "Failed (right scale)";
@@ -64,91 +61,56 @@ const FAILED_SERIES_NAME = "Failed (right scale)";
 export function ChartAreaInteractive({
   onDateClick,
   chartMode,
-  onChartModeChange,
-  timeRange,
-  onTimeRangeChange,
+  dashboardRange,
   annotationFilter,
-  dateFrom,
-  dateTo,
   highlightDate,
+  bucket,
+  onBucketChange,
+  requestEpoch,
 }: ChartAreaInteractiveProps) {
-  const isMobile = useIsMobile();
   const [chartData, setChartData] = React.useState<TestStats[]>([]);
-  const [bucket, setBucket] = React.useState<ChartBucket>(() =>
-    defaultBucketForTimeRange(timeRange),
-  );
   const [loading, setLoading] = React.useState(true);
-  const [isGeneratingReport, setIsGeneratingReport] = React.useState(false);
-  const [isGeneratingFailedData, setIsGeneratingFailedData] =
-    React.useState(false);
   const [isDarkMode, setIsDarkMode] = React.useState(false);
   const chartRef = React.useRef<ReactECharts>(null);
 
-  // Dark mode detection
   React.useEffect(() => {
     const checkDarkMode = () => {
       setIsDarkMode(document.documentElement.classList.contains("dark"));
     };
-
     checkDarkMode();
-
     const observer = new MutationObserver(checkDarkMode);
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["class"],
     });
-
     return () => observer.disconnect();
   }, []);
 
   React.useEffect(() => {
-    if (isMobile && timeRange === "90d") {
-      onTimeRangeChange("30d");
-    }
-  }, [isMobile, timeRange, onTimeRangeChange]);
-
-  // Smart bucket: re-apply defaults whenever timeRange changes (chart-local
-  // control, parent, or mobile 90d→30d force). Manual bucket choice sticks
-  // only until the next period change. all→month covers the >2y readability goal.
-  React.useEffect(() => {
-    setBucket(defaultBucketForTimeRange(timeRange));
-  }, [timeRange]);
-
-  const handleTimeRangeChange = React.useCallback(
-    (range: string) => {
-      onTimeRangeChange(range);
-      // Bucket sync happens in the timeRange effect above.
-    },
-    [onTimeRangeChange],
-  );
-
-  React.useEffect(() => {
     const abortController = new AbortController();
+    const epoch = requestEpoch;
 
     const fetchTestStats = async () => {
       try {
         setLoading(true);
         const params = new URLSearchParams({
           chartMode,
-          timeRange,
           annotation: annotationFilter,
           bucket,
         });
-        if (dateFrom) params.append("dateFrom", dateFrom);
-        if (dateTo) params.append("dateTo", dateTo);
+        appendDashboardRangeParams(params, dashboardRange);
 
         const response = await fetch(`/api/test-stats?${params}`, {
           signal: abortController.signal,
         });
-        if (abortController.signal.aborted) return;
+        if (abortController.signal.aborted || epoch !== requestEpoch) return;
 
         if (response.ok) {
           const data = await response.json();
-          if (abortController.signal.aborted) return;
+          if (abortController.signal.aborted || epoch !== requestEpoch) return;
           setChartData(data);
         } else {
           console.error("Failed to fetch test statistics");
-          // Avoid showing stale series under a new bucket/period selection.
           setChartData([]);
         }
       } catch (error) {
@@ -164,153 +126,8 @@ export function ChartAreaInteractive({
 
     fetchTestStats();
     return () => abortController.abort();
-  }, [chartMode, timeRange, annotationFilter, dateFrom, dateTo, bucket]);
+  }, [chartMode, dashboardRange, annotationFilter, bucket, requestEpoch]);
 
-  const getTimeRangeDescription = () => {
-    switch (timeRange) {
-      case "all":
-        return "all time";
-      case "90d":
-        return "the last 3 months";
-      case "30d":
-        return "the last 30 days";
-      case "7d":
-        return "the last 7 days";
-      default:
-        return "the last 3 months";
-    }
-  };
-
-  const generateReport = async () => {
-    try {
-      setIsGeneratingReport(true);
-      const response = await fetch(`/api/test-report?timeRange=${timeRange}`);
-
-      if (response.ok) {
-        const reportData = await response.json();
-
-        // Generate CSV content
-        const csvContent = generateCSVContent(reportData);
-
-        // Create and download the file
-        const blob = new Blob([csvContent], {
-          type: "text/csv;charset=utf-8;",
-        });
-        const link = document.createElement("a");
-        const url = URL.createObjectURL(blob);
-        link.setAttribute("href", url);
-        link.setAttribute(
-          "download",
-          `test-report-${timeRange}-${new Date().toISOString().split("T")[0]}.csv`,
-        );
-        link.style.visibility = "hidden";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } else {
-        console.error("Failed to generate report");
-      }
-    } catch (error) {
-      console.error("Error generating report:", error);
-    } finally {
-      setIsGeneratingReport(false);
-    }
-  };
-
-  const generateCSVContent = (reportData: {
-    dateRange: { start: string; end: string };
-    totals: {
-      totalTests: number;
-      totalPassed: number;
-      totalFailed: number;
-      totalInvalid: number;
-      overallPassRate: number;
-      overallFailRate: number;
-    };
-    dailyData: Array<{
-      date: string;
-      total: number;
-      passed: number;
-      failed: number;
-      invalid: number;
-      passRate: number;
-      failRate: number;
-    }>;
-  }) => {
-    const headers = [
-      "Date",
-      "Total Tests",
-      "Passed",
-      "Failed",
-      "Invalid",
-      "Pass Rate (%)",
-      "Fail Rate (%)",
-    ];
-
-    // Add summary section
-    let csvContent = "TEST REPORT SUMMARY\n";
-    csvContent += `Date Range: ${reportData.dateRange.start} to ${reportData.dateRange.end}\n`;
-    csvContent += `Total Tests: ${reportData.totals.totalTests}\n`;
-    csvContent += `Total Passed: ${reportData.totals.totalPassed}\n`;
-    csvContent += `Total Failed: ${reportData.totals.totalFailed}\n`;
-    csvContent += `Total Invalid: ${reportData.totals.totalInvalid}\n`;
-    csvContent += `Overall Pass Rate: ${reportData.totals.overallPassRate}%\n`;
-    csvContent += `Overall Fail Rate: ${reportData.totals.overallFailRate}%\n\n`;
-
-    // Add daily data section
-    csvContent += "DAILY BREAKDOWN\n";
-    csvContent += headers.join(",") + "\n";
-
-    reportData.dailyData.forEach((day) => {
-      const row = [
-        day.date,
-        day.total,
-        day.passed,
-        day.failed,
-        day.invalid,
-        day.passRate,
-        day.failRate,
-      ];
-      csvContent += row.join(",") + "\n";
-    });
-
-    return csvContent;
-  };
-
-  const downloadFailedTestData = async () => {
-    try {
-      setIsGeneratingFailedData(true);
-      const response = await fetch(
-        `/api/failed-test-data?timeRange=${timeRange}`,
-      );
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute(
-          "download",
-          `failed-tests-${timeRange}-${new Date().toISOString().split("T")[0]}.zip`,
-        );
-        link.style.visibility = "hidden";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      } else {
-        const errorData = await response.json();
-        console.error("Failed to download failed test data:", errorData.error);
-      }
-    } catch (error) {
-      console.error("Error downloading failed test data:", error);
-    } finally {
-      setIsGeneratingFailedData(false);
-    }
-  };
-
-  // ECharts: passed = gradient bars (left axis), failed = red line (right axis)
-  // so small failure counts stay readable next to large pass volumes.
   const chartOption: EChartsOption = React.useMemo(() => {
     const textColor = isDarkMode
       ? burninChartColors.text.dark
@@ -508,7 +325,8 @@ export function ChartAreaInteractive({
           let passed = 0;
           let failed = 0;
           params.forEach((param) => {
-            if (param.seriesName === "Passed") passed = Number(param.value) || 0;
+            if (param.seriesName === "Passed")
+              passed = Number(param.value) || 0;
             if (
               param.seriesName === FAILED_SERIES_NAME ||
               param.seriesName === "Failed"
@@ -517,7 +335,8 @@ export function ChartAreaInteractive({
             }
           });
           const total = passed + failed;
-          const rate = total > 0 ? ((failed / total) * 100).toFixed(1) : "0.0";
+          const rate =
+            total > 0 ? ((failed / total) * 100).toFixed(1) : "0.0";
 
           const row = (
             dot: string,
@@ -573,14 +392,14 @@ export function ChartAreaInteractive({
 
   const annotationCaption =
     annotationFilter && annotationFilter !== "all"
-      ? `Chart shows only tests tagged with the current annotation filter. Volume failure rate in the tooltip is among filtered tests.`
+      ? "Chart shows only tests tagged with the current annotation filter. Failure rate at top uses tagged failures ÷ all tests."
       : null;
 
   return (
     <Card className="@container/card">
       <CardHeader>
         <div className="flex flex-wrap items-center gap-2">
-          <CardTitle>Test Results</CardTitle>
+          <CardTitle>Test volume</CardTitle>
           <span
             className="inline-flex items-center rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] font-medium text-rose-600 dark:text-rose-400"
             title="The red line uses an independent Y-axis so small failure counts stay visible next to large pass volumes"
@@ -591,19 +410,13 @@ export function ChartAreaInteractive({
         <CardDescription>
           <span className="hidden @[540px]/card:block">
             {chartMode === "recent"
-              ? "Most recent test per serial number"
+              ? "Latest result per inverter"
               : "All test results"}{" "}
-            per {bucket} for {getTimeRangeDescription()}
+            per {bucket} for {dashboardRangeLabel(dashboardRange)}
           </span>
           <span className="@[540px]/card:hidden">
-            {chartMode === "recent" ? "Latest per S/N" : "All tests"} -{" "}
-            {timeRange === "all"
-              ? "All time"
-              : timeRange === "90d"
-                ? "Last 3 months"
-                : timeRange === "30d"
-                  ? "Last 30 days"
-                  : "Last 7 days"}
+            {chartMode === "recent" ? "Latest per inverter" : "All tests"} ·{" "}
+            {dashboardRangeLabel(dashboardRange)}
           </span>
           <span className="mt-1 block text-xs text-muted-foreground">
             {modeCaption}
@@ -615,149 +428,32 @@ export function ChartAreaInteractive({
           ) : null}
         </CardDescription>
         <CardAction>
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-col gap-2 @[900px]/card:flex-row @[900px]/card:items-center">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={generateReport}
-                  disabled={isGeneratingReport || loading}
-                  className="hidden @[640px]/card:flex"
-                >
-                  <IconDownload />
-                  {isGeneratingReport ? "Generating..." : "Generate Report"}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={downloadFailedTestData}
-                  disabled={isGeneratingFailedData || loading}
-                  className="hidden @[640px]/card:flex"
-                >
-                  <IconFileZip />
-                  {isGeneratingFailedData
-                    ? "Downloading..."
-                    : "Failed Test Data"}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={generateReport}
-                  disabled={isGeneratingReport || loading}
-                  className="@[640px]/card:hidden"
-                >
-                  <IconDownload />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={downloadFailedTestData}
-                  disabled={isGeneratingFailedData || loading}
-                  className="@[640px]/card:hidden"
-                >
-                  <IconFileZip />
-                </Button>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5">
-                  <ToggleGroup
-                    type="single"
-                    value={chartMode}
-                    onValueChange={(value) => {
-                      // Prevent deselecting - only allow switching between options
-                      if (value) onChartModeChange(value);
-                    }}
-                    variant="outline"
-                    className="*:data-[slot=toggle-group-item]:!px-3"
-                  >
-                    <ToggleGroupItem value="all">All Tests</ToggleGroupItem>
-                    <ToggleGroupItem value="recent">
-                      Latest per S/N
-                    </ToggleGroupItem>
-                  </ToggleGroup>
-                  <InfoTooltip
-                    content={
-                      <>
-                        <strong>All Tests:</strong> Shows every test run.
-                        <br />
-                        <strong>Latest per S/N:</strong> Shows only the most
-                        recent test for each serial number.
-                      </>
-                    }
-                  />
-                </div>
-                <ToggleGroup
-                  type="single"
-                  value={timeRange}
-                  onValueChange={(value) => {
-                    // Prevent deselecting - only allow switching between options
-                    if (value) handleTimeRangeChange(value);
-                  }}
-                  variant="outline"
-                  className="hidden *:data-[slot=toggle-group-item]:!px-4 @[767px]/card:flex"
-                >
-                  <ToggleGroupItem value="all">All Time</ToggleGroupItem>
-                  <ToggleGroupItem value="90d">Last 3 months</ToggleGroupItem>
-                  <ToggleGroupItem value="30d">Last 30 days</ToggleGroupItem>
-                  <ToggleGroupItem value="7d">Last 7 days</ToggleGroupItem>
-                </ToggleGroup>
-                <Select
-                  value={timeRange}
-                  onValueChange={handleTimeRangeChange}
-                >
-                  <SelectTrigger
-                    className="flex w-40 **:data-[slot=select-value]:block **:data-[slot=select-value]:truncate @[767px]/card:hidden"
-                    size="sm"
-                    aria-label="Select a value"
-                  >
-                    <SelectValue placeholder="Last 3 months" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    <SelectItem value="all" className="rounded-lg">
-                      All Time
-                    </SelectItem>
-                    <SelectItem value="90d" className="rounded-lg">
-                      Last 3 months
-                    </SelectItem>
-                    <SelectItem value="30d" className="rounded-lg">
-                      Last 30 days
-                    </SelectItem>
-                    <SelectItem value="7d" className="rounded-lg">
-                      Last 7 days
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2">
-              <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
-                Grouped by
-              </span>
-              <ToggleGroup
-                type="single"
-                value={bucket}
-                onValueChange={(value) => {
-                  if (value) setBucket(value as ChartBucket);
-                }}
-                variant="outline"
-                size="sm"
-                className="*:data-[slot=toggle-group-item]:!px-3"
-              >
-                {BUCKET_OPTIONS.map((option) => (
-                  <ToggleGroupItem key={option.value} value={option.value}>
-                    {option.label}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </div>
+          <div className="flex items-center justify-end gap-2">
+            <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+              Group by
+            </span>
+            <ToggleGroup
+              type="single"
+              value={bucket}
+              onValueChange={(value) => {
+                if (value) onBucketChange(value as ChartBucket);
+              }}
+              variant="outline"
+              className="*:data-[slot=toggle-group-item]:!px-3 *:data-[slot=toggle-group-item]:h-10"
+            >
+              {BUCKET_OPTIONS.map((option) => (
+                <ToggleGroupItem key={option.value} value={option.value}>
+                  {option.label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
           </div>
         </CardAction>
       </CardHeader>
       <CardContent className="px-2 pt-2 sm:px-6 sm:pt-3">
         {loading ? (
-          <div className="flex items-center justify-center h-[320px]">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <div className="flex h-[320px] items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
           </div>
         ) : (
           <ReactECharts
