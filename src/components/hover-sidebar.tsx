@@ -178,12 +178,15 @@ export function HoverSidebar() {
           <Image
             src="/logo.png"
             alt="Logo"
-            width={isOpen ? 96 : 32}
-            height={isOpen ? 96 : 32}
-            className="object-contain transition-all duration-300"
-            // Parent rail height changes via CSS; keep aspect ratio when one
-            // dimension is constrained (Next.js Image warning).
-            style={{ width: "auto", height: "auto" }}
+            // Intrinsic asset is 126×85 (not square). Match that aspect for
+            // Next/Image layout attrs; scale with CSS width + height:auto.
+            width={126}
+            height={85}
+            className={`object-contain transition-all duration-300 ${
+              isOpen ? "w-24" : "w-8"
+            }`}
+            style={{ height: "auto" }}
+            sizes={isOpen ? "96px" : "32px"}
           />
         </div>
 

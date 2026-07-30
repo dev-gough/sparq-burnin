@@ -29,10 +29,11 @@ function SignInForm() {
             <Image
               src="/logo.png"
               alt="Sparq Systems Logo"
-              width={80}
-              height={80}
+              width={126}
+              height={85}
               priority
-              style={{ width: "auto", height: "auto" }}
+              className="w-20"
+              style={{ height: "auto" }}
             />
           </div>
           <CardTitle className="text-2xl text-center">Burnin Test Dashboard</CardTitle>
