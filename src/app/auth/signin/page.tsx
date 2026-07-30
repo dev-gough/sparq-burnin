@@ -32,6 +32,7 @@ function SignInForm() {
               width={80}
               height={80}
               priority
+              style={{ width: "auto", height: "auto" }}
             />
           </div>
           <CardTitle className="text-2xl text-center">Burnin Test Dashboard</CardTitle>

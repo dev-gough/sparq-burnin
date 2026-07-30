@@ -181,6 +181,9 @@ export function HoverSidebar() {
             width={isOpen ? 96 : 32}
             height={isOpen ? 96 : 32}
             className="object-contain transition-all duration-300"
+            // Parent rail height changes via CSS; keep aspect ratio when one
+            // dimension is constrained (Next.js Image warning).
+            style={{ width: "auto", height: "auto" }}
           />
         </div>
 
