@@ -371,12 +371,16 @@ export function ChartAreaInteractive({
       ],
       tooltip: {
         trigger: "axis",
+        // Line (not shadow) — shadow paints a full-width column band that
+        // reads as a faint white/gray outline around the day.
         axisPointer: {
-          type: "shadow" as const,
-          shadowStyle: {
+          type: "line" as const,
+          lineStyle: {
             color: isDarkMode
-              ? "rgba(148, 163, 184, 0.08)"
-              : "rgba(100, 116, 139, 0.08)",
+              ? "rgba(148, 163, 184, 0.45)"
+              : "rgba(100, 116, 139, 0.4)",
+            type: "dashed" as const,
+            width: 1,
           },
         },
         backgroundColor: isDarkMode
