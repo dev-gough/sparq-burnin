@@ -321,7 +321,8 @@ export function DateRangePicker({
         <button
           type="button"
           className={cn(
-            "group relative flex h-10 w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-input bg-background px-3 text-left text-sm shadow-xs transition-[border-color,box-shadow,background-color,transform] duration-300 outline-none",
+            // h-9 matches SelectTrigger default so the filter row aligns
+            "group relative flex h-9 min-h-9 w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-input bg-background px-3 text-left text-sm shadow-xs transition-[border-color,box-shadow,background-color,transform] duration-300 outline-none",
             "hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
             open && "border-ring ring-[3px] ring-ring/40",
             (hasRange || pendingRange) && "border-primary/30 bg-primary/5",
@@ -333,7 +334,7 @@ export function DateRangePicker({
         >
           <span
             className={cn(
-              "flex size-7 shrink-0 items-center justify-center rounded-md transition-all duration-300",
+              "flex size-6 shrink-0 items-center justify-center rounded-md transition-all duration-300",
               hasRange || pendingRange
                 ? "bg-primary/15 text-primary"
                 : "bg-muted text-muted-foreground group-hover:text-foreground",

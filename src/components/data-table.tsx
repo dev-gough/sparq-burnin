@@ -358,9 +358,9 @@ export function DataTableSkeleton({
               </div>
             </div>
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full sm:col-span-2" />
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full sm:col-span-2" />
             </div>
             <div className="flex flex-wrap gap-2">
               <Skeleton className="h-9 w-40 rounded-md" />
@@ -953,7 +953,7 @@ export function DataTable({
                 onValueChange={onAnnotationFilterChange}
               >
                 <SelectTrigger
-                  className="h-10 w-full min-w-0 bg-background shadow-xs"
+                  className="h-9 min-h-9 w-full min-w-0 bg-background shadow-xs"
                   aria-label="Category or note"
                 >
                   <SelectValue placeholder="All categories" />
@@ -1015,7 +1015,7 @@ export function DataTable({
 
               <Select value={firmwareFilter} onValueChange={setFirmwareFilter}>
                 <SelectTrigger
-                  className="h-10 w-full min-w-0 bg-background shadow-xs"
+                  className="h-9 min-h-9 w-full min-w-0 bg-background shadow-xs"
                   aria-label="Firmware version"
                 >
                   <SelectValue placeholder="All versions" />
