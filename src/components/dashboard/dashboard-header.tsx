@@ -87,6 +87,8 @@ const PERIOD_PILLS: { value: DashboardPill; label: string; short: string }[] = [
 interface DashboardHeaderProps {
   dashboardRange: DashboardRange;
   onPeriodPill: (kind: DashboardPill) => void;
+  /** Hover/focus intent: warm chart series cache for a period pill. */
+  onPeriodPillPrefetch?: (kind: DashboardPill) => void;
   onCustomRange: (from: string, to: string) => void;
   chartMode: string;
   onChartModeChange: (mode: string) => void;
@@ -107,6 +109,7 @@ interface DashboardHeaderProps {
 export function DashboardHeader({
   dashboardRange,
   onPeriodPill,
+  onPeriodPillPrefetch,
   onCustomRange,
   chartMode,
   onChartModeChange,
@@ -280,6 +283,8 @@ export function DashboardHeader({
               value={p.value}
               className="h-10 min-h-10 min-w-11 px-3 text-sm focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
               aria-label={p.label}
+              onPointerEnter={() => onPeriodPillPrefetch?.(p.value)}
+              onFocus={() => onPeriodPillPrefetch?.(p.value)}
             >
               {p.short}
             </ToggleGroupItem>

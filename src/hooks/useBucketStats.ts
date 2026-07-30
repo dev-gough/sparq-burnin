@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import {
-  appendDashboardRangeParams,
+  defaultBucketForDashboardRange,
   tableDatesForPill,
+  type DashboardPill,
   type DashboardRange,
 } from "@/lib/dashboard-range";
 import type { ChartBucket } from "@/lib/chart-theme";
@@ -12,14 +13,17 @@ import {
   inclusiveDayLength,
   parseYmdUtc,
 } from "@/lib/stats-windows";
+import {
+  getCachedBucketStats,
+  loadBucketStats,
+  prefetchBucketStats,
+  scheduleSiblingPillPrefetch,
+  subscribeBucketStatsCache,
+  type BucketStatsFetchKey,
+  type BucketStatsRow,
+} from "@/lib/bucket-stats-cache";
 
-export interface BucketStats {
-  date: string;
-  passed: number;
-  failed: number;
-  totalUnfiltered?: number;
-  failedFiltered?: number;
-}
+export type BucketStats = BucketStatsRow;
 
 /** Stable identity for the desired series (not gated on `enabled`). */
 function buildRequestKey(opts: {
@@ -42,13 +46,32 @@ function buildRequestKey(opts: {
   });
 }
 
+function toFetchKey(opts: {
+  dashboardRange: DashboardRange;
+  chartMode: string;
+  annotationFilter: string;
+  bucket: ChartBucket;
+}): BucketStatsFetchKey {
+  return {
+    dashboardRange: opts.dashboardRange,
+    chartMode: opts.chartMode,
+    annotationFilter: opts.annotationFilter,
+    bucket: opts.bucket,
+  };
+}
+
 /**
  * Fetch bucketed pass/fail series for a chart surface.
  * Volume chart and failure-rate strip call this separately so "Group by"
  * on volume does not redraw the strip (different bucket args).
  *
+ * Shared module cache + in-flight dedupe:
+ * - strip + volume with the same key share one network call
+ * - revisiting a cached key paints immediately (no soft-hold flash)
+ * - after a successful load, other period pills are prefetched on idle
+ *
  * Stale-while-revalidate: after the first successful load, previous series
- * stay mounted while a new range/bucket is fetched.
+ * stay mounted while a new uncached range/bucket is fetched.
  *
  * `refreshing` is derived synchronously (requestKey !== dataKey) so the
  * first render after a period pill flip already freezes the chart option —
@@ -62,6 +85,16 @@ export function useBucketStats(opts: {
   requestEpoch: number;
   /** When false, skip fetch (e.g. until localStorage prefs hydrate). Default true. */
   enabled?: boolean;
+  /**
+   * When true, after a successful load warm the other executive pills
+   * using the same bucket (volume chart). Default false.
+   */
+  prefetchSiblingPills?: boolean;
+  /**
+   * When true with prefetchSiblingPills, each sibling uses the strip's
+   * smart default bucket for that pill (not the current bucket).
+   */
+  prefetchSmartBucketPerPill?: boolean;
 }): {
   data: BucketStats[];
   /** True only on the initial load (no data yet). */
@@ -69,6 +102,8 @@ export function useBucketStats(opts: {
   /** True while shown data belongs to a previous request key. */
   refreshing: boolean;
   error: boolean;
+  /** Warm cache for a period pill (e.g. hover intent). */
+  prefetchPill: (kind: DashboardPill) => void;
 } {
   const {
     dashboardRange,
@@ -77,7 +112,20 @@ export function useBucketStats(opts: {
     bucket,
     requestEpoch,
     enabled = true,
+    prefetchSiblingPills = false,
+    prefetchSmartBucketPerPill = false,
   } = opts;
+
+  const fetchKey = React.useMemo(
+    () =>
+      toFetchKey({
+        dashboardRange,
+        chartMode,
+        annotationFilter,
+        bucket,
+      }),
+    [dashboardRange, chartMode, annotationFilter, bucket],
+  );
 
   const requestKey = React.useMemo(
     () =>
@@ -91,6 +139,18 @@ export function useBucketStats(opts: {
     [dashboardRange, chartMode, annotationFilter, bucket, requestEpoch],
   );
 
+  /**
+   * External cache via useSyncExternalStore:
+   * - getServerSnapshot always null → SSR + hydration match
+   * - after hydrate, client snapshot can be warm (instant period switches)
+   * - cache writes notify subscribers so strip/volume stay in sync
+   */
+  const cachedFromStore = React.useSyncExternalStore(
+    subscribeBucketStatsCache,
+    () => (enabled ? (getCachedBucketStats(fetchKey) ?? null) : null),
+    () => null,
+  );
+
   const [data, setData] = React.useState<BucketStats[]>([]);
   /** Request key that `data` was loaded for; null until first successful load. */
   const [dataKey, setDataKey] = React.useState<string | null>(null);
@@ -101,20 +161,28 @@ export function useBucketStats(opts: {
   const dataKeyRef = React.useRef(dataKey);
   dataKeyRef.current = dataKey;
 
+  // When the store has a hit for this key, mirror into local state so
+  // requestKey / dataKey stay aligned for loading flags.
+  React.useLayoutEffect(() => {
+    if (!enabled || cachedFromStore === null) return;
+    setData(cachedFromStore);
+    setDataKey(requestKey);
+    setError(false);
+  }, [enabled, cachedFromStore, requestKey]);
+
   // Synchronous flags (same render as range/bucket/epoch changes).
-  //
-  // loading vs refreshing:
-  // - loading  → no series to soft-hold → skeleton. Covers empty→period remount:
-  //   a prior empty-period fetch (while hasData was still null) can leave
-  //   dataKey set with data=[]. Old logic treated that as "loaded", so ECharts
-  //   painted empty/sparse once, then continuous series when the real fetch
-  //   landed (double paint leaving empty state).
-  // - refreshing → soft-hold a previous non-empty series (freeze chart option).
-  //   Not gated on `enabled` so the has-data probe cannot unfreeze into a
-  //   continuous-fill of stale sparse buckets (7d ↔ 30d ↔ 90d).
-  const hasSeries = data.length > 0;
-  const keyMismatch = dataKey !== null && dataKey !== requestKey;
-  const loading = enabled && (dataKey === null || (keyMismatch && !hasSeries));
+  // Prefer store cache for the *current* fetch key so period flips skip
+  // soft-hold when prefetched/cached (client-only; null during SSR/hydrate).
+  const cacheHit = cachedFromStore !== null;
+  const effectiveData = cacheHit ? cachedFromStore : data;
+  const effectiveDataKey = cacheHit ? requestKey : dataKey;
+
+  const hasSeries = effectiveData.length > 0;
+  const keyMismatch =
+    effectiveDataKey !== null && effectiveDataKey !== requestKey;
+  const loading =
+    enabled &&
+    (effectiveDataKey === null || (keyMismatch && !hasSeries));
   const refreshing = keyMismatch && hasSeries;
 
   // When disabled with no series (confirmed empty / prefs), drop the stale
@@ -128,63 +196,85 @@ export function useBucketStats(opts: {
   React.useEffect(() => {
     if (!enabled) return;
 
-    const abort = new AbortController();
     const keyAtStart = requestKey;
+    let cancelled = false;
+    let cancelPrefetch: (() => void) | undefined;
 
     async function fetchStats() {
       try {
         setError(false);
-        const params = new URLSearchParams({
-          chartMode,
-          annotation: annotationFilter,
-          bucket,
-        });
-        appendDashboardRangeParams(params, dashboardRange);
-
-        const response = await fetch(`/api/test-stats?${params}`, {
-          signal: abort.signal,
-        });
-        if (abort.signal.aborted) return;
-        // A newer request superseded this one
+        // Cache-first; concurrent strip+volume callers share one in-flight fetch.
+        const next = await loadBucketStats(fetchKey);
+        if (cancelled) return;
         if (requestKeyRef.current !== keyAtStart) return;
 
-        if (!response.ok) {
-          setError(true);
-          // Mark key settled without wiping a soft-held non-empty series
+        setData(next);
+        setDataKey(keyAtStart);
+
+        if (prefetchSiblingPills) {
+          cancelPrefetch = scheduleSiblingPillPrefetch({
+            currentRange: dashboardRange,
+            chartMode,
+            annotationFilter,
+            bucket,
+            useSmartBucketPerPill: prefetchSmartBucketPerPill,
+          });
+        }
+      } catch (e) {
+        if (cancelled) return;
+        if (requestKeyRef.current !== keyAtStart) return;
+        // Cache hit already painted — don't surface a background revalidate error
+        if (getCachedBucketStats(fetchKey) !== undefined) {
           setDataKey(keyAtStart);
           return;
         }
-
-        const json: BucketStats[] = await response.json();
-        if (abort.signal.aborted) return;
-        if (requestKeyRef.current !== keyAtStart) return;
-
-        const next = Array.isArray(json) ? json : [];
-        setData(next);
-        setDataKey(keyAtStart);
-      } catch (e) {
-        if (abort.signal.aborted) return;
-        if (requestKeyRef.current !== keyAtStart) return;
         console.error("Error fetching bucket stats:", e);
         setError(true);
-        // First load / empty hold: clear series. Soft refresh: keep previous.
         if (dataKeyRef.current === null) setData([]);
         setDataKey(keyAtStart);
       }
     }
 
-    fetchStats();
-    return () => abort.abort();
+    void fetchStats();
+    return () => {
+      cancelled = true;
+      cancelPrefetch?.();
+    };
   }, [
     requestKey,
+    fetchKey,
     dashboardRange,
     chartMode,
     annotationFilter,
     bucket,
     enabled,
+    prefetchSiblingPills,
+    prefetchSmartBucketPerPill,
   ]);
 
-  return { data, loading, refreshing, error };
+  const prefetchPill = React.useCallback(
+    (kind: DashboardPill) => {
+      const range: DashboardRange = { kind };
+      const nextBucket = prefetchSmartBucketPerPill
+        ? defaultBucketForDashboardRange(range)
+        : bucket;
+      prefetchBucketStats({
+        dashboardRange: range,
+        chartMode,
+        annotationFilter,
+        bucket: nextBucket,
+      });
+    },
+    [chartMode, annotationFilter, bucket, prefetchSmartBucketPerPill],
+  );
+
+  return {
+    data: effectiveData,
+    loading,
+    refreshing,
+    error,
+    prefetchPill,
+  };
 }
 
 /** Volume series: drop strip-only empty buckets (passed+failed === 0). */

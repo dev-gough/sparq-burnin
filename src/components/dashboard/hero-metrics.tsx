@@ -16,34 +16,18 @@ import {
 } from "@/components/ui/tooltip";
 import { RollingNumber } from "@/components/dashboard/rolling-number";
 import {
-  appendDashboardRangeParams,
   type DashboardRange,
   dashboardRangeLabel,
 } from "@/lib/dashboard-range";
+import {
+  getCachedSummaryStats,
+  loadSummaryStats,
+  scheduleSiblingPillSummaryPrefetch,
+  subscribeSummaryStatsCache,
+  type SummaryCompareResponse,
+  type SummaryStatsFetchKey,
+} from "@/lib/summary-stats-cache";
 import { cn } from "@/lib/utils";
-
-interface SummaryStats {
-  total: number;
-  passed: number;
-  failed: number;
-  failureRate: number;
-  failurePercentageOfTotal?: number;
-}
-
-interface SummaryDelta {
-  total: number;
-  passed: number;
-  failed: number;
-  failureRatePp: number;
-}
-
-interface CompareResponse {
-  current: SummaryStats;
-  previous: SummaryStats | null;
-  delta: SummaryDelta | null;
-  labels: { current: string; previous: string } | null;
-  failurePercentageOfTotal: number | null;
-}
 
 interface HeroMetricsProps {
   dashboardRange: DashboardRange;
@@ -231,14 +215,54 @@ export function HeroMetrics({
   onFailuresClick,
   enabled = true,
 }: HeroMetricsProps) {
-  const [data, setData] = React.useState<CompareResponse | null>(null);
+  const fetchKey = React.useMemo<SummaryStatsFetchKey>(
+    () => ({
+      dashboardRange,
+      chartMode,
+      annotationFilter,
+    }),
+    [dashboardRange, chartMode, annotationFilter],
+  );
+
+  /**
+   * External cache: null during SSR/hydration; warm after client paint so
+   * period switches roll the odometer immediately without a network wait.
+   */
+  const cachedFromStore = React.useSyncExternalStore(
+    subscribeSummaryStatsCache,
+    () => (enabled ? (getCachedSummaryStats(fetchKey) ?? null) : null),
+    () => null,
+  );
+
+  const [data, setData] = React.useState<SummaryCompareResponse | null>(null);
   /** True only until the first successful payload (zeros → enter odometer). */
   const [pending, setPending] = React.useState(true);
   const [error, setError] = React.useState(false);
   const hasDataRef = React.useRef(false);
 
-  const epochRef = React.useRef(requestEpoch);
-  epochRef.current = requestEpoch;
+  const requestIdentity = React.useMemo(
+    () =>
+      JSON.stringify({
+        chartMode,
+        annotationFilter,
+        requestEpoch,
+        kind: dashboardRange.kind,
+        from: dashboardRange.kind === "custom" ? dashboardRange.from : null,
+        to: dashboardRange.kind === "custom" ? dashboardRange.to : null,
+      }),
+    [dashboardRange, chartMode, annotationFilter, requestEpoch],
+  );
+  const identityRef = React.useRef(requestIdentity);
+  identityRef.current = requestIdentity;
+
+  // Mirror store hits into local state (aligns odometer + pending flags).
+  React.useLayoutEffect(() => {
+    if (!enabled || cachedFromStore === null) return;
+    setData(cachedFromStore);
+    setPending(false);
+    setError(false);
+    hasDataRef.current = true;
+  }, [enabled, cachedFromStore]);
 
   React.useEffect(() => {
     if (!enabled) {
@@ -246,70 +270,66 @@ export function HeroMetrics({
       return;
     }
 
-    const abort = new AbortController();
-    const epochAtStart = requestEpoch;
-    const isInitial = !hasDataRef.current;
+    const identityAtStart = requestIdentity;
+    const isInitial = !hasDataRef.current && cachedFromStore === null;
+    let cancelled = false;
+    let cancelPrefetch: (() => void) | undefined;
 
     async function fetchStats() {
       try {
-        // Initial load: odometer holds on 0. Later range changes: keep last
-        // numbers and roll from them when the new payload arrives.
-        // Only zero-out the odometer on the first load. Subsequent range
-        // changes keep the previous numbers mounted until the new payload
-        // arrives, then RollingNumber rolls previous → next.
+        // Initial load: odometer holds on 0. Later range changes / cache hits:
+        // keep last numbers and roll when the new payload is applied.
         if (isInitial) setPending(true);
         setError(false);
-        const params = new URLSearchParams({
-          view: "summary",
-          compare: "1",
+
+        const next = await loadSummaryStats(fetchKey);
+        if (cancelled || identityRef.current !== identityAtStart) return;
+
+        setData(next);
+        hasDataRef.current = true;
+
+        cancelPrefetch = scheduleSiblingPillSummaryPrefetch({
+          currentRange: dashboardRange,
           chartMode,
-          annotation: annotationFilter,
+          annotationFilter,
         });
-        appendDashboardRangeParams(params, dashboardRange);
-
-        const response = await fetch(`/api/test-stats?${params}`, {
-          signal: abort.signal,
-        });
-        if (abort.signal.aborted || epochRef.current !== epochAtStart) return;
-
-        if (!response.ok) {
-          setError(true);
+      } catch (e) {
+        if (cancelled || identityRef.current !== identityAtStart) return;
+        // Store already painted a hit — don't surface a background error
+        if (getCachedSummaryStats(fetchKey) !== undefined) {
+          setPending(false);
           return;
         }
-
-        const json = await response.json();
-        if (abort.signal.aborted || epochRef.current !== epochAtStart) return;
-
-        if (json.current) {
-          setData(json as CompareResponse);
-        } else {
-          setData({
-            current: json as SummaryStats,
-            previous: null,
-            delta: null,
-            labels: null,
-            failurePercentageOfTotal: json.failurePercentageOfTotal ?? null,
-          });
-        }
-        hasDataRef.current = true;
-      } catch (e) {
-        if (abort.signal.aborted) return;
         console.error("Failed to fetch hero stats:", e);
         setError(true);
       } finally {
-        if (!abort.signal.aborted && epochRef.current === epochAtStart) {
+        if (!cancelled && identityRef.current === identityAtStart) {
           setPending(false);
         }
       }
     }
 
-    fetchStats();
-    return () => abort.abort();
-  }, [dashboardRange, chartMode, annotationFilter, requestEpoch, enabled]);
+    void fetchStats();
+    return () => {
+      cancelled = true;
+      cancelPrefetch?.();
+    };
+  }, [
+    fetchKey,
+    dashboardRange,
+    chartMode,
+    annotationFilter,
+    requestIdentity,
+    enabled,
+    // intentionally not depending on cachedFromStore — load still fills cache
+  ]);
 
-  const stats = data?.current ?? null;
-  const delta = data?.delta ?? null;
-  const priorLabel = data?.labels?.previous ?? null;
+  // Prefer store for the current key so a prefetched pill paints on the same
+  // render as the period change (then layoutEffect aligns local state).
+  const effective = cachedFromStore ?? data;
+  const stats = effective?.current ?? null;
+  const delta = effective?.delta ?? null;
+  const priorLabel = effective?.labels?.previous ?? null;
   // Odometer: zeros only on first paint; later swaps pass the live value so
   // RollingNumber can roll previous → next without re-inserting 0.
   const metricsPending = pending && !stats;

@@ -28,6 +28,7 @@ import {
 import { bucketRange, type ChartBucket } from "@/lib/chart-theme";
 import { useBucketStats } from "@/hooks/useBucketStats";
 import { usePeriodHasData } from "@/hooks/usePeriodHasData";
+import { prefetchSummaryPill } from "@/lib/summary-stats-cache";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -170,6 +171,7 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
     data: stripStats,
     loading: stripLoading,
     refreshing: stripRefreshing,
+    prefetchPill: prefetchStripPill,
   } = useBucketStats({
     dashboardRange,
     chartMode,
@@ -177,12 +179,16 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
     bucket: stripBucket,
     requestEpoch,
     enabled: loadDashboardData,
+    // Warm other pills with per-range smart buckets (strip defaults).
+    prefetchSiblingPills: true,
+    prefetchSmartBucketPerPill: true,
   });
 
   const {
     data: volumeStats,
     loading: volumeLoading,
     refreshing: volumeRefreshing,
+    prefetchPill: prefetchVolumePill,
   } = useBucketStats({
     dashboardRange,
     chartMode,
@@ -190,7 +196,24 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
     bucket,
     requestEpoch,
     enabled: loadDashboardData,
+    // Warm other pills with the current volume Group-by bucket.
+    prefetchSiblingPills: true,
   });
+
+  /** Hover intent: warm summary + strip + volume for a period pill. */
+  const handlePeriodPillPrefetch = React.useCallback(
+    (kind: DashboardPill) => {
+      prefetchSummaryPill(kind, { chartMode, annotationFilter });
+      prefetchStripPill(kind);
+      prefetchVolumePill(kind);
+    },
+    [
+      chartMode,
+      annotationFilter,
+      prefetchStripPill,
+      prefetchVolumePill,
+    ],
+  );
 
   const bumpEpoch = React.useCallback(() => {
     setRequestEpoch((e) => e + 1);
@@ -416,6 +439,7 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
       <DashboardHeader
         dashboardRange={dashboardRange}
         onPeriodPill={handlePeriodPill}
+        onPeriodPillPrefetch={handlePeriodPillPrefetch}
         onCustomRange={handleCustomRange}
         chartMode={chartMode}
         onChartModeChange={(mode) => {
