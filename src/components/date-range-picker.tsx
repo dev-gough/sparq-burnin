@@ -80,6 +80,10 @@ type Cell =
   | { kind: "empty"; key: string }
   | { kind: "day"; key: string; ymd: string; day: number };
 
+/** Always 6 weeks (42 cells) so month height / nav chevrons never jump. */
+const WEEKS_PER_MONTH = 6;
+const CELLS_PER_MONTH = 7 * WEEKS_PER_MONTH;
+
 function buildMonthGrid(y: number, m: number): Cell[] {
   const cells: Cell[] = [];
   const lead = weekdayMon0(y, m, 1);
@@ -91,7 +95,7 @@ function buildMonthGrid(y: number, m: number): Cell[] {
     const ymd = toYmd(y, m, d);
     cells.push({ kind: "day", key: ymd, ymd, day: d });
   }
-  while (cells.length % 7 !== 0) {
+  while (cells.length < CELLS_PER_MONTH) {
     cells.push({ kind: "empty", key: `t-${y}-${m}-${cells.length}` });
   }
   return cells;
