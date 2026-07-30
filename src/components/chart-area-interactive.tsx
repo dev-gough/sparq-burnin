@@ -44,6 +44,11 @@ import { cn } from "@/lib/utils";
 const LOW_SAMPLE_N = 10;
 /** Failure rate at/above this (%) gets stronger point emphasis + bold rate row. */
 const HIGH_RATE_PCT = 5;
+/**
+ * When the x-axis has more points than this, render Passed as a line instead of
+ * bars (bars become unreadable past ~3 months of day buckets).
+ */
+const PASS_AS_LINE_MIN_POINTS = 100;
 
 const BUCKET_OPTIONS: { value: ChartBucket; label: string }[] = [
   { value: "day", label: "Day" },
@@ -160,6 +165,9 @@ export function ChartAreaInteractive({
     const failAreaTopAlpha =
       maxFailed <= 0 ? 0 : maxFailed <= 3 ? 0.04 : maxFailed <= 8 ? 0.09 : 0.14;
 
+    // Dense ranges: line chart for Passed (bars collapse into a solid block).
+    const passAsLine = chartData.length > PASS_AS_LINE_MIN_POINTS;
+
     const passBarData = chartData.map((item) => {
       const total = (item.passed || 0) + (item.failed || 0);
       const lowSample = total > 0 && total < LOW_SAMPLE_N;
@@ -179,6 +187,18 @@ export function ChartAreaInteractive({
               { offset: 1, color: colors.passed.dark },
             ],
           },
+        },
+      };
+    });
+
+    const passLineData = chartData.map((item) => {
+      const total = (item.passed || 0) + (item.failed || 0);
+      const lowSample = total > 0 && total < LOW_SAMPLE_N;
+      return {
+        value: item.passed,
+        itemStyle: {
+          opacity: lowSample ? 0.55 : 1,
+          color: colors.passed.base,
         },
       };
     });
@@ -290,40 +310,96 @@ export function ChartAreaInteractive({
             ]
           : [],
       series: [
-        {
-          name: "Passed",
-          type: "bar" as const,
-          yAxisIndex: 0,
-          // Series-level color so the legend stays green when per-bar itemStyle
-          // only carries gradient/opacity (ECharts otherwise falls back to palette).
-          color: colors.passed.base,
-          data: passBarData,
-          barMaxWidth: 36,
-          // Paint bars left → right on enter (range / bucket change)
-          animationDelay: (idx: number) => chartSeriesDelay(idx, 28),
-          animationEasing: "cubicOut",
-          emphasis: {
-            itemStyle: {
+        passAsLine
+          ? {
+              name: "Passed",
+              type: "line" as const,
+              yAxisIndex: 0,
               color: colors.passed.base,
-              opacity: 1,
+              data: passLineData,
+              smooth: 0.25,
+              // Dense: hide permanent markers; tooltip axis still hits values
+              showSymbol: false,
+              symbol: "circle",
+              symbolSize: 6,
+              z: 5,
+              animationDelay: (idx: number) => chartSeriesDelay(idx, 18),
+              animationEasing: "cubicOut",
+              lineStyle: {
+                width: 2.5,
+                color: colors.passed.base,
+                shadowColor: "rgba(16, 185, 129, 0.25)",
+                shadowBlur: 6,
+                shadowOffsetY: 2,
+              },
+              areaStyle: {
+                color: {
+                  type: "linear" as const,
+                  x: 0,
+                  y: 0,
+                  x2: 0,
+                  y2: 1,
+                  colorStops: [
+                    { offset: 0, color: "rgba(52, 211, 153, 0.28)" },
+                    { offset: 1, color: "rgba(5, 150, 105, 0)" },
+                  ],
+                },
+              },
+              emphasis: {
+                focus: "series" as const,
+                itemStyle: {
+                  color: colors.passed.base,
+                  opacity: 1,
+                },
+              },
+              markLine: highlightDate
+                ? {
+                    symbol: "none",
+                    lineStyle: {
+                      color: "hsl(217.2 91.2% 59.8%)",
+                      width: 2,
+                      type: "solid" as const,
+                    },
+                    label: { show: false },
+                    data: [{ xAxis: highlightDate }],
+                    silent: true,
+                  }
+                : undefined,
+            }
+          : {
+              name: "Passed",
+              type: "bar" as const,
+              yAxisIndex: 0,
+              // Series-level color so the legend stays green when per-bar itemStyle
+              // only carries gradient/opacity (ECharts otherwise falls back to palette).
+              color: colors.passed.base,
+              data: passBarData,
+              barMaxWidth: 36,
+              // Paint bars left → right on enter (range / bucket change)
+              animationDelay: (idx: number) => chartSeriesDelay(idx, 28),
+              animationEasing: "cubicOut",
+              emphasis: {
+                itemStyle: {
+                  color: colors.passed.base,
+                  opacity: 1,
+                },
+              },
+              markLine: highlightDate
+                ? {
+                    symbol: "none",
+                    lineStyle: {
+                      color: "hsl(217.2 91.2% 59.8%)",
+                      width: 2,
+                      type: "solid" as const,
+                    },
+                    label: {
+                      show: false,
+                    },
+                    data: [{ xAxis: highlightDate }],
+                    silent: true,
+                  }
+                : undefined,
             },
-          },
-          markLine: highlightDate
-            ? {
-                symbol: "none",
-                lineStyle: {
-                  color: "hsl(217.2 91.2% 59.8%)",
-                  width: 2,
-                  type: "solid" as const,
-                },
-                label: {
-                  show: false,
-                },
-                data: [{ xAxis: highlightDate }],
-                silent: true,
-              }
-            : undefined,
-        },
         {
           name: FAILED_SERIES_NAME,
           type: "line" as const,
