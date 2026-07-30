@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from 'pg';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 import { getDatabaseConfig } from '@/lib/config';
 import { requireAuth } from '@/lib/auth-check';
 import { validateTimeRange, getTimeRangeDays } from '@/lib/validation';
@@ -116,38 +116,38 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    // Create zip archive
-    const archive = archiver('zip', {
-      zlib: { level: 9 } // Maximum compression
+    // Create zip archive (archiver v8: ZipArchive class, ESM)
+    const archive = new ZipArchive({
+      zlib: { level: 9 }, // Maximum compression
     });
-    
+
     // Create a promise to handle the archive completion
     const archivePromise = new Promise<Buffer>((resolve, reject) => {
       const chunks: Buffer[] = [];
-      
-      archive.on('data', (chunk) => {
+
+      archive.on('data', (chunk: Buffer) => {
         chunks.push(chunk);
       });
-      
+
       archive.on('end', () => {
         resolve(Buffer.concat(chunks));
       });
-      
-      archive.on('error', (err) => {
+
+      archive.on('error', (err: Error) => {
         reject(err);
       });
     });
-    
+
     // Generate CSV for each failed test and add to archive
     for (const test of failedTests) {
       const csvContent = await generateTestCSV(client, test);
       const filename = `${formatDate(test.start_time_utc)}_test_${test.test_id}_${test.serial_number}_FAILED.csv`;
       archive.append(csvContent, { name: filename });
     }
-    
+
     // Finalize the archive
-    archive.finalize();
-    
+    void archive.finalize();
+
     // Wait for archive to complete
     const zipBuffer = await archivePromise;
     
