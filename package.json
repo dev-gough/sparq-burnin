@@ -3,10 +3,10 @@
   "version": "0.7.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start -p 9001",
-    "lint": "next lint",
+    "lint": "eslint .",
     "test": "vitest run",
     "ingest": "tsx scripts/ingest.ts",
     "ingest-excel": "tsx scripts/ingest-excel-annotations.ts",
@@ -44,7 +44,7 @@
     "echarts": "^5.6.0",
     "echarts-for-react": "^3.0.2",
     "lucide-react": "^0.511.0",
-    "next": "^15.5.7",
+    "next": "^16.2.12",
     "next-auth": "^5.0.0-beta.30",
     "next-themes": "^0.4.6",
     "pg": "^8.13.1",
@@ -55,7 +55,6 @@
     "zod": "^3.25.48"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/pg": "^8.11.10",
@@ -64,7 +63,7 @@
     "@types/react-dom": "^19",
     "@types/xlsx": "^0.0.35",
     "eslint": "^9",
-    "eslint-config-next": "15.3.3",
+    "eslint-config-next": "^16.2.12",
     "pg-copy-streams": "^7.0.0",
     "tailwindcss": "^4",
     "tsx": "^4.19.2",

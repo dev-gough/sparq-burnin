@@ -51,16 +51,19 @@ export function loadConfig(): Config {
   }
 
   // For API routes running in Next.js, the config is in the project root
-  // For scripts, it's relative to the script location
+  // For scripts, it's relative to the script location.
+  // turbopackIgnore: keep NFT tracing off process.cwd() / dynamic joins
+  // (otherwise Turbopack matches the whole project tree).
+  const cwd = /* turbopackIgnore: true */ process.cwd();
   const possiblePaths = [
-    path.join(process.cwd(), 'config.json'), // Next.js app root
-    path.join(__dirname, '..', '..', 'config.json'), // From src/lib
-    path.join(__dirname, '..', '..', '..', 'config.json'), // From compiled dist
+    path.join(/* turbopackIgnore: true */ cwd, 'config.json'), // Next.js app root
+    path.join(/* turbopackIgnore: true */ __dirname, '..', '..', 'config.json'), // From src/lib
+    path.join(/* turbopackIgnore: true */ __dirname, '..', '..', '..', 'config.json'), // From compiled dist
   ];
 
   let configPath: string | null = null;
   for (const possiblePath of possiblePaths) {
-    if (fs.existsSync(possiblePath)) {
+    if (fs.existsSync(/* turbopackIgnore: true */ possiblePath)) {
       configPath = possiblePath;
       break;
     }
@@ -71,7 +74,10 @@ export function loadConfig(): Config {
   }
 
   try {
-    const configContent = fs.readFileSync(configPath, 'utf-8');
+    const configContent = fs.readFileSync(
+      /* turbopackIgnore: true */ configPath,
+      'utf-8',
+    );
     cachedConfig = JSON.parse(configContent);
     return cachedConfig!;
   } catch (error) {

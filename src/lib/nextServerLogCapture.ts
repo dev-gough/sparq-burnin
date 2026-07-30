@@ -17,7 +17,9 @@ import {
 import { join } from 'path'
 import { createCipheriv, randomBytes } from 'crypto'
 
-const LOG_DIR = process.env.LOG_DIR || join(process.cwd(), 'logs')
+const LOG_DIR =
+  process.env.LOG_DIR ||
+  join(/* turbopackIgnore: true */ process.cwd(), 'logs')
 const ENCRYPTION_KEY = process.env.LOG_ENCRYPTION_KEY
 const MAX_NEXT_LOG_FILES = 14
 const MAX_LINE_CHARS = 16_000
@@ -27,8 +29,8 @@ let installed = false
 type StreamName = 'stdout' | 'stderr'
 
 function ensureDir() {
-  if (!existsSync(LOG_DIR)) {
-    mkdirSync(LOG_DIR, { recursive: true })
+  if (!existsSync(/* turbopackIgnore: true */ LOG_DIR)) {
+    mkdirSync(/* turbopackIgnore: true */ LOG_DIR, { recursive: true })
   }
 }
 
@@ -51,24 +53,27 @@ function encryptLine(data: string): string {
 
 function getNextLogFilePath(date = new Date()): string {
   const day = date.toISOString().split('T')[0]
-  return join(LOG_DIR, `next-${day}.log`)
+  return join(/* turbopackIgnore: true */ LOG_DIR, `next-${day}.log`)
 }
 
 function pruneOldNextLogs() {
   try {
     ensureDir()
-    const files = readdirSync(LOG_DIR)
+    const files = readdirSync(/* turbopackIgnore: true */ LOG_DIR)
       .filter((f) => f.startsWith('next-') && f.endsWith('.log'))
-      .map((name) => ({
-        name,
-        path: join(LOG_DIR, name),
-        time: statSync(join(LOG_DIR, name)).mtime.getTime(),
-      }))
+      .map((name) => {
+        const filePath = join(/* turbopackIgnore: true */ LOG_DIR, name)
+        return {
+          name,
+          path: filePath,
+          time: statSync(/* turbopackIgnore: true */ filePath).mtime.getTime(),
+        }
+      })
       .sort((a, b) => b.time - a.time)
 
     for (const f of files.slice(MAX_NEXT_LOG_FILES)) {
       try {
-        unlinkSync(f.path)
+        unlinkSync(/* turbopackIgnore: true */ f.path)
       } catch {
         /* ignore */
       }

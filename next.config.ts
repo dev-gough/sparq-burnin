@@ -1,11 +1,26 @@
 import type { NextConfig } from 'next'
 
+/**
+ * instrumentation.ts is compiled for both Node and Edge. Node-only modules
+ * (fs/path/crypto) used by log capture must not break the Edge bundle.
+ * register() no-ops when NEXT_RUNTIME !== 'nodejs'; these aliases silence
+ * analysis of the Node-only import graph under Turbopack (and Webpack).
+ */
 const nextConfig: NextConfig = {
-  /**
-   * instrumentation.ts is compiled for both Node and Edge. Node-only modules
-   * (fs/path/crypto) used by log capture must not break the Edge bundle.
-   * Alias them empty for Edge; register() no-ops when NEXT_RUNTIME !== 'nodejs'.
-   */
+  // Turbopack is the default bundler in Next.js 16.
+  turbopack: {
+    resolveAlias: {
+      // Empty-module stubs for Edge/browser analysis of instrumentation.node
+      fs: { browser: './src/lib/empty-module.ts' },
+      path: { browser: './src/lib/empty-module.ts' },
+      crypto: { browser: './src/lib/empty-module.ts' },
+      child_process: { browser: './src/lib/empty-module.ts' },
+      'node:fs': { browser: './src/lib/empty-module.ts' },
+      'node:path': { browser: './src/lib/empty-module.ts' },
+      'node:crypto': { browser: './src/lib/empty-module.ts' },
+    },
+  },
+  // Keep Webpack builds working if someone passes --webpack.
   webpack: (config, { nextRuntime }) => {
     if (nextRuntime === 'edge') {
       config.resolve = config.resolve ?? {}

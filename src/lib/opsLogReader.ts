@@ -32,7 +32,10 @@ const MAX_LINES_PER_FILE = 20_000
 
 function logDir(): string {
   // Prefer explicit LOG_DIR; burnin also uses ./log from config.paths.local
-  return process.env.LOG_DIR || path.join(process.cwd(), 'logs')
+  return (
+    process.env.LOG_DIR ||
+    path.join(/* turbopackIgnore: true */ process.cwd(), 'logs')
+  )
 }
 
 function encryptionKey(): string | undefined {
@@ -94,10 +97,11 @@ async function listCandidateFiles(
   const results: { abs: string; name: string; source: LogSourceId; mtime: Date }[] = []
 
   // Primary log dir + burnin legacy ./log + nested layouts
+  const cwd = /* turbopackIgnore: true */ process.cwd()
   const dirs = [
     dir,
-    path.join(process.cwd(), 'log'),
-    path.join(dir, 'logs'),
+    path.join(/* turbopackIgnore: true */ cwd, 'log'),
+    path.join(/* turbopackIgnore: true */ dir, 'logs'),
   ]
   // Optional extra dirs (colon-separated)
   const extra = process.env.OPS_EXTRA_LOG_DIRS?.split(':').map((s) => s.trim()).filter(Boolean) ?? []
@@ -106,7 +110,7 @@ async function listCandidateFiles(
   for (const d of dirs) {
     let entries: string[]
     try {
-      entries = await fs.readdir(d)
+      entries = await fs.readdir(/* turbopackIgnore: true */ d)
     } catch {
       continue
     }
@@ -120,9 +124,9 @@ async function listCandidateFiles(
         if (m && !daysSet.has(m[1])) continue
       }
 
-      const abs = path.join(d, name)
+      const abs = path.join(/* turbopackIgnore: true */ d, name)
       try {
-        const st = await fs.stat(abs)
+        const st = await fs.stat(/* turbopackIgnore: true */ abs)
         if (!st.isFile()) continue
         // For generic files, include if mtime within window
         if (source === 'files') {

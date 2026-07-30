@@ -59,7 +59,7 @@ function addSecurityHeaders(response: NextResponse) {
   return response;
 }
 
-// Export NextAuth middleware with conditional auth check
+// Export NextAuth-backed proxy with conditional auth check
 export default auth((req) => {
   const { pathname } = req.nextUrl;
 
@@ -101,7 +101,7 @@ export const config = {
      *
      * The api/* exclusions below MUST cover PUBLIC_PREFIXES/PUBLIC_EXACT
      * (they must stay literal — Next.js ignores dynamic matcher values).
-     * tests/middleware.test.ts fails if the two lists drift.
+     * tests/middleware.test.ts (proxy matcher pin) fails if the two lists drift.
      */
     "/((?!_next/static|_next/image|favicon.ico|.*\\..*|api/auth|api/health|api/ops|api/ingest|api/stations/v1).*)",
     "/api/((?!auth|health|ops|ingest|stations/v1).*)",

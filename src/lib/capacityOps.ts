@@ -199,8 +199,8 @@ export async function snapshotCapacity(): Promise<CapacitySnapshot> {
     }
   }
 
-  const toProcess = path.join(mainDir, 'to_process')
-  const processed = path.join(mainDir, 'processed')
+  const toProcess = path.join(/* turbopackIgnore: true */ mainDir, 'to_process')
+  const processed = path.join(/* turbopackIgnore: true */ mainDir, 'processed')
 
   const anyCached =
     dirSizeCache.has(toProcess) ||
