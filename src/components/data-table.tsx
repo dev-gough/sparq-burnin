@@ -59,6 +59,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 
+import { DateRangePicker } from "@/components/date-range-picker";
 import { loadDashboardPrefs, patchDashboardPrefs } from "@/lib/dashboard-prefs";
 import { cn } from "@/lib/utils";
 
@@ -301,6 +302,8 @@ interface DataTableProps {
   onDateFromFilterChange: (date: string) => void;
   dateToFilter: string;
   onDateToFilterChange: (date: string) => void;
+  /** Atomic range update (preferred for the custom date picker). */
+  onDateRangeChange?: (from: string, to: string) => void;
   /** Controlled status filter (lifted for hero Failures click). */
   statusFilter: string;
   onStatusFilterChange: (status: string) => void;
@@ -357,8 +360,7 @@ export function DataTableSkeleton({
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full sm:col-span-2" />
             </div>
             <div className="flex flex-wrap gap-2">
               <Skeleton className="h-9 w-40 rounded-md" />
@@ -449,6 +451,7 @@ export function DataTable({
   onDateFromFilterChange,
   dateToFilter,
   onDateToFilterChange,
+  onDateRangeChange,
   statusFilter,
   onStatusFilterChange,
   chartMode,
@@ -1028,24 +1031,20 @@ export function DataTable({
                 </SelectContent>
               </Select>
 
-              <Input
-                id="date-from"
-                type="date"
-                value={dateFromFilter}
-                onChange={(e) => onDateFromFilterChange(e.target.value)}
-                className="h-10 min-h-10 bg-background shadow-xs"
-                title="From date (UTC) — matches dashboard period filters"
-                aria-label="From date (UTC)"
-              />
-              <Input
-                id="date-to"
-                type="date"
-                value={dateToFilter}
-                onChange={(e) => onDateToFilterChange(e.target.value)}
-                className="h-10 min-h-10 bg-background shadow-xs"
-                title="To date (UTC) — matches dashboard period filters"
-                aria-label="To date (UTC)"
-              />
+              <div className="sm:col-span-2">
+                <DateRangePicker
+                  from={dateFromFilter}
+                  to={dateToFilter}
+                  onRangeChange={(from, to) => {
+                    if (onDateRangeChange) {
+                      onDateRangeChange(from, to);
+                      return;
+                    }
+                    onDateFromFilterChange(from);
+                    onDateToFilterChange(to);
+                  }}
+                />
+              </div>
             </div>
 
             {/* Mode switches — single-line chips */}

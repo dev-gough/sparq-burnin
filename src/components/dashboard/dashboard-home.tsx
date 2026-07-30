@@ -297,6 +297,19 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
     [promoteFromTableDates],
   );
 
+  /** Atomic table date range (custom picker) — one promote, one paint. */
+  const handleTableDateRangeChange = React.useCallback(
+    (from: string, to: string) => {
+      setSelectedDate("");
+      setBucketDrillUnlinked(false);
+      setTableDateFrom(from);
+      setTableDateTo(to);
+      tableDatesRef.current = { from, to };
+      promoteFromTableDates(from, to);
+    },
+    [promoteFromTableDates],
+  );
+
   /**
    * Chart bar/point click:
    * - day: table dates only (selectedDate); never promote dashboard
@@ -574,6 +587,7 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
                   onDateFromFilterChange={handleTableDateFromChange}
                   dateToFilter={tableDateTo}
                   onDateToFilterChange={handleTableDateToChange}
+                  onDateRangeChange={handleTableDateRangeChange}
                   statusFilter={statusFilter}
                   onStatusFilterChange={setStatusFilter}
                   chartMode={chartMode}
