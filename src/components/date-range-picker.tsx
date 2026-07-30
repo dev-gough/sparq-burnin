@@ -143,9 +143,11 @@ export function DateRangePicker({
 
   const [cursor, setCursor] = React.useState(initialCursor);
   const [slideDir, setSlideDir] = React.useState<"left" | "right" | null>(null);
-  // Draft selection while picking a custom range (before second click).
+  // Draft selection while picking a custom range (before second click / mid-drag).
   const [draftStart, setDraftStart] = React.useState<string | null>(null);
   const [hoverDay, setHoverDay] = React.useState<string | null>(null);
+  /** True while pointer is down on a day (click or drag). */
+  const [dragging, setDragging] = React.useState(false);
   /** Brief “Applied” beat before close so the page update doesn’t fire mid-click. */
   const [settling, setSettling] = React.useState(false);
   const [pendingRange, setPendingRange] = React.useState<{
@@ -153,6 +155,18 @@ export function DateRangePicker({
     to: string;
   } | null>(null);
   const settleTimers = React.useRef<number[]>([]);
+  const hoverDayRef = React.useRef<string | null>(null);
+  const draftStartRef = React.useRef<string | null>(null);
+  const dragRef = React.useRef<{
+    active: boolean;
+    origin: string | null;
+    moved: boolean;
+    /** draftStart before this pointer-down (for two-click complete). */
+    priorDraft: string | null;
+  }>({ active: false, origin: null, moved: false, priorDraft: null });
+
+  hoverDayRef.current = hoverDay;
+  draftStartRef.current = draftStart;
 
   const clearSettleTimers = React.useCallback(() => {
     for (const id of settleTimers.current) window.clearTimeout(id);
@@ -168,9 +182,16 @@ export function DateRangePicker({
     setCursor(initialCursor);
     setDraftStart(null);
     setHoverDay(null);
+    setDragging(false);
     setSlideDir(null);
     setPendingRange(null);
     setSettling(false);
+    dragRef.current = {
+      active: false,
+      origin: null,
+      moved: false,
+      priorDraft: null,
+    };
   }, [open, initialCursor, settling]);
 
   const committedFrom = from || "";
@@ -233,47 +254,159 @@ export function DateRangePicker({
    * Confirm → brief settle → close popover → then notify parent.
    * Closing first avoids the “page shot” of charts/table updating under an open panel.
    */
-  const applyRange = (nextFrom: string, nextTo: string) => {
-    if (settling) return;
-    let f = nextFrom;
-    let t = nextTo;
-    if (f && t && cmpYmd(f, t) > 0) {
-      const tmp = f;
-      f = t;
-      t = tmp;
-    }
-    clearSettleTimers();
-    setDraftStart(null);
-    setHoverDay(null);
-    setPendingRange({ from: f, to: t });
-    setSettling(true);
+  const applyRange = React.useCallback(
+    (nextFrom: string, nextTo: string) => {
+      if (settling) return;
+      let f = nextFrom;
+      let t = nextTo;
+      if (f && t && cmpYmd(f, t) > 0) {
+        const tmp = f;
+        f = t;
+        t = tmp;
+      }
+      clearSettleTimers();
+      setDraftStart(null);
+      setHoverDay(null);
+      setDragging(false);
+      dragRef.current = {
+        active: false,
+        origin: null,
+        moved: false,
+        priorDraft: null,
+      };
+      setPendingRange({ from: f, to: t });
+      setSettling(true);
 
-    // Close after a short “Applied” beat (lets Radix run exit animation cleanly).
-    settleTimers.current.push(
-      window.setTimeout(() => {
-        setOpen(false);
-      }, 280),
-    );
-    // Push range to parent after close starts — SWR updates feel calmer.
-    settleTimers.current.push(
-      window.setTimeout(() => {
-        onRangeChange(f, t);
-        setSettling(false);
-        setPendingRange(null);
-      }, 420),
-    );
+      // Close after a short “Applied” beat (lets Radix run exit animation cleanly).
+      settleTimers.current.push(
+        window.setTimeout(() => {
+          setOpen(false);
+        }, 280),
+      );
+      // Push range to parent after close starts — SWR updates feel calmer.
+      settleTimers.current.push(
+        window.setTimeout(() => {
+          onRangeChange(f, t);
+          setSettling(false);
+          setPendingRange(null);
+        }, 420),
+      );
+    },
+    [settling, clearSettleTimers, onRangeChange],
+  );
+
+  const updateHoverFromPoint = React.useCallback(
+    (clientX: number, clientY: number) => {
+      if (!dragRef.current.active) return;
+      const el = document.elementFromPoint(clientX, clientY);
+      const dayEl = el?.closest?.("[data-day]") as HTMLElement | null;
+      const ymd = dayEl?.dataset?.day;
+      if (!ymd) return;
+      if (dragRef.current.origin && ymd !== dragRef.current.origin) {
+        dragRef.current.moved = true;
+      }
+      setHoverDay(ymd);
+    },
+    [],
+  );
+
+  /**
+   * Pointer down starts a potential drag (and anchors the preview).
+   * Two-click still works: first down+up without move keeps draftStart;
+   * second click applies priorDraft → day.
+   *
+   * Drag tracking uses window pointermove + elementFromPoint so the range
+   * updates across cells (pointer capture would trap events on the origin).
+   */
+  const onDayPointerDown = (ymd: string, e: React.PointerEvent) => {
+    if (settling) return;
+    // Primary button / touch only
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+    dragRef.current = {
+      active: true,
+      origin: ymd,
+      moved: false,
+      priorDraft: draftStartRef.current,
+    };
+    setDragging(true);
+    // Preview from this origin while dragging (two-click second press flashes
+    // briefly from the new day; pointerup restores prior→end apply).
+    setDraftStart(ymd);
+    setHoverDay(ymd);
   };
 
-  const onDayClick = (ymd: string) => {
+  const onDayPointerEnter = (ymd: string) => {
     if (settling) return;
-    if (!draftStart) {
-      setDraftStart(ymd);
+    if (dragRef.current.active) {
+      if (dragRef.current.origin && ymd !== dragRef.current.origin) {
+        dragRef.current.moved = true;
+      }
       setHoverDay(ymd);
       return;
     }
-    // Second click completes the range.
-    applyRange(draftStart, ymd);
+    // Hover-preview end date after first click of two-click flow
+    if (draftStartRef.current) setHoverDay(ymd);
   };
+
+  const finishPointer = React.useCallback(
+    (endYmd: string | null) => {
+      if (!dragRef.current.active) return;
+      const { origin, moved, priorDraft } = dragRef.current;
+      dragRef.current.active = false;
+      setDragging(false);
+      if (settling || !origin) return;
+
+      const end = endYmd || hoverDayRef.current || origin;
+
+      if (moved) {
+        // Click+drag: origin → release day
+        applyRange(origin, end);
+        return;
+      }
+
+      // Pure click (no day-to-day move)
+      if (priorDraft) {
+        // Second click of two-click selection
+        applyRange(priorDraft, origin);
+      } else {
+        // First click — keep selecting
+        setDraftStart(origin);
+        setHoverDay(origin);
+      }
+    },
+    [settling, applyRange],
+  );
+
+  // While dragging: track day under cursor (works across months) + complete on up.
+  React.useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: PointerEvent) => {
+      updateHoverFromPoint(e.clientX, e.clientY);
+    };
+    const onWinUp = (e: PointerEvent) => {
+      updateHoverFromPoint(e.clientX, e.clientY);
+      finishPointer(hoverDayRef.current);
+    };
+    const onWinCancel = () => {
+      if (!dragRef.current.active) return;
+      const { priorDraft, origin, moved } = dragRef.current;
+      dragRef.current.active = false;
+      setDragging(false);
+      if (!moved) {
+        setDraftStart(priorDraft ?? origin);
+        setHoverDay(priorDraft ?? origin);
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onWinUp);
+    window.addEventListener("pointercancel", onWinCancel);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onWinUp);
+      window.removeEventListener("pointercancel", onWinCancel);
+    };
+  }, [dragging, finishPointer, updateHoverFromPoint]);
 
   const onOpenChange = (next: boolean) => {
     if (settling && !next) {
@@ -380,9 +513,9 @@ export function DateRangePicker({
               <p className="text-xs text-muted-foreground">
                 {settling
                   ? "Updating the dashboard…"
-                  : draftStart
-                    ? "Click an end date — or the same day for a single day"
-                    : "One click for presets · two clicks on the calendar"}
+                  : draftStart || dragging
+                    ? "Click or drag to the end date"
+                    : "Presets · click twice · or click and drag"}
               </p>
             </div>
             <div
@@ -496,8 +629,9 @@ export function DateRangePicker({
               preview={preview}
               draftStart={draftStart}
               today={today}
-              onDayClick={onDayClick}
-              onDayHover={settling ? () => {} : setHoverDay}
+              dragging={dragging}
+              onDayPointerDown={onDayPointerDown}
+              onDayPointerEnter={onDayPointerEnter}
               disabled={settling}
             />
             <MonthGrid
@@ -508,8 +642,9 @@ export function DateRangePicker({
               preview={preview}
               draftStart={draftStart}
               today={today}
-              onDayClick={onDayClick}
-              onDayHover={settling ? () => {} : setHoverDay}
+              dragging={dragging}
+              onDayPointerDown={onDayPointerDown}
+              onDayPointerEnter={onDayPointerEnter}
               disabled={settling}
             />
           </div>
@@ -568,8 +703,9 @@ function MonthGrid({
   preview,
   draftStart,
   today,
-  onDayClick,
-  onDayHover,
+  dragging,
+  onDayPointerDown,
+  onDayPointerEnter,
   disabled = false,
   className,
 }: {
@@ -579,8 +715,9 @@ function MonthGrid({
   preview: { a: string; b: string } | null;
   draftStart: string | null;
   today: string;
-  onDayClick: (ymd: string) => void;
-  onDayHover: (ymd: string | null) => void;
+  dragging: boolean;
+  onDayPointerDown: (ymd: string, e: React.PointerEvent) => void;
+  onDayPointerEnter: (ymd: string) => void;
   disabled?: boolean;
   className?: string;
 }) {
@@ -604,8 +741,10 @@ function MonthGrid({
         ))}
       </div>
       <div
-        className="grid grid-cols-7"
-        onMouseLeave={() => onDayHover(null)}
+        className={cn(
+          "grid grid-cols-7 touch-none",
+          dragging && "cursor-grabbing",
+        )}
       >
         {cells.map((cell) => {
           if (cell.kind === "empty") {
@@ -643,20 +782,30 @@ function MonthGrid({
               key={cell.key}
               className={cn(
                 "relative flex h-9 items-center justify-center",
-                showBar && "before:absolute before:inset-y-1 before:left-0 before:right-0 before:bg-primary/20",
-                showBar && (isStart || isSoftStart) && "before:left-1 before:rounded-l-full",
-                showBar && (isEnd || isSoftEnd) && "before:right-1 before:rounded-r-full",
+                showBar &&
+                  "before:absolute before:inset-y-1 before:left-0 before:right-0 before:bg-primary/20",
+                showBar &&
+                  (isStart || isSoftStart) &&
+                  "before:left-1 before:rounded-l-full",
+                showBar &&
+                  (isEnd || isSoftEnd) &&
+                  "before:right-1 before:rounded-r-full",
               )}
+              // Enter on the cell so dragging across empty padding still hits days
+              onPointerEnter={() => {
+                if (!disabled) onDayPointerEnter(ymd);
+              }}
             >
               <button
                 type="button"
                 disabled={disabled}
-                onClick={() => onDayClick(ymd)}
-                onMouseEnter={() => onDayHover(ymd)}
+                data-day={ymd}
+                onPointerDown={(e) => onDayPointerDown(ymd, e)}
                 className={cn(
                   "relative z-[1] flex size-8 items-center justify-center rounded-full text-sm tabular-nums transition-all duration-150",
                   "hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   "disabled:pointer-events-none",
+                  dragging ? "cursor-grabbing" : "cursor-pointer",
                   !isEndpoint &&
                     !isToday &&
                     "text-foreground hover:bg-muted/80",
