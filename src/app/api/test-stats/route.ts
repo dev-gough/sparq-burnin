@@ -505,6 +505,8 @@ export async function GET(request: NextRequest) {
       if (latestOnly) {
         // Latest-per-inverter in the window (DISTINCT ON inv_id — no serial join
         // until the page is known), then annotate only those rows.
+        // INVALID stays excluded HERE ONLY: "Latest" means the inverter's most
+        // recent real result, and its counts must agree with the summary hero.
         const annSql = testsAnnotationSql("lt.test_id");
         testsQuery = `
           WITH latest AS (
@@ -557,6 +559,8 @@ export async function GET(request: NextRequest) {
         `;
       } else {
         // All tests in window: page first, annotate the page only.
+        // No INVALID exclusion — the table's status filter (client-side) owns
+        // visibility, so the "Invalid" chip can actually match rows.
         const annSql = testsAnnotationSql("t.test_id");
         testsQuery = `
           WITH page AS (
@@ -570,7 +574,7 @@ export async function GET(request: NextRequest) {
               t.failure_description AS failure_reason,
               t.start_time_utc AS start_time
             FROM Tests t
-            WHERE t.overall_status != 'INVALID'
+            WHERE TRUE
               ${timeFilter}
               ${annSql}
             ORDER BY t.start_time_utc DESC
@@ -707,11 +711,13 @@ export async function GET(request: NextRequest) {
       }
 
       // EXISTS short-circuits — typically sub-ms with the time index / sequential scan stop
+      // Counts INVALID tests as data: the all-tests table can show them, so a
+      // window holding only INVALID rows must not paint the global empty state.
       const probe = `
         SELECT EXISTS (
           SELECT 1
           FROM Tests t
-          WHERE t.overall_status != 'INVALID'
+          WHERE TRUE
             ${timeFilter}
             ${annotationSql}
           LIMIT 1
