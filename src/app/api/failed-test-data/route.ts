@@ -154,8 +154,8 @@ export async function GET(request: NextRequest) {
     // Generate filename for the zip
     const zipFilename = `failed-tests-${validatedTimeRange}-${new Date().toISOString().split('T')[0]}.zip`;
     
-    // Return the zip file
-    return new NextResponse(zipBuffer, {
+    // Return the zip file (Uint8Array satisfies BodyInit; Node Buffer does not under stricter DOM types)
+    return new NextResponse(new Uint8Array(zipBuffer), {
       headers: {
         'Content-Type': 'application/zip',
         'Content-Disposition': `attachment; filename="${zipFilename}"`,
