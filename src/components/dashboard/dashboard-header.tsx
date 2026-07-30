@@ -127,6 +127,20 @@ export function DashboardHeader({
   const [themeMounted, setThemeMounted] = React.useState(false);
   React.useEffect(() => setThemeMounted(true), []);
   const contextDates = dashboardRangeContextLabel(dashboardRange);
+
+  // Fixed (not sticky): stays put under Radix Select scroll-lock, and content
+  // can scroll underneath so backdrop-blur has something to frosted-glass.
+  const headerRef = React.useRef<HTMLElement>(null);
+  const [headerHeight, setHeaderHeight] = React.useState(56);
+  React.useLayoutEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const update = () => setHeaderHeight(el.offsetHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   // Fixed-width clock (2-digit hour + always-shown dayPeriod) so the
   // "Updated …" slot never changes width when dataAsOf stamps or reloads.
   const dataAsOfLabel = React.useMemo(() => {
@@ -251,7 +265,11 @@ export function DashboardHeader({
   const metaClockText = dataAsOfLabel ?? "––:–– ––";
 
   return (
-    <header className="z-20 flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-4 lg:px-6">
+    <>
+    <header
+      ref={headerRef}
+      className="fixed top-0 right-0 left-10 z-20 flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-4 lg:px-6"
+    >
       <div className="flex min-w-0 items-center gap-1.5">
         <h1 className="truncate text-sm font-semibold tracking-tight sm:text-base lg:text-lg">
           BurnIn Dashboard
@@ -638,6 +656,13 @@ export function DashboardHeader({
         </DropdownMenu>
       </div>
     </header>
+    {/* Flow spacer matching fixed header height (incl. wrap on small screens). */}
+    <div
+      aria-hidden
+      className="shrink-0"
+      style={{ height: headerHeight }}
+    />
+    </>
   );
 }
 

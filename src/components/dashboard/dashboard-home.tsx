@@ -436,9 +436,9 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
   }, [showDashboardShell, showEmpty]);
 
   return (
-    // Header sits outside the scroll region so Radix Select/Dropdown scroll-lock
-    // cannot unstick it (sticky + remove-scroll was hiding the bar and shifting layout).
-    <div className="ml-10 flex h-dvh flex-col overflow-hidden">
+    // Fixed header (in DashboardHeader) keeps chrome visible under Radix Select
+    // scroll-lock and lets content scroll underneath for backdrop-blur.
+    <div className="ml-10 flex min-h-dvh flex-col">
       <DashboardHeader
         dashboardRange={dashboardRange}
         onPeriodPill={handlePeriodPill}
@@ -459,7 +459,7 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
       <div className="sr-only" role="status" aria-live="polite" aria-atomic>
         {tableFilterAnnouncement}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
           {showEmpty && (
             <DashboardEmptyState
