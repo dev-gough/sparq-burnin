@@ -251,10 +251,10 @@ export function DashboardHeader({
   const metaClockText = dataAsOfLabel ?? "––:–– ––";
 
   return (
-    <header className="sticky top-0 z-20 flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-4 lg:px-6">
+    <header className="z-20 flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-4 lg:px-6">
       <div className="flex min-w-0 items-center gap-1.5">
         <h1 className="truncate text-sm font-semibold tracking-tight sm:text-base lg:text-lg">
-          Burn-in Command Center
+          BurnIn Dashboard
         </h1>
         <InfoTooltip content={METRICS_HELP} side="bottom" />
       </div>
