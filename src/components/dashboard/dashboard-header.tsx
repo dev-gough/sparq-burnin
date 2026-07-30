@@ -374,17 +374,21 @@ export function DashboardHeader({
         </Select>
       </div>
 
-      {/* O25 + O31: fixed-width meta slot (lg+). Always painted; never
-          unmounts; never shares a justify-center flex with the toggles. */}
+      {/* Meta slot (lg+): fixed width for pill periods so center toggles
+          don’t reflow; custom ranges grow to fit the full date badge. */}
       <div
-        className="hidden w-[15.5rem] shrink-0 items-center justify-end gap-2 text-xs tabular-nums text-muted-foreground lg:flex"
+        className={cn(
+          "hidden shrink-0 items-center justify-end gap-2 text-xs tabular-nums text-muted-foreground lg:flex",
+          isCustom ? "w-auto min-w-[15.5rem]" : "w-[15.5rem]",
+        )}
         aria-live="polite"
       >
         <span
           className={cn(
-            "min-w-0 max-w-[7.25rem] truncate whitespace-nowrap text-right",
-            isCustom &&
-              "max-w-[8.5rem] rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-medium text-primary",
+            "whitespace-nowrap text-right",
+            isCustom
+              ? "rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 font-medium text-primary"
+              : "min-w-0 max-w-[7.25rem] truncate",
           )}
           title="UTC calendar days"
         >
