@@ -14,7 +14,13 @@ import {
   IconChevronsRight,
   IconCircleCheckFilled,
 } from "@tabler/icons-react";
-import { Link2, Unlink } from "lucide-react";
+import {
+  CalendarRange,
+  Link2,
+  Search,
+  Unlink,
+  X,
+} from "lucide-react";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import {
   ColumnDef,
@@ -51,9 +57,36 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
-import { Toggle } from "@/components/ui/toggle";
 
 import { loadDashboardPrefs, patchDashboardPrefs } from "@/lib/dashboard-prefs";
+import { cn } from "@/lib/utils";
+
+/** Result filter chips — plain labels for non-technical readers. */
+const STATUS_OPTIONS = [
+  { value: "all", label: "All results", short: "All" },
+  { value: "valid", label: "Passed or failed only", short: "Passed or failed" },
+  {
+    value: "PASS",
+    label: "Passed",
+    short: "Passed",
+    activeClass:
+      "border-emerald-600 bg-emerald-600 text-white shadow-sm hover:bg-emerald-600 hover:text-white dark:border-emerald-500 dark:bg-emerald-600",
+  },
+  {
+    value: "FAIL",
+    label: "Failed",
+    short: "Failed",
+    activeClass:
+      "border-rose-600 bg-rose-600 text-white shadow-sm hover:bg-rose-600 hover:text-white dark:border-rose-500 dark:bg-rose-600",
+  },
+  {
+    value: "INVALID",
+    label: "Invalid",
+    short: "Invalid",
+    activeClass:
+      "border-amber-600 bg-amber-600 text-white shadow-sm hover:bg-amber-600 hover:text-white dark:border-amber-500 dark:bg-amber-600",
+  },
+] as const;
 import {
   getCachedTestsTable,
   subscribeTestsTableCache,
@@ -300,40 +333,36 @@ export function DataTableSkeleton({
         value="outline"
         className="relative flex flex-col gap-4 overflow-auto"
       >
-        {/* Filters — same structure as loaded filter row */}
-        <div className="flex flex-col gap-4 rounded-lg border bg-muted/50 p-4">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end">
-            <div className="flex-1 space-y-2">
-              <Skeleton className="h-4 w-40" />
-              <Skeleton className="h-10 max-w-sm" />
-              <Skeleton className="h-3 w-32" />
+        {/* Filters — mirrors loaded filter card footprint */}
+        <div className="overflow-hidden rounded-xl border bg-card shadow-xs">
+          <div className="flex items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3 sm:px-5">
+            <div className="space-y-1">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-3 w-48" />
             </div>
-            <div className="flex flex-wrap gap-4">
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-12" />
-                <Skeleton className="h-10 w-32" />
-              </div>
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="h-10 w-64" />
-              </div>
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-16" />
-                <Skeleton className="h-10 w-40" />
-              </div>
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-20" />
-                <Skeleton className="h-10 w-40" />
-              </div>
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-16" />
-                <Skeleton className="h-10 w-40" />
+            <Skeleton className="h-9 w-28" />
+          </div>
+          <div className="space-y-5 p-4 sm:p-5">
+            <Skeleton className="h-12 w-full max-w-xl" />
+            <div className="space-y-2">
+              <Skeleton className="h-3 w-16" />
+              <div className="flex flex-wrap gap-2">
+                <Skeleton className="h-11 w-16 rounded-full" />
+                <Skeleton className="h-11 w-36 rounded-full" />
+                <Skeleton className="h-11 w-20 rounded-full" />
+                <Skeleton className="h-11 w-20 rounded-full" />
+                <Skeleton className="h-11 w-20 rounded-full" />
               </div>
             </div>
-            <div className="flex items-end gap-2">
-              <Skeleton className="h-10 w-24" />
-              <Skeleton className="h-10 w-10" />
-              <Skeleton className="h-10 w-24" />
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Skeleton className="h-11 w-48 rounded-lg" />
+              <Skeleton className="h-11 w-52 rounded-lg" />
             </div>
           </div>
         </div>
@@ -699,6 +728,66 @@ export function DataTable({
     return <DataTableSkeleton />;
   }
 
+  const statusMeta =
+    STATUS_OPTIONS.find((o) => o.value === statusFilter) ?? STATUS_OPTIONS[0];
+  const annotationActive = Boolean(
+    annotationFilter && annotationFilter !== "all",
+  );
+  const annotationLabel = annotationActive
+    ? annotationFilter.startsWith("group:")
+      ? `Category: ${annotationFilter.slice(6)}`
+      : annotationFilter
+    : null;
+  const firmwareActive = Boolean(firmwareFilter && firmwareFilter !== "all");
+  const serialActive = serialSearch.trim().length > 0;
+  const statusActive = statusFilter !== "all";
+  const datesActive = Boolean(dateFromFilter || dateToFilter);
+  const hasActiveFilters =
+    serialActive ||
+    statusActive ||
+    annotationActive ||
+    firmwareActive ||
+    datesActive;
+
+  const clearAllFilters = () => {
+    setSerialSearch("");
+    onStatusFilterChange("all");
+    setFirmwareFilter("all");
+    onAnnotationFilterChange("all");
+    onChartModeChange("all");
+    if (onClearDateFilter) {
+      onClearDateFilter();
+    } else {
+      onDateFromFilterChange("");
+      onDateToFilterChange("");
+    }
+  };
+
+  const formatUtcDay = (iso: string) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    if (!m) return iso;
+    const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    try {
+      return d.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+      });
+    } catch {
+      return iso;
+    }
+  };
+  const dateRangeLabel = (() => {
+    if (dateFromFilter && dateToFilter) {
+      return dateFromFilter === dateToFilter
+        ? formatUtcDay(dateFromFilter)
+        : `${formatUtcDay(dateFromFilter)} – ${formatUtcDay(dateToFilter)}`;
+    }
+    if (dateFromFilter) return `From ${formatUtcDay(dateFromFilter)}`;
+    if (dateToFilter) return `Until ${formatUtcDay(dateToFilter)}`;
+    return null;
+  })();
+
   return (
     <Tabs
       id="test-table"
@@ -709,136 +798,191 @@ export function DataTable({
         value="outline"
         className="relative flex flex-col gap-4 overflow-auto"
       >
-        {/* Filters Section */}
-        <div className="flex flex-col gap-4 rounded-lg border p-4 bg-muted/50">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end">
-            {/* Search Input */}
-            <div className="flex-1 space-y-2">
-              <Label htmlFor="serial-search">Search Serial Number</Label>
-              <Input
-                id="serial-search"
-                placeholder="e.g. 19*265 or 1908254*"
-                value={serialSearch}
-                onChange={(e) => setSerialSearch(e.target.value)}
-                className="max-w-sm"
-              />
-              <p className="text-xs text-muted-foreground">Use * as wildcard</p>
+        {/* Filters — executive-friendly: plain labels, large targets, active chips */}
+        <div className="overflow-hidden rounded-xl border bg-card shadow-xs">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-muted/40 px-4 py-3 sm:px-5">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold tracking-tight">
+                Find tests
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Narrow the list below. Click any row to open the full test.
+              </p>
+            </div>
+            {hasActiveFilters && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={clearAllFilters}
+                className="h-9 shrink-0 gap-1.5"
+              >
+                <X className="size-3.5" />
+                Clear all filters
+              </Button>
+            )}
+          </div>
+
+          <div className="space-y-5 p-4 sm:p-5">
+            {/* Search — primary action */}
+            <div className="space-y-1.5">
+              <Label
+                htmlFor="serial-search"
+                className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+              >
+                Serial number
+              </Label>
+              <div className="relative max-w-xl">
+                <Search
+                  className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden
+                />
+                <Input
+                  id="serial-search"
+                  placeholder="Type a serial number to search…"
+                  value={serialSearch}
+                  onChange={(e) => setSerialSearch(e.target.value)}
+                  className="h-12 border-border/80 bg-background pr-10 pl-10 text-base shadow-xs"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                {serialActive && (
+                  <button
+                    type="button"
+                    onClick={() => setSerialSearch("")}
+                    className="absolute top-1/2 right-2 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label="Clear serial search"
+                  >
+                    <X className="size-4" />
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Tip: use <span className="font-mono">*</span> as a wildcard —
+                e.g. <span className="font-mono">19*265</span>
+              </p>
             </div>
 
-            {/* Status Filter */}
-            <div className="flex justify-between sm:gap-4">
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Select
-                  value={statusFilter}
-                  onValueChange={onStatusFilterChange}
-                >
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="valid">Valid Only</SelectItem>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="PASS">Pass</SelectItem>
-                    <SelectItem value="FAIL">Fail</SelectItem>
-                    <SelectItem value="INVALID">Invalid</SelectItem>
-                  </SelectContent>
-                </Select>
+            {/* Result — big colored pills, no dropdown */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5">
+                <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Result
+                </Label>
+                <InfoTooltip content="Choose which test outcomes to show. “Passed or failed” hides invalid runs." />
               </div>
-              {/* Annotation Filter */}
+              <div
+                className="flex flex-wrap gap-2"
+                role="group"
+                aria-label="Filter by result"
+              >
+                {STATUS_OPTIONS.map((opt) => {
+                  const selected = statusFilter === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => onStatusFilterChange(opt.value)}
+                      aria-pressed={selected}
+                      title={opt.label}
+                      className={cn(
+                        "h-11 min-w-[4.5rem] rounded-full border px-4 text-sm font-medium transition-[color,background-color,border-color,box-shadow]",
+                        selected
+                          ? "activeClass" in opt && opt.activeClass
+                            ? opt.activeClass
+                            : "border-primary bg-primary text-primary-foreground shadow-sm"
+                          : "border-border bg-background text-foreground hover:bg-muted",
+                      )}
+                    >
+                      {opt.short}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Secondary filters */}
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <div className="space-y-2">
-                <Label>Annotation</Label>
+                <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Category / note
+                </Label>
                 <Select
                   value={annotationFilter}
                   onValueChange={onAnnotationFilterChange}
                 >
-                  <SelectTrigger className="w-64">
-                    <SelectValue placeholder="All Annotations" />
+                  <SelectTrigger className="h-11 w-full min-w-0 bg-background shadow-xs">
+                    <SelectValue placeholder="All categories" />
                   </SelectTrigger>
                   <SelectContent
                     className="max-h-[400px] overflow-y-auto [&>*[data-slot=select-scroll-up-button]]:hidden [&>*[data-slot=select-scroll-down-button]]:hidden"
                     position="popper"
                     sideOffset={4}
                   >
-                    <SelectItem value="all">All Annotations</SelectItem>
+                    <SelectItem value="all">All categories</SelectItem>
                     {annotationGroups.map((group) => {
-                      // Parse color once for both header and options
-                      const hex = group.group_color.replace('#', '')
-                      const r = parseInt(hex.substring(0, 2), 16)
-                      const g = parseInt(hex.substring(2, 4), 16)
-                      const b = parseInt(hex.substring(4, 6), 16)
-
-                      // Determine if we're in dark mode
-                      const isDark = resolvedTheme === 'dark'
-
-                      // Calculate header color (use full saturation in light mode, slightly reduced in dark mode)
+                      const hex = group.group_color.replace("#", "");
+                      const r = parseInt(hex.substring(0, 2), 16);
+                      const g = parseInt(hex.substring(2, 4), 16);
+                      const b = parseInt(hex.substring(4, 6), 16);
+                      const isDark = resolvedTheme === "dark";
                       const headerColor = isDark
                         ? `rgb(${Math.round(r * 0.85)}, ${Math.round(g * 0.85)}, ${Math.round(b * 0.85)})`
-                        : group.group_color
+                        : group.group_color;
 
                       return (
                         <React.Fragment key={group.group_name}>
-                          {/* Group Header - Clickable */}
                           <SelectItem
                             value={`group:${group.group_name}`}
-                            className="font-semibold rounded-none border-y border-white/20 hover:brightness-90 transition-all"
+                            className="rounded-none border-y border-white/20 font-semibold transition-all hover:brightness-90"
                             style={{
                               backgroundColor: headerColor,
-                              color: 'white'
+                              color: "white",
                             }}
                           >
                             {group.group_name} (All)
                           </SelectItem>
-                          {/* Individual Options */}
                           {group.options.map((option) => {
-                            // Calculate lighter color for light mode, darker for dark mode
-                            let optionColor: string
+                            let optionColor: string;
                             if (isDark) {
-                              // Dark mode: darker color (reduce brightness by 40%)
-                              const darkR = Math.round(r * 0.6)
-                              const darkG = Math.round(g * 0.6)
-                              const darkB = Math.round(b * 0.6)
-                              optionColor = `rgb(${darkR}, ${darkG}, ${darkB})`
+                              optionColor = `rgb(${Math.round(r * 0.6)}, ${Math.round(g * 0.6)}, ${Math.round(b * 0.6)})`;
                             } else {
-                              // Light mode: lighter color (mix 70% toward white)
-                              const lightR = Math.round(r + (255 - r) * 0.7)
-                              const lightG = Math.round(g + (255 - g) * 0.7)
-                              const lightB = Math.round(b + (255 - b) * 0.7)
-                              optionColor = `rgb(${lightR}, ${lightG}, ${lightB})`
+                              optionColor = `rgb(${Math.round(r + (255 - r) * 0.7)}, ${Math.round(g + (255 - g) * 0.7)}, ${Math.round(b + (255 - b) * 0.7)})`;
                             }
-
                             return (
                               <SelectItem
                                 key={option}
                                 value={option}
-                                className="pl-6 rounded-none border-b border-white/10 hover:brightness-95 transition-all"
+                                className="rounded-none border-b border-white/10 pl-6 transition-all hover:brightness-95"
                                 style={{
                                   backgroundColor: optionColor,
-                                  color: isDark ? 'white' : 'inherit'
+                                  color: isDark ? "white" : "inherit",
                                 }}
                               >
                                 {option}
                               </SelectItem>
-                            )
+                            );
                           })}
                         </React.Fragment>
-                      )
+                      );
                     })}
                   </SelectContent>
                 </Select>
               </div>
-              {/* Firmware Version Filter */}
+
               <div className="space-y-2">
-                <Label>Firmware</Label>
+                <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Firmware version
+                </Label>
                 <Select
                   value={firmwareFilter}
                   onValueChange={setFirmwareFilter}
                 >
-                  <SelectTrigger className="w-40">
-                    <SelectValue />
+                  <SelectTrigger className="h-11 w-full min-w-0 bg-background shadow-xs">
+                    <SelectValue placeholder="All versions" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Versions</SelectItem>
+                    <SelectItem value="all">All versions</SelectItem>
                     {firmwareVersions.map((version) => (
                       <SelectItem key={version} value={version}>
                         {version}
@@ -847,104 +991,211 @@ export function DataTable({
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            {/* Date Range Filters — UTC calendar days (match charts / hero) */}
-            <div className="flex justify-between sm:gap-4">
+
               <div className="space-y-2">
-                <Label htmlFor="date-from" className="text-xs sm:text-sm">
-                  From{" "}
-                  <span className="font-normal text-muted-foreground">(UTC)</span>
+                <Label
+                  htmlFor="date-from"
+                  className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                >
+                  From date{" "}
+                  <span className="font-normal normal-case tracking-normal">
+                    (UTC)
+                  </span>
                 </Label>
                 <Input
                   id="date-from"
                   type="date"
                   value={dateFromFilter}
                   onChange={(e) => onDateFromFilterChange(e.target.value)}
-                  className="h-10 min-h-10 w-36 sm:w-40 sm:px-3 px-1"
+                  className="h-11 min-h-11 bg-background shadow-xs"
                   title="UTC calendar day — matches dashboard period filters"
                 />
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="date-to" className="text-xs sm:text-sm">
-                  To{" "}
-                  <span className="font-normal text-muted-foreground">(UTC)</span>
+                <Label
+                  htmlFor="date-to"
+                  className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                >
+                  To date{" "}
+                  <span className="font-normal normal-case tracking-normal">
+                    (UTC)
+                  </span>
                 </Label>
                 <Input
                   id="date-to"
                   type="date"
                   value={dateToFilter}
                   onChange={(e) => onDateToFilterChange(e.target.value)}
-                  className="h-10 min-h-10 w-36 sm:w-40 sm:px-3 px-1"
+                  className="h-11 min-h-11 bg-background shadow-xs"
                   title="UTC calendar day — matches dashboard period filters"
                 />
               </div>
             </div>
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2">
-              <div className="flex flex-col items-center gap-1">
-                <InfoTooltip content="Linked to Result mode in the header (Latest / All tests). Latest = one row per inverter (same population as the summary cards)." />
-                <Toggle
-                  pressed={latestOnly}
-                  onPressedChange={(pressed) =>
-                    onChartModeChange(pressed ? "recent" : "all")
+
+            {/* Mode switches — full labels, not icon-only */}
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={latestOnly}
+                  onClick={() =>
+                    onChartModeChange(latestOnly ? "all" : "recent")
                   }
-                  variant="outline"
-                  className="h-10 px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-                  aria-label={
+                  className={cn(
+                    "flex h-11 min-w-0 items-center gap-2.5 rounded-lg border px-3 text-left text-sm transition-colors sm:min-w-[14rem]",
                     latestOnly
-                      ? "Latest only (matches header Latest)"
-                      : "All test runs (matches header All tests)"
-                  }
-                  title={
-                    latestOnly
-                      ? "On — same as header Latest"
-                      : "Off — same as header All tests"
-                  }
+                      ? "border-primary/40 bg-primary/10 text-foreground"
+                      : "border-border bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                  )}
+                  title="Matches Latest / All tests in the page header"
                 >
-                  Latest Only
-                </Toggle>
+                  <span
+                    className={cn(
+                      "flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold",
+                      latestOnly
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-muted",
+                    )}
+                    aria-hidden
+                  >
+                    {latestOnly ? "✓" : ""}
+                  </span>
+                  <span className="min-w-0 flex-1 leading-tight">
+                    <span className="block font-medium text-foreground">
+                      One row per inverter
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      Latest test only
+                    </span>
+                  </span>
+                </button>
+                <InfoTooltip content="Same as Latest / All tests in the header. On = one row per inverter (matches the summary cards)." />
               </div>
-              <div className="flex flex-col items-center gap-1">
-                <InfoTooltip content="When linked, table dates stay in sync with the dashboard period (pills / custom range). Annotation filters always apply to both the dashboard and table." />
-                <Button
-                  size="sm"
-                  variant={filterLinked ? "default" : "outline"}
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={filterLinked}
                   onClick={() => onFilterLinkedChange(!filterLinked)}
+                  className={cn(
+                    "flex h-11 min-w-0 items-center gap-2.5 rounded-lg border px-3 text-left text-sm transition-colors sm:min-w-[14rem]",
+                    filterLinked
+                      ? "border-primary/40 bg-primary/10 text-foreground"
+                      : "border-border bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                  )}
                   title={
                     filterLinked
-                      ? "Table dates linked to dashboard period"
-                      : "Table dates independent of dashboard"
+                      ? "Table dates follow the dashboard period"
+                      : "Table dates are independent of the dashboard"
                   }
-                  className="h-10"
                 >
-                  {filterLinked ? <Link2 className="h-4 w-4" /> : <Unlink className="h-4 w-4" />}
-                </Button>
-              </div>
-              <div className="flex flex-col items-center gap-1">
-                <div className="h-4" /> {/* Spacer to match tooltip height */}
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setSerialSearch("");
-                    onStatusFilterChange("all");
-                    setFirmwareFilter("all");
-                    onAnnotationFilterChange("all");
-                    // Align with header All tests (same switch as Latest only)
-                    onChartModeChange("all");
-                    // Prefer parent clear (handles linked period revert + both dates atomically)
-                    if (onClearDateFilter) {
-                      onClearDateFilter();
-                    } else {
-                      onDateFromFilterChange("");
-                      onDateToFilterChange("");
-                    }
-                  }}
-                  className="h-10"
-                >
-                  Clear Filters
-                </Button>
+                  <span
+                    className={cn(
+                      "flex size-5 shrink-0 items-center justify-center rounded-md",
+                      filterLinked
+                        ? "text-primary"
+                        : "text-muted-foreground",
+                    )}
+                    aria-hidden
+                  >
+                    {filterLinked ? (
+                      <Link2 className="size-4" />
+                    ) : (
+                      <Unlink className="size-4" />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1 leading-tight">
+                    <span className="block font-medium text-foreground">
+                      {filterLinked
+                        ? "Dates match dashboard"
+                        : "Dates set separately"}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      {filterLinked
+                        ? "Pills update this table"
+                        : "Pick your own range"}
+                    </span>
+                  </span>
+                </button>
+                <InfoTooltip content="When on, table dates stay in sync with the dashboard period (7d / 30d / …). Category filters always apply to both." />
               </div>
             </div>
+
+            {/* Active filter chips — dismissible summary */}
+            {hasActiveFilters && (
+              <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Showing:
+                </span>
+                {serialActive && (
+                  <button
+                    type="button"
+                    onClick={() => setSerialSearch("")}
+                    className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/60 px-2.5 text-xs font-medium transition-colors hover:bg-muted"
+                  >
+                    <span className="truncate">
+                      Serial: {serialSearch.trim()}
+                    </span>
+                    <X className="size-3.5 shrink-0 opacity-60" />
+                  </button>
+                )}
+                {statusActive && (
+                  <button
+                    type="button"
+                    onClick={() => onStatusFilterChange("all")}
+                    className={cn(
+                      "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors",
+                      "activeClass" in statusMeta && statusMeta.activeClass
+                        ? statusMeta.activeClass
+                        : "border-border bg-muted/60 hover:bg-muted",
+                    )}
+                  >
+                    {statusMeta.short}
+                    <X className="size-3.5 shrink-0 opacity-80" />
+                  </button>
+                )}
+                {annotationLabel && (
+                  <button
+                    type="button"
+                    onClick={() => onAnnotationFilterChange("all")}
+                    className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/60 px-2.5 text-xs font-medium transition-colors hover:bg-muted"
+                  >
+                    <span className="truncate">{annotationLabel}</span>
+                    <X className="size-3.5 shrink-0 opacity-60" />
+                  </button>
+                )}
+                {firmwareActive && (
+                  <button
+                    type="button"
+                    onClick={() => setFirmwareFilter("all")}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-muted/60 px-2.5 text-xs font-medium transition-colors hover:bg-muted"
+                  >
+                    FW {firmwareFilter}
+                    <X className="size-3.5 shrink-0 opacity-60" />
+                  </button>
+                )}
+                {datesActive && dateRangeLabel && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onClearDateFilter) onClearDateFilter();
+                      else {
+                        onDateFromFilterChange("");
+                        onDateToFilterChange("");
+                      }
+                    }}
+                    className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/60 px-2.5 text-xs font-medium transition-colors hover:bg-muted"
+                  >
+                    <CalendarRange className="size-3.5 shrink-0 opacity-70" />
+                    <span className="truncate">{dateRangeLabel}</span>
+                    <X className="size-3.5 shrink-0 opacity-60" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <div className="overflow-hidden rounded-lg border">
