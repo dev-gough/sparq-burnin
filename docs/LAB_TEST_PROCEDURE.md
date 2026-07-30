@@ -21,7 +21,7 @@ pytest tests (station); do not re-test those by hand.
 | LT-04 | Power cut to station PC (3 windows) | 1 | PASS | (a) run resumed w/ original start; (b) outbox survived hard cut, redelivered; (c) mid-burst cut: 28 pre/9 post + 2 receipt-dedup duplicate:true — exactly-once held throughout |
 | LT-05 | Very long duration test | 1 | | |
 | LT-06 | Dashboard unreachable / backlog drain / GUI | 2 | | |
-| LT-07 | Remote disable mid-test | 2 | | |
+| LT-07 | Remote disable mid-test | 2 | PASS | 2026-07-30, new semantics: mid-test disable → upload still accepted; reason shown in GUI; new starts refused; re-enable unblocked. (Dashboard visibility gap was an unrelated UI-overhaul bug — INVALID rows stripped in SQL — fixed in 312281c) |
 | LT-08 | Clock skew + wrong secret | 2 | | |
 | LT-09 | Server deploy/restart mid-upload | 2 | | |
 | LT-10 | RETEST multi-row results CSV | 2 | | |
