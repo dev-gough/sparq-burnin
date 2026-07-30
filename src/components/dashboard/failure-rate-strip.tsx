@@ -37,7 +37,7 @@ interface FailureRateStripProps {
 }
 
 /** Shared plot height — skeleton, empty, and chart use this so layout never jumps. */
-export const FAILURE_RATE_STRIP_HEIGHT_PX = 156;
+const FAILURE_RATE_STRIP_HEIGHT_PX = 156;
 
 /**
  * Nice upper bound for a 0–max percentage axis with room above the peak rate.

@@ -301,7 +301,7 @@ const MAX_CONTINUOUS_DAY_FILL = 120;
  * Inclusive YMD bounds for a bounded dashboard range (pills 7/30/90d or custom).
  * Returns null for all-time or open-ended custom (no continuous axis fill).
  */
-export function continuousDayBounds(
+function continuousDayBounds(
   range: DashboardRange,
 ): { from: string; to: string } | null {
   if (range.kind === "all") return null;

@@ -40,8 +40,6 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
-export const description = "Burnin Pass/Fail Results";
-
 /** Bucket total below this is treated as thin sample (opacity + tooltip cue). */
 const LOW_SAMPLE_N = 10;
 /** Failure rate at/above this (%) gets stronger point emphasis + bold rate row. */
