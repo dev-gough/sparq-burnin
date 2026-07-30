@@ -294,21 +294,8 @@ export function ChartAreaInteractive({
           splitLine: { show: false },
         },
       ],
-      graphic:
-        chartData.length === 0
-          ? [
-              {
-                type: "text" as const,
-                left: "center",
-                top: "middle",
-                style: {
-                  text: "No test activity in this range",
-                  fontSize: 14,
-                  fill: mutedColor,
-                },
-              },
-            ]
-          : [],
+      // Empty state is rendered in React (filter-aware copy), not ECharts graphic.
+      graphic: [],
       series: [
         passAsLine
           ? {
@@ -582,6 +569,11 @@ export function ChartAreaInteractive({
   );
 
   // One short subtitle (O5); methodology lives in header help + Fails badge tooltip.
+  const annotationOn = Boolean(
+    annotationFilter && annotationFilter !== "all",
+  );
+  const annotationLabel = formatAnnotationFilterLabel(annotationFilter);
+
   const subtitle = [
     chartMode === "recent" ? "Latest per inverter" : "All tests",
     `per ${bucket}`,
@@ -591,10 +583,36 @@ export function ChartAreaInteractive({
       : activeDaysOnly
         ? "active test days only"
         : null,
-    annotationFilter && annotationFilter !== "all" ? "annotation filter on" : null,
+    annotationOn ? "annotation filter on" : null,
   ]
     .filter(Boolean)
     .join(" · ");
+
+  const periodPhrase = dashboardRangeLabel(dashboardRange);
+  const showVolumeEmpty = !loading && chartData.length === 0;
+  const emptyTitle = annotationOn
+    ? "No tests match the current filters"
+    : `No test activity in ${periodPhrase}`;
+  const emptyHints: string[] = [];
+  if (annotationOn && annotationLabel) {
+    emptyHints.push(
+      `Annotation filter is set to ${annotationLabel} — nothing in this period has that tag.`,
+    );
+  } else if (annotationOn) {
+    emptyHints.push(
+      "An annotation filter is active and excludes every test in this period.",
+    );
+  }
+  if (chartMode === "recent") {
+    emptyHints.push("Result mode is Latest (one row per inverter).");
+  }
+  if (annotationOn) {
+    emptyHints.push(
+      "Clear or change the category filter in Find tests, or widen the period above.",
+    );
+  } else {
+    emptyHints.push("Widen the period above if you expected data here.");
+  }
 
   const allowedBuckets = React.useMemo(
     () => new Set(allowedBucketsForRange(dashboardRange)),
@@ -669,6 +687,24 @@ export function ChartAreaInteractive({
             style={{ height: chartHeightPx }}
             aria-hidden
           />
+        ) : showVolumeEmpty ? (
+          <div
+            className="flex flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-border/70 bg-muted/15 px-4"
+            style={{ height: chartHeightPx }}
+            role="status"
+          >
+            <p className="text-center text-sm font-medium text-foreground/90">
+              {emptyTitle}
+            </p>
+            {emptyHints.map((hint) => (
+              <p
+                key={hint}
+                className="max-w-md text-center text-xs text-muted-foreground"
+              >
+                {hint}
+              </p>
+            ))}
+          </div>
         ) : (
           <div
             ref={revealRef}
@@ -699,4 +735,13 @@ export function ChartAreaInteractive({
       </CardContent>
     </Card>
   );
+}
+
+/** Human label for table/dashboard annotation filter keys. */
+function formatAnnotationFilterLabel(filter: string): string | null {
+  if (!filter || filter === "all") return null;
+  if (filter.startsWith("group:")) {
+    return `category “${filter.slice(6)}”`;
+  }
+  return `“${filter}”`;
 }
