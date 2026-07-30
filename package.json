@@ -9,7 +9,6 @@
     "lint": "eslint .",
     "test": "vitest run",
     "ingest": "tsx scripts/ingest.ts",
-    "ingest-excel": "tsx scripts/ingest-excel-annotations.ts",
     "ingest-csv-annotations": "tsx scripts/ingest-csv-annotations.ts",
     "backup-annotations": "tsx scripts/backup-annotations.ts",
     "reprocess": "tsx scripts/reprocess.ts",
@@ -68,7 +67,6 @@
     "tsx": "^4.19.2",
     "tw-animate-css": "^1.3.3",
     "typescript": "^5",
-    "vitest": "^4.1.10",
-    "xlsx": "^0.18.5"
+    "vitest": "^4.1.10"
   }
 }
