@@ -533,11 +533,10 @@ export function DataTable({
     const { signal } = abort;
 
     const fetchData = async () => {
-      // Stay interactive on cache hit. On miss, load in place — do NOT unmount
-      // the filter card (that caused a full filter redraw on 30d→90d).
+      // Stay interactive on cache hit. On miss, soft-refresh in place:
+      // keep previous rows (no empty flash) and never unmount the filter card.
       if (!getCachedTestsTable(testsFetchKey)) {
         setLoading(true);
-        setData([]);
       }
       try {
         // Swallow abort on the parallel firmware fetch so cleanup never
@@ -1123,8 +1122,8 @@ export function DataTable({
 
         <div
           className={cn(
-            "overflow-hidden rounded-lg border transition-opacity",
-            loading && data.length > 0 && "opacity-70",
+            "overflow-hidden rounded-lg border transition-opacity duration-500 ease-out",
+            loading && data.length > 0 && "opacity-55",
           )}
         >
           <Table>

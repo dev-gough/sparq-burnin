@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   CalendarRange,
@@ -145,51 +146,95 @@ export function DateRangePicker({
   // Draft selection while picking a custom range (before second click).
   const [draftStart, setDraftStart] = React.useState<string | null>(null);
   const [hoverDay, setHoverDay] = React.useState<string | null>(null);
+  /** Brief “Applied” beat before close so the page update doesn’t fire mid-click. */
+  const [settling, setSettling] = React.useState(false);
+  const [pendingRange, setPendingRange] = React.useState<{
+    from: string;
+    to: string;
+  } | null>(null);
+  const settleTimers = React.useRef<number[]>([]);
+
+  const clearSettleTimers = React.useCallback(() => {
+    for (const id of settleTimers.current) window.clearTimeout(id);
+    settleTimers.current = [];
+  }, []);
+
+  React.useEffect(() => () => clearSettleTimers(), [clearSettleTimers]);
 
   // Sync month view when opened with a new committed range.
   React.useEffect(() => {
     if (!open) return;
+    if (settling) return; // don’t reset mid “Applied” animation
     setCursor(initialCursor);
     setDraftStart(null);
     setHoverDay(null);
     setSlideDir(null);
-  }, [open, initialCursor]);
+    setPendingRange(null);
+    setSettling(false);
+  }, [open, initialCursor, settling]);
 
   const committedFrom = from || "";
   const committedTo = to || "";
   const hasRange = Boolean(committedFrom || committedTo);
 
+  // While settling, paint the range the user just chose (before parent props catch up).
+  const displayFrom = pendingRange ? pendingRange.from : committedFrom;
+  const displayTo = pendingRange ? pendingRange.to : committedTo;
+
   // Normalize preview range for highlighting
   const preview =
-    draftStart && hoverDay
-      ? cmpYmd(draftStart, hoverDay) <= 0
-        ? { a: draftStart, b: hoverDay }
-        : { a: hoverDay, b: draftStart }
-      : draftStart
-        ? { a: draftStart, b: draftStart }
-        : committedFrom && committedTo
-          ? {
-              a:
-                cmpYmd(committedFrom, committedTo) <= 0
-                  ? committedFrom
-                  : committedTo,
-              b:
-                cmpYmd(committedFrom, committedTo) <= 0
-                  ? committedTo
-                  : committedFrom,
-            }
-          : committedFrom
-            ? { a: committedFrom, b: committedFrom }
-            : committedTo
-              ? { a: committedTo, b: committedTo }
-              : null;
+    settling && pendingRange
+      ? pendingRange.from && pendingRange.to
+        ? {
+            a:
+              cmpYmd(pendingRange.from, pendingRange.to) <= 0
+                ? pendingRange.from
+                : pendingRange.to,
+            b:
+              cmpYmd(pendingRange.from, pendingRange.to) <= 0
+                ? pendingRange.to
+                : pendingRange.from,
+          }
+        : pendingRange.from
+          ? { a: pendingRange.from, b: pendingRange.from }
+          : pendingRange.to
+            ? { a: pendingRange.to, b: pendingRange.to }
+            : null
+      : draftStart && hoverDay
+        ? cmpYmd(draftStart, hoverDay) <= 0
+          ? { a: draftStart, b: hoverDay }
+          : { a: hoverDay, b: draftStart }
+        : draftStart
+          ? { a: draftStart, b: draftStart }
+          : committedFrom && committedTo
+            ? {
+                a:
+                  cmpYmd(committedFrom, committedTo) <= 0
+                    ? committedFrom
+                    : committedTo,
+                b:
+                  cmpYmd(committedFrom, committedTo) <= 0
+                    ? committedTo
+                    : committedFrom,
+              }
+            : committedFrom
+              ? { a: committedFrom, b: committedFrom }
+              : committedTo
+                ? { a: committedTo, b: committedTo }
+                : null;
 
   const goMonth = (delta: number) => {
+    if (settling) return;
     setSlideDir(delta > 0 ? "left" : "right");
     setCursor((c) => addMonths(c.y, c.m, delta));
   };
 
+  /**
+   * Confirm → brief settle → close popover → then notify parent.
+   * Closing first avoids the “page shot” of charts/table updating under an open panel.
+   */
   const applyRange = (nextFrom: string, nextTo: string) => {
+    if (settling) return;
     let f = nextFrom;
     let t = nextTo;
     if (f && t && cmpYmd(f, t) > 0) {
@@ -197,13 +242,30 @@ export function DateRangePicker({
       f = t;
       t = tmp;
     }
-    onRangeChange(f, t);
+    clearSettleTimers();
     setDraftStart(null);
     setHoverDay(null);
-    setOpen(false);
+    setPendingRange({ from: f, to: t });
+    setSettling(true);
+
+    // Close after a short “Applied” beat (lets Radix run exit animation cleanly).
+    settleTimers.current.push(
+      window.setTimeout(() => {
+        setOpen(false);
+      }, 280),
+    );
+    // Push range to parent after close starts — SWR updates feel calmer.
+    settleTimers.current.push(
+      window.setTimeout(() => {
+        onRangeChange(f, t);
+        setSettling(false);
+        setPendingRange(null);
+      }, 420),
+    );
   };
 
   const onDayClick = (ymd: string) => {
+    if (settling) return;
     if (!draftStart) {
       setDraftStart(ymd);
       setHoverDay(ymd);
@@ -213,34 +275,57 @@ export function DateRangePicker({
     applyRange(draftStart, ymd);
   };
 
+  const onOpenChange = (next: boolean) => {
+    if (settling && !next) {
+      // Allow close during settle; keep timers running for parent update.
+      setOpen(false);
+      return;
+    }
+    if (settling && next) return;
+    setOpen(next);
+  };
+
   const activePreset = PRESETS.find((p) => {
     const r = p.get();
-    return r.from === committedFrom && r.to === committedTo;
+    return r.from === displayFrom && r.to === displayTo;
   })?.id;
 
-  const triggerLabel = !hasRange
-    ? "Any date"
-    : committedFrom && committedTo && committedFrom === committedTo
-      ? formatShort(committedFrom)
-      : committedFrom && committedTo
-        ? `${formatShort(committedFrom)} – ${formatShort(committedTo)}`
-        : committedFrom
-          ? `From ${formatShort(committedFrom)}`
-          : `Until ${formatShort(committedTo!)}`;
+  const rangeLabel = (f: string, t: string, empty = "Any date") => {
+    if (!f && !t) return empty;
+    if (f && t && f === t) return formatShort(f);
+    if (f && t) return `${formatShort(f)} – ${formatShort(t)}`;
+    if (f) return `From ${formatShort(f)}`;
+    return `Until ${formatShort(t)}`;
+  };
+
+  const triggerLabel = rangeLabel(
+    pendingRange?.from ?? committedFrom,
+    pendingRange?.to ?? committedTo,
+  );
+  const panelLabel = settling
+    ? rangeLabel(displayFrom, displayTo, "All time")
+    : draftStart
+      ? `${formatShort(draftStart)}${
+          hoverDay && hoverDay !== draftStart
+            ? ` → ${formatShort(hoverDay)}`
+            : " → …"
+        }`
+      : rangeLabel(committedFrom, committedTo, "All time");
 
   const leftMonth = cursor;
   const rightMonth = addMonths(cursor.y, cursor.m, 1);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <button
           type="button"
           className={cn(
-            "group relative flex h-10 w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-input bg-background px-3 text-left text-sm shadow-xs transition-[border-color,box-shadow,background-color] outline-none",
+            "group relative flex h-10 w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-input bg-background px-3 text-left text-sm shadow-xs transition-[border-color,box-shadow,background-color,transform] duration-300 outline-none",
             "hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
             open && "border-ring ring-[3px] ring-ring/40",
-            hasRange && "border-primary/30 bg-primary/5",
+            (hasRange || pendingRange) && "border-primary/30 bg-primary/5",
+            settling && "border-primary/50 bg-primary/10",
             triggerClassName,
             className,
           )}
@@ -248,15 +333,20 @@ export function DateRangePicker({
         >
           <span
             className={cn(
-              "flex size-7 shrink-0 items-center justify-center rounded-md transition-colors",
-              hasRange
+              "flex size-7 shrink-0 items-center justify-center rounded-md transition-all duration-300",
+              hasRange || pendingRange
                 ? "bg-primary/15 text-primary"
                 : "bg-muted text-muted-foreground group-hover:text-foreground",
+              settling && "bg-primary text-primary-foreground scale-105",
             )}
           >
-            <CalendarRange className="size-3.5" />
+            {settling ? (
+              <Check className="size-3.5" strokeWidth={2.5} />
+            ) : (
+              <CalendarRange className="size-3.5" />
+            )}
           </span>
-          <span className="min-w-0 flex-1 truncate font-medium tabular-nums tracking-tight">
+          <span className="min-w-0 flex-1 truncate font-medium tabular-nums tracking-tight transition-opacity duration-300">
             {triggerLabel}
           </span>
           <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
@@ -267,59 +357,82 @@ export function DateRangePicker({
 
       <PopoverContent
         align="end"
-        className="w-[min(100vw-1.5rem,36rem)] overflow-hidden p-0"
+        className={cn(
+          "w-[min(100vw-1.5rem,36rem)] overflow-hidden p-0 transition-[box-shadow] duration-300",
+          settling && "ring-2 ring-primary/30",
+        )}
         onOpenAutoFocus={(e) => e.preventDefault()}
+        onInteractOutside={(e) => {
+          if (settling) e.preventDefault();
+        }}
+        onEscapeKeyDown={(e) => {
+          if (settling) e.preventDefault();
+        }}
       >
         {/* Ambient header */}
         <div className="relative border-b bg-gradient-to-br from-primary/10 via-muted/40 to-transparent px-4 pt-3.5 pb-3">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold tracking-tight">Date range</p>
+              <p className="text-sm font-semibold tracking-tight">
+                {settling ? "Range applied" : "Date range"}
+              </p>
               <p className="text-xs text-muted-foreground">
-                {draftStart
-                  ? "Click an end date — or the same day for a single day"
-                  : "One click for presets · two clicks on the calendar"}
+                {settling
+                  ? "Updating the dashboard…"
+                  : draftStart
+                    ? "Click an end date — or the same day for a single day"
+                    : "One click for presets · two clicks on the calendar"}
               </p>
             </div>
             <div
               className={cn(
                 "rounded-lg border px-2.5 py-1.5 text-right transition-all duration-300",
-                draftStart
-                  ? "border-primary/40 bg-primary/10 shadow-sm"
-                  : "border-border/60 bg-background/60",
+                settling
+                  ? "border-primary bg-primary text-primary-foreground shadow-md scale-[1.02]"
+                  : draftStart
+                    ? "border-primary/40 bg-primary/10 shadow-sm"
+                    : "border-border/60 bg-background/60",
               )}
             >
-              <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                {draftStart ? "Selecting" : "Current"}
+              <p
+                className={cn(
+                  "text-[10px] font-medium tracking-wide uppercase",
+                  settling
+                    ? "text-primary-foreground/80"
+                    : "text-muted-foreground",
+                )}
+              >
+                {settling ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Check className="size-3" strokeWidth={2.5} />
+                    Applied
+                  </span>
+                ) : draftStart ? (
+                  "Selecting"
+                ) : (
+                  "Current"
+                )}
               </p>
-              <p className="text-xs font-semibold tabular-nums">
-                {draftStart
-                  ? `${formatShort(draftStart)}${
-                      hoverDay && hoverDay !== draftStart
-                        ? ` → ${formatShort(hoverDay)}`
-                        : " → …"
-                    }`
-                  : hasRange
-                    ? triggerLabel
-                    : "All time"}
-              </p>
+              <p className="text-xs font-semibold tabular-nums">{panelLabel}</p>
             </div>
           </div>
 
           {/* Presets */}
           <div className="mt-3 flex flex-wrap gap-1.5">
             {PRESETS.map((p) => {
-              const active = activePreset === p.id && !draftStart;
+              const active = activePreset === p.id && !draftStart && !settling;
               return (
                 <button
                   key={p.id}
                   type="button"
+                  disabled={settling}
                   onClick={() => {
                     const r = p.get();
                     applyRange(r.from, r.to);
                   }}
                   className={cn(
                     "h-8 rounded-full border px-3 text-xs font-medium transition-all duration-200",
+                    "disabled:pointer-events-none disabled:opacity-60",
                     active
                       ? "border-primary bg-primary text-primary-foreground shadow-sm scale-[1.02]"
                       : "border-border/80 bg-background/80 text-foreground hover:border-primary/40 hover:bg-primary/5",
@@ -383,7 +496,8 @@ export function DateRangePicker({
               draftStart={draftStart}
               today={today}
               onDayClick={onDayClick}
-              onDayHover={setHoverDay}
+              onDayHover={settling ? () => {} : setHoverDay}
+              disabled={settling}
             />
             <MonthGrid
               className="hidden sm:block"
@@ -394,7 +508,8 @@ export function DateRangePicker({
               draftStart={draftStart}
               today={today}
               onDayClick={onDayClick}
-              onDayHover={setHoverDay}
+              onDayHover={settling ? () => {} : setHoverDay}
+              disabled={settling}
             />
           </div>
         </div>
@@ -403,7 +518,8 @@ export function DateRangePicker({
         <div className="flex items-center justify-between gap-2 border-t bg-muted/30 px-3 py-2.5">
           <button
             type="button"
-            className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            disabled={settling}
+            className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
             onClick={() => {
               setDraftStart(null);
               setHoverDay(null);
@@ -413,7 +529,7 @@ export function DateRangePicker({
             Clear dates
           </button>
           <div className="flex items-center gap-2">
-            {draftStart && (
+            {draftStart && !settling && (
               <button
                 type="button"
                 className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -428,9 +544,9 @@ export function DateRangePicker({
             <Button
               type="button"
               size="sm"
-              variant={draftStart ? "default" : "secondary"}
+              variant={draftStart && !settling ? "default" : "secondary"}
               className="h-8 rounded-full px-3 text-xs"
-              disabled={!draftStart}
+              disabled={!draftStart || settling}
               onClick={() => {
                 if (draftStart) applyRange(draftStart, draftStart);
               }}
@@ -453,6 +569,7 @@ function MonthGrid({
   today,
   onDayClick,
   onDayHover,
+  disabled = false,
   className,
 }: {
   y: number;
@@ -463,6 +580,7 @@ function MonthGrid({
   today: string;
   onDayClick: (ymd: string) => void;
   onDayHover: (ymd: string | null) => void;
+  disabled?: boolean;
   className?: string;
 }) {
   const cells = React.useMemo(() => buildMonthGrid(y, m), [y, m]);
@@ -531,11 +649,13 @@ function MonthGrid({
             >
               <button
                 type="button"
+                disabled={disabled}
                 onClick={() => onDayClick(ymd)}
                 onMouseEnter={() => onDayHover(ymd)}
                 className={cn(
                   "relative z-[1] flex size-8 items-center justify-center rounded-full text-sm tabular-nums transition-all duration-150",
                   "hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "disabled:pointer-events-none",
                   !isEndpoint &&
                     !isToday &&
                     "text-foreground hover:bg-muted/80",

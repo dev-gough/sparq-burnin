@@ -156,18 +156,18 @@
   animation: dashboard-empty-in 380ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-/* Chart data repaint: wipe left → right on range / series change */
+/* Chart data repaint: soft fade (was a hard L→R wipe — felt like a “shot”) */
 @keyframes chart-reveal-ltr {
   from {
-    clip-path: inset(0 100% 0 0);
+    opacity: 0.45;
   }
   to {
-    clip-path: inset(0 0 0 0);
+    opacity: 1;
   }
 }
 
 .chart-reveal-ltr {
-  animation: chart-reveal-ltr 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: chart-reveal-ltr 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {

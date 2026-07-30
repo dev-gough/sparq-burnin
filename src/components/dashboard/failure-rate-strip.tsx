@@ -362,8 +362,8 @@ export function FailureRateStrip({
             className={
               // Reveal owned by useSeriesRevealClass only (see chart-theme).
               refreshing
-                ? "opacity-90 transition-opacity duration-200"
-                : "opacity-100"
+                ? "opacity-60 transition-opacity duration-500 ease-out"
+                : "opacity-100 transition-opacity duration-500 ease-out"
             }
           >
             <ReactECharts

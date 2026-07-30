@@ -594,11 +594,10 @@ export function ChartAreaInteractive({
             ref={revealRef}
             className={
               // Reveal class is applied only by useSeriesRevealClass (once per
-              // seriesKey). Do not put chart-reveal-ltr here — dual apply
-              // restarted the wipe on every fresh mount.
+              // seriesKey). Soft opacity while SWR holds prior series.
               refreshing
-                ? "opacity-90 transition-opacity duration-200"
-                : "opacity-100"
+                ? "opacity-60 transition-opacity duration-500 ease-out"
+                : "opacity-100 transition-opacity duration-500 ease-out"
             }
           >
             <ReactECharts
