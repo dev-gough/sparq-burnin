@@ -389,161 +389,213 @@ export async function GET(request: NextRequest) {
     }
 
     if (view === "tests") {
-      // Get detailed test records for the data table
+      // Detailed test records for the data table.
+      // Scoped to the same time window as hero/charts when date/timeRange given.
+      // Page-then-annotate: LIMIT/OFFSET the test rows first, then join labels.
       const latestOnly = searchParams.get("latestOnly") === "true";
       const annotationFilter = searchParams.get("annotation");
+      const rawTimeRange = searchParams.get("timeRange");
+      const rawDateFrom = searchParams.get("dateFrom");
+      const rawDateTo = searchParams.get("dateTo");
 
-      // Pagination parameters for progressive loading
-      const limit = searchParams.get("limit") ? parseInt(searchParams.get("limit")!) : 10000;
-      const offset = searchParams.get("offset") ? parseInt(searchParams.get("offset")!) : 0;
+      const limitRaw = searchParams.get("limit");
+      const offsetRaw = searchParams.get("offset");
+      const limit = Math.min(
+        Math.max(limitRaw ? parseInt(limitRaw, 10) : 2500, 1),
+        5000,
+      );
+      const offset = Math.max(offsetRaw ? parseInt(offsetRaw, 10) : 0, 0);
+      if (!Number.isFinite(limit) || !Number.isFinite(offset)) {
+        return NextResponse.json(
+          { error: "Invalid limit or offset" },
+          { status: 400 },
+        );
+      }
 
-      // Check if filtering by group or individual annotation
+      const { dateFrom, dateTo, error: testsDateError } = validateDateRange(
+        rawDateFrom,
+        rawDateTo,
+      );
+      if (testsDateError) {
+        return NextResponse.json({ error: testsDateError }, { status: 400 });
+      }
+      const validatedTimeRange = validateTimeRange(rawTimeRange);
+      const testsWindow = getCurrentWindow({
+        timeRange: validatedTimeRange,
+        dateFrom,
+        dateTo,
+      });
+      const { sql: windowSql, params: timeParams } = buildWindowTimeFilter(
+        testsWindow,
+        "t.start_time_utc",
+        1,
+      );
+      const timeFilter = windowSql ? `AND ${windowSql}` : "";
+
       const isGroupFilter = annotationFilter?.startsWith("group:") ?? false;
-      const filterValue = isGroupFilter && annotationFilter ? annotationFilter.substring(6) : annotationFilter;
+      const filterValue =
+        isGroupFilter && annotationFilter
+          ? annotationFilter.substring(6)
+          : annotationFilter;
       const annotationActive =
         !!annotationFilter && annotationFilter !== "all";
 
-      // Other group uses LEFT JOIN null-check (no bind param); named groups/options use $1
-      const testsAnnotationUsesParam =
-        annotationActive &&
-        !(isGroupFilter && filterValue === UNGROUPED_ANNOTATION_LABEL);
-
-      // Param layout: [filterValue?] limit offset
-      const limitParamIdx = testsAnnotationUsesParam ? 2 : 1;
-      const offsetParamIdx = limitParamIdx + 1;
-      const testsQueryParams: (string | number)[] = [];
-      if (testsAnnotationUsesParam) {
-        testsQueryParams.push(filterValue!);
+      // Param layout: [timeParams…] [annotation?] limit offset
+      const testsQueryParams: (string | number)[] = [...timeParams];
+      let annParamIdx: number | null = null;
+      if (annotationActive && filterValue) {
+        if (isGroupFilter) {
+          const probe = annotationGroupExistsSql("x", filterValue, 1);
+          if (probe.usesParam) {
+            testsQueryParams.push(filterValue);
+            annParamIdx = testsQueryParams.length;
+          }
+        } else {
+          testsQueryParams.push(filterValue);
+          annParamIdx = testsQueryParams.length;
+        }
       }
       testsQueryParams.push(limit, offset);
+      const limitParamIdx = testsQueryParams.length - 1;
+      const offsetParamIdx = testsQueryParams.length;
+
+      /** Annotation EXISTS against an alias's test_id (applied before LIMIT). */
+      function testsAnnotationSql(testIdExpr: string): string {
+        if (!annotationActive || !filterValue) return "";
+        if (isGroupFilter) {
+          const g = annotationGroupExistsSql(
+            testIdExpr,
+            filterValue,
+            annParamIdx ?? 1,
+          );
+          return `AND ${g.sql}`;
+        }
+        return `AND EXISTS (
+          SELECT 1 FROM TestAnnotations ta2
+          WHERE ta2.current_test_id = ${testIdExpr}
+            AND ta2.annotation_text = $${annParamIdx}
+        )`;
+      }
+
+      const statusFlagsExpr = `
+        (
+          CASE WHEN t.ac_status IS NOT NULL AND t.ac_status != '' THEN 1 ELSE 0 END +
+          CASE WHEN t.ch1_status IS NOT NULL AND t.ch1_status != '' THEN 1 ELSE 0 END +
+          CASE WHEN t.ch2_status IS NOT NULL AND t.ch2_status != '' THEN 1 ELSE 0 END +
+          CASE WHEN t.ch3_status IS NOT NULL AND t.ch3_status != '' THEN 1 ELSE 0 END +
+          CASE WHEN t.ch4_status IS NOT NULL AND t.ch4_status != '' THEN 1 ELSE 0 END
+        )`;
+
+      const annotationAgg = `
+        STRING_AGG(
+          DISTINCT
+          CASE
+            WHEN aqo.group_name = 'Setup Issue' THEN 'Setup Issue - ' || ta.annotation_text
+            ELSE ta.annotation_text
+          END,
+          '; '
+          ORDER BY
+            CASE
+              WHEN aqo.group_name = 'Setup Issue' THEN 'Setup Issue - ' || ta.annotation_text
+              ELSE ta.annotation_text
+            END
+        )`;
 
       let testsQuery: string;
       if (latestOnly) {
-        let annSql = "";
-        if (annotationActive) {
-          if (isGroupFilter && filterValue) {
-            const g = annotationGroupExistsSql("lt.test_id", filterValue, 1);
-            annSql = `\n            AND ${g.sql}`;
-          } else {
-            annSql = `
-            AND EXISTS (
-              SELECT 1 FROM TestAnnotations ta2
-              WHERE ta2.current_test_id = lt.test_id
-              AND ta2.annotation_text = $1
-            )`;
-          }
-        }
-        // Show only the most recent valid test per serial number (excluding INVALID)
+        // Latest-per-inverter in the window (DISTINCT ON inv_id — no serial join
+        // until the page is known), then annotate only those rows.
+        const annSql = testsAnnotationSql("lt.test_id");
         testsQuery = `
-          WITH latest_tests AS (
+          WITH latest AS (
+            SELECT DISTINCT ON (t.inv_id)
+              t.test_id,
+              t.inv_id,
+              t.firmware_version,
+              EXTRACT(EPOCH FROM (t.end_time - t.start_time)) * 1000 AS duration,
+              ${statusFlagsExpr} AS non_zero_status_flags,
+              t.overall_status AS status,
+              t.failure_description AS failure_reason,
+              t.start_time_utc AS start_time
+            FROM Tests t
+            WHERE t.overall_status != 'INVALID'
+              ${timeFilter}
+            ORDER BY t.inv_id, t.start_time_utc DESC
+          ),
+          filtered AS (
+            SELECT lt.*
+            FROM latest lt
+            WHERE TRUE
+              ${annSql}
+          ),
+          page AS (
+            SELECT *
+            FROM filtered
+            ORDER BY start_time DESC
+            LIMIT $${limitParamIdx}
+            OFFSET $${offsetParamIdx}
+          )
+          SELECT
+            p.test_id,
+            p.inv_id,
+            i.serial_number,
+            p.firmware_version,
+            p.duration,
+            p.non_zero_status_flags,
+            p.status,
+            p.failure_reason,
+            p.start_time,
+            ${annotationAgg} AS annotations
+          FROM page p
+          JOIN Inverters i ON p.inv_id = i.inv_id
+          LEFT JOIN TestAnnotations ta ON p.test_id = ta.current_test_id
+          LEFT JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
+          GROUP BY
+            p.test_id, p.inv_id, i.serial_number, p.firmware_version,
+            p.duration, p.non_zero_status_flags, p.status, p.failure_reason, p.start_time
+          ORDER BY p.start_time DESC
+        `;
+      } else {
+        // All tests in window: page first, annotate the page only.
+        const annSql = testsAnnotationSql("t.test_id");
+        testsQuery = `
+          WITH page AS (
             SELECT
               t.test_id,
               t.inv_id,
-              i.serial_number,
               t.firmware_version,
-              EXTRACT(EPOCH FROM (t.end_time - t.start_time)) * 1000 as duration,
-              (
-                CASE WHEN t.ac_status IS NOT NULL AND t.ac_status != '' THEN 1 ELSE 0 END +
-                CASE WHEN t.ch1_status IS NOT NULL AND t.ch1_status != '' THEN 1 ELSE 0 END +
-                CASE WHEN t.ch2_status IS NOT NULL AND t.ch2_status != '' THEN 1 ELSE 0 END +
-                CASE WHEN t.ch3_status IS NOT NULL AND t.ch3_status != '' THEN 1 ELSE 0 END +
-                CASE WHEN t.ch4_status IS NOT NULL AND t.ch4_status != '' THEN 1 ELSE 0 END
-              ) as non_zero_status_flags,
-              t.overall_status as status,
-              t.failure_description as failure_reason,
-              t.start_time_utc as start_time,
-              ROW_NUMBER() OVER (
-                PARTITION BY i.serial_number
-                ORDER BY t.start_time_utc DESC
-              ) as rn
+              EXTRACT(EPOCH FROM (t.end_time - t.start_time)) * 1000 AS duration,
+              ${statusFlagsExpr} AS non_zero_status_flags,
+              t.overall_status AS status,
+              t.failure_description AS failure_reason,
+              t.start_time_utc AS start_time
             FROM Tests t
-            JOIN Inverters i ON t.inv_id = i.inv_id
             WHERE t.overall_status != 'INVALID'
+              ${timeFilter}
+              ${annSql}
+            ORDER BY t.start_time_utc DESC
+            LIMIT $${limitParamIdx}
+            OFFSET $${offsetParamIdx}
           )
           SELECT
-            lt.test_id, lt.inv_id, lt.serial_number, lt.firmware_version, lt.duration,
-            lt.non_zero_status_flags, lt.status, lt.failure_reason, lt.start_time,
-            STRING_AGG(
-              DISTINCT
-              CASE
-                WHEN aqo.group_name = 'Setup Issue' THEN 'Setup Issue - ' || ta.annotation_text
-                ELSE ta.annotation_text
-              END,
-              '; '
-              ORDER BY
-                CASE
-                  WHEN aqo.group_name = 'Setup Issue' THEN 'Setup Issue - ' || ta.annotation_text
-                  ELSE ta.annotation_text
-                END
-            ) as annotations
-          FROM latest_tests lt
-          LEFT JOIN TestAnnotations ta ON lt.test_id = ta.current_test_id
-          LEFT JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
-          WHERE lt.rn = 1
-            ${annSql}
-          GROUP BY lt.test_id, lt.inv_id, lt.serial_number, lt.firmware_version,
-                   lt.duration, lt.non_zero_status_flags, lt.status, lt.failure_reason, lt.start_time
-          ORDER BY lt.start_time DESC
-          LIMIT $${limitParamIdx}
-          OFFSET $${offsetParamIdx}
-        `;
-      } else {
-        let annWhere = "";
-        if (annotationActive) {
-          if (isGroupFilter && filterValue) {
-            const g = annotationGroupExistsSql("t.test_id", filterValue, 1);
-            annWhere = `\n          WHERE ${g.sql}`;
-          } else {
-            annWhere = `
-          WHERE EXISTS (
-            SELECT 1 FROM TestAnnotations ta2
-            WHERE ta2.current_test_id = t.test_id
-            AND ta2.annotation_text = $1
-          )`;
-          }
-        }
-        // Show all tests
-        testsQuery = `
-          SELECT
-            t.test_id,
-            t.inv_id,
+            p.test_id,
+            p.inv_id,
             i.serial_number,
-            t.firmware_version,
-            EXTRACT(EPOCH FROM (t.end_time - t.start_time)) * 1000 as duration,
-            (
-              CASE WHEN t.ac_status IS NOT NULL AND t.ac_status != '' THEN 1 ELSE 0 END +
-              CASE WHEN t.ch1_status IS NOT NULL AND t.ch1_status != '' THEN 1 ELSE 0 END +
-              CASE WHEN t.ch2_status IS NOT NULL AND t.ch2_status != '' THEN 1 ELSE 0 END +
-              CASE WHEN t.ch3_status IS NOT NULL AND t.ch3_status != '' THEN 1 ELSE 0 END +
-              CASE WHEN t.ch4_status IS NOT NULL AND t.ch4_status != '' THEN 1 ELSE 0 END
-            ) as non_zero_status_flags,
-            t.overall_status as status,
-            t.failure_description as failure_reason,
-            t.start_time_utc as start_time,
-            STRING_AGG(
-              DISTINCT
-              CASE
-                WHEN aqo.group_name = 'Setup Issue' THEN 'Setup Issue - ' || ta.annotation_text
-                ELSE ta.annotation_text
-              END,
-              '; '
-              ORDER BY
-                CASE
-                  WHEN aqo.group_name = 'Setup Issue' THEN 'Setup Issue - ' || ta.annotation_text
-                  ELSE ta.annotation_text
-                END
-            ) as annotations
-          FROM Tests t
-          JOIN Inverters i ON t.inv_id = i.inv_id
-          LEFT JOIN TestAnnotations ta ON t.test_id = ta.current_test_id
+            p.firmware_version,
+            p.duration,
+            p.non_zero_status_flags,
+            p.status,
+            p.failure_reason,
+            p.start_time,
+            ${annotationAgg} AS annotations
+          FROM page p
+          JOIN Inverters i ON p.inv_id = i.inv_id
+          LEFT JOIN TestAnnotations ta ON p.test_id = ta.current_test_id
           LEFT JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
-          ${annWhere}
-          GROUP BY t.test_id, t.inv_id, i.serial_number, t.firmware_version,
-                   t.overall_status, t.failure_description, t.start_time_utc, t.end_time,
-                   t.ac_status, t.ch1_status, t.ch2_status, t.ch3_status, t.ch4_status
-          ORDER BY t.start_time_utc DESC
-          LIMIT $${limitParamIdx}
-          OFFSET $${offsetParamIdx}
+          GROUP BY
+            p.test_id, p.inv_id, i.serial_number, p.firmware_version,
+            p.duration, p.non_zero_status_flags, p.status, p.failure_reason, p.start_time
+          ORDER BY p.start_time DESC
         `;
       }
 

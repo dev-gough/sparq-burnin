@@ -10,6 +10,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      // Bottom-center keeps toasts off the table’s right-side pagination
+      // controls (default bottom-right sat on top of them after Failures CTA).
+      position="bottom-center"
       style={
         {
           "--normal-bg": "var(--popover)",

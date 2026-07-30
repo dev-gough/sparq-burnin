@@ -313,6 +313,8 @@ export function prefsFromDashboardState(state: {
   tableDateTo: string;
 }): Partial<DashboardPrefs> {
   const { dashboardRange } = state;
+  // Table Latest only is the same switch as header Result mode.
+  const latestOnly = state.chartMode === "recent";
   if (dashboardRange.kind === "custom") {
     return {
       period: "custom",
@@ -320,6 +322,7 @@ export function prefsFromDashboardState(state: {
       customTo: dashboardRange.to,
       lastPill: state.lastPill,
       chartMode: state.chartMode,
+      latestOnly,
       bucket: state.bucket,
       filterLinked: state.filterLinked,
       annotationFilter: state.annotationFilter,
@@ -334,6 +337,7 @@ export function prefsFromDashboardState(state: {
     customFrom: undefined,
     customTo: undefined,
     chartMode: state.chartMode,
+    latestOnly,
     bucket: state.bucket,
     filterLinked: state.filterLinked,
     annotationFilter: state.annotationFilter,

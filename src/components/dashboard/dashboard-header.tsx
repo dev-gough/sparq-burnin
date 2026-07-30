@@ -69,9 +69,9 @@ const METRICS_HELP = (
       timestamps use your selected display timezone (sidebar).
     </p>
     <p>
-      Annotation filters apply to hero, charts, and table. Failures → table
-      shows FAIL rows in the linked date range (may differ slightly from
-      latest-per-inverter hero counts).
+      Annotation filters apply to hero, charts, and table. Result mode (Latest /
+      All tests) also drives the table’s Latest only toggle so FAIL counts match
+      the summary cards. Failures → filters the table to Status = FAIL.
     </p>
   </div>
 );

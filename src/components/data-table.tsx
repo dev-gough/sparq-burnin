@@ -54,6 +54,15 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Toggle } from "@/components/ui/toggle";
 
 import { loadDashboardPrefs, patchDashboardPrefs } from "@/lib/dashboard-prefs";
+import {
+  getCachedTestsTable,
+  subscribeTestsTableCache,
+  type TestsTableFetchKey,
+} from "@/lib/tests-table-cache";
+import {
+  isAbortError,
+  loadTestsTableProgressive,
+} from "@/lib/tests-table-fetch";
 
 type TableFilterPrefs = {
   serialSearch: string;
@@ -90,15 +99,6 @@ function dedupeTestsById(rows: TestRow[]): TestRow[] {
     out.push(row);
   }
   return out;
-}
-
-/** Append batch rows that are not already present by test_id. */
-function appendUniqueTests(prev: TestRow[], batch: TestRow[]): TestRow[] {
-  if (batch.length === 0) return prev;
-  const seen = new Set(prev.map((r) => r.test_id));
-  const fresh = batch.filter((r) => !seen.has(r.test_id));
-  if (fresh.length === 0) return prev;
-  return [...prev, ...fresh];
 }
 
 // Create columns dynamically to access timezone context
@@ -270,6 +270,12 @@ interface DataTableProps {
   /** Controlled status filter (lifted for hero Failures click). */
   statusFilter: string;
   onStatusFilterChange: (status: string) => void;
+  /**
+   * Same Result mode as the header (Latest / All tests).
+   * Drives the table’s latest-per-inverter fetch so FAIL counts match the hero.
+   */
+  chartMode: "all" | "recent";
+  onChartModeChange: (mode: "all" | "recent") => void;
 }
 
 /** Default page size — skeleton rows match the loaded table footprint. */
@@ -416,6 +422,8 @@ export function DataTable({
   onDateToFilterChange,
   statusFilter,
   onStatusFilterChange,
+  chartMode,
+  onChartModeChange,
 }: DataTableProps) {
   const router = useRouter();
   const { resolvedTheme } = useTheme();
@@ -434,16 +442,15 @@ export function DataTable({
     pageIndex: 0,
     pageSize: TABLE_PAGE_SIZE,
   });
-  // Table-only prefs from localStorage (status/dates/annotation owned by parent page)
+  // Table-only prefs from localStorage (status/dates/annotation/mode owned by parent)
   const [serialSearch, setSerialSearch] = React.useState(() => {
     return loadDashboardPrefs().serialSearch || "";
   });
   const [firmwareFilter, setFirmwareFilter] = React.useState(() => {
     return loadDashboardPrefs().firmwareFilter || "all";
   });
-  const [latestOnly, setLatestOnly] = React.useState(() => {
-    return loadDashboardPrefs().latestOnly || false;
-  });
+  /** Mirrors header Result mode — not an independent filter. */
+  const latestOnly = chartMode === "recent";
   const [firmwareVersions, setFirmwareVersions] = React.useState<string[]>([]);
   const [annotationGroups, setAnnotationGroups] = React.useState<Array<{
     group_name: string;
@@ -461,99 +468,74 @@ export function DataTable({
     router.push(`/test/${testId}`);
   };
 
+  const testsFetchKey = React.useMemo<TestsTableFetchKey>(
+    () => ({
+      latestOnly,
+      annotationFilter: annotationFilter || "all",
+      dateFrom: dateFromFilter || "",
+      dateTo: dateToFilter || "",
+      // Empty dates = all-time open window (linked "All" pill or cleared filters)
+      timeRange:
+        !dateFromFilter && !dateToFilter ? "all" : undefined,
+    }),
+    [latestOnly, annotationFilter, dateFromFilter, dateToFilter],
+  );
+
+  // Hydration-safe: null on server; warm session cache after client mount.
+  const cachedTable = React.useSyncExternalStore(
+    subscribeTestsTableCache,
+    () => getCachedTestsTable(testsFetchKey) ?? null,
+    () => null,
+  );
+
+  // Apply cache hits before paint when the filter key is already warm.
+  React.useLayoutEffect(() => {
+    if (cachedTable) {
+      setData(dedupeTestsById(cachedTable));
+      setLoading(false);
+    }
+  }, [cachedTable, testsFetchKey]);
+
   React.useEffect(() => {
     const abort = new AbortController();
     const { signal } = abort;
 
     const fetchData = async () => {
-      setLoading(true);
+      // Stay interactive on cache hit; progressive loader returns immediately.
+      if (!getCachedTestsTable(testsFetchKey)) {
+        setLoading(true);
+      }
       try {
-        // Build base params for all requests
-        const baseParams = new URLSearchParams({ view: "tests" });
-        if (latestOnly) {
-          baseParams.append("latestOnly", "true");
-        }
-        if (annotationFilter && annotationFilter !== "all") {
-          baseParams.append("annotation", annotationFilter);
-        }
+        // Swallow abort on the parallel firmware fetch so cleanup never
+        // leaves an unhandled rejection (Next overlays AbortError otherwise).
+        const firmwarePromise = fetch(
+          "/api/test-stats?view=firmware-versions",
+          { signal },
+        ).then(
+          (res) => res,
+          (error: unknown) => {
+            if (signal.aborted || isAbortError(error)) return null;
+            throw error;
+          },
+        );
 
-        // STEP 1: Fetch first page (200 tests) immediately for fast initial render
-        const initialParams = new URLSearchParams(baseParams);
-        initialParams.append("limit", "200");
-        initialParams.append("offset", "0");
-
-        const [testsResponse, firmwareResponse] = await Promise.all([
-          fetch(`/api/test-stats?${initialParams}`, { signal }),
-          fetch("/api/test-stats?view=firmware-versions", { signal }),
-        ]);
+        await loadTestsTableProgressive(testsFetchKey, {
+          signal,
+          onChunk: (rows) => {
+            if (signal.aborted) return;
+            setData(dedupeTestsById(rows));
+            setLoading(false);
+          },
+        });
 
         if (signal.aborted) return;
-
-        if (testsResponse.ok) {
-          const initialData = await testsResponse.json();
-          if (signal.aborted) return;
-          // Dedupe by test_id (guards against API duplicates / race appends)
-          const initialUnique = dedupeTestsById(
-            Array.isArray(initialData) ? initialData : [],
-          );
-          setData(initialUnique);
-          setLoading(false); // Show data immediately
-
-          // STEP 2: Background load remaining tests in batches of 500
-          if (initialUnique.length === 200) {
-            let offset = 200;
-            const batchSize = 500;
-            let hasMore = true;
-
-            while (hasMore && !signal.aborted) {
-              const batchParams = new URLSearchParams(baseParams);
-              batchParams.append("limit", batchSize.toString());
-              batchParams.append("offset", offset.toString());
-
-              const batchResponse = await fetch(
-                `/api/test-stats?${batchParams}`,
-                { signal },
-              );
-              if (signal.aborted) return;
-              if (batchResponse.ok) {
-                const batchData = await batchResponse.json();
-                if (signal.aborted) return;
-
-                if (Array.isArray(batchData) && batchData.length > 0) {
-                  // Append only new test_ids — prevents Strict Mode / filter-change races
-                  setData((prevData) =>
-                    appendUniqueTests(prevData, batchData),
-                  );
-                  offset += batchData.length;
-
-                  if (batchData.length < batchSize) {
-                    hasMore = false;
-                  }
-                } else {
-                  hasMore = false;
-                }
-              } else {
-                console.warn(`Failed to fetch batch at offset ${offset}`);
-                hasMore = false;
-              }
-            }
-
-            if (!signal.aborted) {
-              console.log(
-                `✅ Progressive loading complete: ${offset} total tests loaded`,
-              );
-            }
-          }
-        } else if (!signal.aborted) {
-          setLoading(false);
-        }
-
-        if (firmwareResponse.ok && !signal.aborted) {
+        const firmwareResponse = await firmwarePromise;
+        if (firmwareResponse?.ok && !signal.aborted) {
           const versions = await firmwareResponse.json();
           setFirmwareVersions(versions);
         }
       } catch (error) {
-        if (signal.aborted) return;
+        if (signal.aborted || isAbortError(error)) return;
         console.error("Failed to fetch data:", error);
       } finally {
         if (!signal.aborted) {
@@ -562,9 +544,11 @@ export function DataTable({
       }
     };
 
-    fetchData();
-    return () => abort.abort();
-  }, [latestOnly, annotationFilter]);
+    void fetchData();
+    return () => {
+      abort.abort();
+    };
+  }, [testsFetchKey]);
 
   // Build annotation groups from cached data
   React.useEffect(() => {
@@ -600,6 +584,7 @@ export function DataTable({
     const patch: Partial<TableFilterPrefs> = {
       serialSearch,
       firmwareFilter,
+      // Keep legacy key in sync with header Result mode
       latestOnly,
       // Shared fields also written so a lone table update does not wipe them
       // when page effect has not run yet; page is source of truth for these.
@@ -897,12 +882,24 @@ export function DataTable({
             {/* Action Buttons */}
             <div className="flex items-center gap-2">
               <div className="flex flex-col items-center gap-1">
-                <InfoTooltip content="When enabled, shows only the most recent test for each serial number in the table." />
+                <InfoTooltip content="Linked to Result mode in the header (Latest / All tests). Latest = one row per inverter (same population as the summary cards)." />
                 <Toggle
                   pressed={latestOnly}
-                  onPressedChange={setLatestOnly}
+                  onPressedChange={(pressed) =>
+                    onChartModeChange(pressed ? "recent" : "all")
+                  }
                   variant="outline"
                   className="h-10 px-3 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                  aria-label={
+                    latestOnly
+                      ? "Latest only (matches header Latest)"
+                      : "All test runs (matches header All tests)"
+                  }
+                  title={
+                    latestOnly
+                      ? "On — same as header Latest"
+                      : "Off — same as header All tests"
+                  }
                 >
                   Latest Only
                 </Toggle>
@@ -932,7 +929,8 @@ export function DataTable({
                     onStatusFilterChange("all");
                     setFirmwareFilter("all");
                     onAnnotationFilterChange("all");
-                    setLatestOnly(false);
+                    // Align with header All tests (same switch as Latest only)
+                    onChartModeChange("all");
                     // Prefer parent clear (handles linked period revert + both dates atomically)
                     if (onClearDateFilter) {
                       onClearDateFilter();

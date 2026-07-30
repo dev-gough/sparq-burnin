@@ -373,6 +373,7 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
     toast.message("Showing FAIL rows in the table", {
       description: "Status filter set to FAIL",
       duration: 2500,
+      position: "bottom-center",
     });
     // Hash for shareability / deep link after scroll
     if (typeof window !== "undefined") {
@@ -573,6 +574,10 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
                   onDateToFilterChange={handleTableDateToChange}
                   statusFilter={statusFilter}
                   onStatusFilterChange={setStatusFilter}
+                  chartMode={chartMode}
+                  onChartModeChange={(mode) => {
+                    if (mode === "all" || mode === "recent") setChartMode(mode);
+                  }}
                 />
               ) : (
                 <DataTableSkeleton />

@@ -543,9 +543,16 @@ export function HeroMetrics({
             {error && !stats ? (
               <span className="text-destructive">Could not load metrics.</span>
             ) : (
-              <span className="text-pretty sm:truncate">
+              <span
+                className="text-pretty sm:truncate"
+                title={
+                  chartMode === "recent"
+                    ? "Latest mode: one result per inverter — same as the table’s Latest only (linked to header Result mode)."
+                    : "All tests mode: every FAIL run in the period (matches the table when Status = FAIL)."
+                }
+              >
                 {chartMode === "recent"
-                  ? "Table may list more rows"
+                  ? "Latest per inverter"
                   : "FAIL rows in period"}
               </span>
             )}
