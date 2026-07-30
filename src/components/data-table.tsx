@@ -17,6 +17,7 @@ import {
 import {
   CalendarRange,
   Link2,
+  Loader2,
   Search,
   Unlink,
   X,
@@ -333,36 +334,35 @@ export function DataTableSkeleton({
         value="outline"
         className="relative flex flex-col gap-4 overflow-auto"
       >
-        {/* Filters — mirrors loaded filter card footprint */}
+        {/* Filters — compact card matching loaded layout */}
         <div className="overflow-hidden rounded-xl border bg-card shadow-xs">
-          <div className="flex items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3 sm:px-5">
-            <div className="space-y-1">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-3 w-48" />
+          <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2 sm:px-4">
+            <Skeleton className="h-4 w-20" />
+            <div className="ml-auto flex gap-1.5">
+              <Skeleton className="h-7 w-24 rounded-full" />
+              <Skeleton className="h-7 w-28 rounded-full" />
             </div>
-            <Skeleton className="h-9 w-28" />
           </div>
-          <div className="space-y-5 p-4 sm:p-5">
-            <Skeleton className="h-12 w-full max-w-xl" />
-            <div className="space-y-2">
-              <Skeleton className="h-3 w-16" />
-              <div className="flex flex-wrap gap-2">
-                <Skeleton className="h-11 w-16 rounded-full" />
-                <Skeleton className="h-11 w-36 rounded-full" />
-                <Skeleton className="h-11 w-20 rounded-full" />
-                <Skeleton className="h-11 w-20 rounded-full" />
-                <Skeleton className="h-11 w-20 rounded-full" />
+          <div className="space-y-3 p-3 sm:p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <Skeleton className="h-10 w-full max-w-md" />
+              <div className="flex flex-wrap gap-1.5">
+                <Skeleton className="h-9 w-14 rounded-full" />
+                <Skeleton className="h-9 w-28 rounded-full" />
+                <Skeleton className="h-9 w-16 rounded-full" />
+                <Skeleton className="h-9 w-16 rounded-full" />
+                <Skeleton className="h-9 w-16 rounded-full" />
               </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Skeleton className="h-16 w-full" />
-              <Skeleton className="h-16 w-full" />
-              <Skeleton className="h-16 w-full" />
-              <Skeleton className="h-16 w-full" />
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
             </div>
             <div className="flex flex-wrap gap-2">
-              <Skeleton className="h-11 w-48 rounded-lg" />
-              <Skeleton className="h-11 w-52 rounded-lg" />
+              <Skeleton className="h-9 w-40 rounded-md" />
+              <Skeleton className="h-9 w-44 rounded-md" />
             </div>
           </div>
         </div>
@@ -530,9 +530,11 @@ export function DataTable({
     const { signal } = abort;
 
     const fetchData = async () => {
-      // Stay interactive on cache hit; progressive loader returns immediately.
+      // Stay interactive on cache hit. On miss, load in place — do NOT unmount
+      // the filter card (that caused a full filter redraw on 30d→90d).
       if (!getCachedTestsTable(testsFetchKey)) {
         setLoading(true);
+        setData([]);
       }
       try {
         // Swallow abort on the parallel firmware fetch so cleanup never
@@ -724,9 +726,8 @@ export function DataTable({
     }
   }, [columnFilters, data, prefetchTests, table]);
 
-  if (loading) {
-    return <DataTableSkeleton />;
-  }
+  // Table body only — filters stay mounted across period / key changes.
+  const tablePending = loading && data.length === 0;
 
   const statusMeta =
     STATUS_OPTIONS.find((o) => o.value === statusFilter) ?? STATUS_OPTIONS[0];
@@ -798,81 +799,122 @@ export function DataTable({
         value="outline"
         className="relative flex flex-col gap-4 overflow-auto"
       >
-        {/* Filters — executive-friendly: plain labels, large targets, active chips */}
+        {/* Filters — compact, plain-language; stays mounted across data reloads */}
         <div className="overflow-hidden rounded-xl border bg-card shadow-xs">
-          <div className="flex flex-wrap items-start justify-between gap-3 border-b bg-muted/40 px-4 py-3 sm:px-5">
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold tracking-tight">
-                Find tests
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Narrow the list below. Click any row to open the full test.
-              </p>
-            </div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b bg-muted/40 px-3 py-2 sm:px-4">
+            <h2 className="text-sm font-semibold tracking-tight">Find tests</h2>
+            <span className="hidden text-xs text-muted-foreground sm:inline">
+              · click a row to open
+            </span>
             {hasActiveFilters && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={clearAllFilters}
-                className="h-9 shrink-0 gap-1.5"
-              >
-                <X className="size-3.5" />
-                Clear all filters
-              </Button>
+              <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5">
+                {serialActive && (
+                  <button
+                    type="button"
+                    onClick={() => setSerialSearch("")}
+                    className="inline-flex h-7 max-w-[12rem] items-center gap-1 rounded-full border border-border bg-background px-2 text-xs font-medium hover:bg-muted"
+                  >
+                    <span className="truncate">{serialSearch.trim()}</span>
+                    <X className="size-3 shrink-0 opacity-60" />
+                  </button>
+                )}
+                {statusActive && (
+                  <button
+                    type="button"
+                    onClick={() => onStatusFilterChange("all")}
+                    className={cn(
+                      "inline-flex h-7 items-center gap-1 rounded-full border px-2 text-xs font-medium",
+                      "activeClass" in statusMeta && statusMeta.activeClass
+                        ? statusMeta.activeClass
+                        : "border-border bg-background hover:bg-muted",
+                    )}
+                  >
+                    {statusMeta.short}
+                    <X className="size-3 shrink-0 opacity-80" />
+                  </button>
+                )}
+                {annotationLabel && (
+                  <button
+                    type="button"
+                    onClick={() => onAnnotationFilterChange("all")}
+                    className="inline-flex h-7 max-w-[10rem] items-center gap-1 rounded-full border border-border bg-background px-2 text-xs font-medium hover:bg-muted"
+                  >
+                    <span className="truncate">{annotationLabel}</span>
+                    <X className="size-3 shrink-0 opacity-60" />
+                  </button>
+                )}
+                {firmwareActive && (
+                  <button
+                    type="button"
+                    onClick={() => setFirmwareFilter("all")}
+                    className="inline-flex h-7 items-center gap-1 rounded-full border border-border bg-background px-2 text-xs font-medium hover:bg-muted"
+                  >
+                    FW {firmwareFilter}
+                    <X className="size-3 shrink-0 opacity-60" />
+                  </button>
+                )}
+                {datesActive && dateRangeLabel && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onClearDateFilter) onClearDateFilter();
+                      else {
+                        onDateFromFilterChange("");
+                        onDateToFilterChange("");
+                      }
+                    }}
+                    className="inline-flex h-7 max-w-[14rem] items-center gap-1 rounded-full border border-border bg-background px-2 text-xs font-medium hover:bg-muted"
+                  >
+                    <CalendarRange className="size-3 shrink-0 opacity-70" />
+                    <span className="truncate">{dateRangeLabel}</span>
+                    <X className="size-3 shrink-0 opacity-60" />
+                  </button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearAllFilters}
+                  className="h-7 shrink-0 px-2 text-xs"
+                >
+                  Clear all
+                </Button>
+              </div>
             )}
           </div>
 
-          <div className="space-y-5 p-4 sm:p-5">
-            {/* Search — primary action */}
-            <div className="space-y-1.5">
-              <Label
-                htmlFor="serial-search"
-                className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-              >
-                Serial number
-              </Label>
-              <div className="relative max-w-xl">
+          <div className="space-y-3 p-3 sm:p-4">
+            {/* Search + result pills on one row when space allows */}
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
+              <div className="relative min-w-0 flex-1 lg:max-w-md">
                 <Search
-                  className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                  className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
                   aria-hidden
                 />
                 <Input
                   id="serial-search"
-                  placeholder="Type a serial number to search…"
+                  placeholder="Search serial number (* = wildcard)"
                   value={serialSearch}
                   onChange={(e) => setSerialSearch(e.target.value)}
-                  className="h-12 border-border/80 bg-background pr-10 pl-10 text-base shadow-xs"
+                  className="h-10 border-border/80 bg-background pr-9 pl-9 shadow-xs"
                   autoComplete="off"
                   spellCheck={false}
+                  aria-label="Search serial number"
                 />
                 {serialActive && (
                   <button
                     type="button"
                     onClick={() => setSerialSearch("")}
-                    className="absolute top-1/2 right-2 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    className="absolute top-1/2 right-1.5 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
                     aria-label="Clear serial search"
                   >
-                    <X className="size-4" />
+                    <X className="size-3.5" />
                   </button>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Tip: use <span className="font-mono">*</span> as a wildcard —
-                e.g. <span className="font-mono">19*265</span>
-              </p>
-            </div>
 
-            {/* Result — big colored pills, no dropdown */}
-            <div className="space-y-2">
-              <div className="flex items-center gap-1.5">
-                <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Result
-                </Label>
-                <InfoTooltip content="Choose which test outcomes to show. “Passed or failed” hides invalid runs." />
-              </div>
               <div
-                className="flex flex-wrap gap-2"
+                className="flex flex-wrap gap-1.5"
                 role="group"
                 aria-label="Filter by result"
               >
@@ -886,7 +928,7 @@ export function DataTable({
                       aria-pressed={selected}
                       title={opt.label}
                       className={cn(
-                        "h-11 min-w-[4.5rem] rounded-full border px-4 text-sm font-medium transition-[color,background-color,border-color,box-shadow]",
+                        "h-9 rounded-full border px-3 text-sm font-medium transition-[color,background-color,border-color,box-shadow]",
                         selected
                           ? "activeClass" in opt && opt.activeClass
                             ? opt.activeClass
@@ -898,307 +940,194 @@ export function DataTable({
                     </button>
                   );
                 })}
+                <InfoTooltip content="Choose which test outcomes to show. “Passed or failed” hides invalid runs." />
               </div>
             </div>
 
-            {/* Secondary filters */}
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="space-y-2">
-                <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Category / note
-                </Label>
-                <Select
-                  value={annotationFilter}
-                  onValueChange={onAnnotationFilterChange}
+            {/* Category / firmware / dates — denser grid */}
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <Select
+                value={annotationFilter}
+                onValueChange={onAnnotationFilterChange}
+              >
+                <SelectTrigger
+                  className="h-10 w-full min-w-0 bg-background shadow-xs"
+                  aria-label="Category or note"
                 >
-                  <SelectTrigger className="h-11 w-full min-w-0 bg-background shadow-xs">
-                    <SelectValue placeholder="All categories" />
-                  </SelectTrigger>
-                  <SelectContent
-                    className="max-h-[400px] overflow-y-auto [&>*[data-slot=select-scroll-up-button]]:hidden [&>*[data-slot=select-scroll-down-button]]:hidden"
-                    position="popper"
-                    sideOffset={4}
-                  >
-                    <SelectItem value="all">All categories</SelectItem>
-                    {annotationGroups.map((group) => {
-                      const hex = group.group_color.replace("#", "");
-                      const r = parseInt(hex.substring(0, 2), 16);
-                      const g = parseInt(hex.substring(2, 4), 16);
-                      const b = parseInt(hex.substring(4, 6), 16);
-                      const isDark = resolvedTheme === "dark";
-                      const headerColor = isDark
-                        ? `rgb(${Math.round(r * 0.85)}, ${Math.round(g * 0.85)}, ${Math.round(b * 0.85)})`
-                        : group.group_color;
-
-                      return (
-                        <React.Fragment key={group.group_name}>
-                          <SelectItem
-                            value={`group:${group.group_name}`}
-                            className="rounded-none border-y border-white/20 font-semibold transition-all hover:brightness-90"
-                            style={{
-                              backgroundColor: headerColor,
-                              color: "white",
-                            }}
-                          >
-                            {group.group_name} (All)
-                          </SelectItem>
-                          {group.options.map((option) => {
-                            let optionColor: string;
-                            if (isDark) {
-                              optionColor = `rgb(${Math.round(r * 0.6)}, ${Math.round(g * 0.6)}, ${Math.round(b * 0.6)})`;
-                            } else {
-                              optionColor = `rgb(${Math.round(r + (255 - r) * 0.7)}, ${Math.round(g + (255 - g) * 0.7)}, ${Math.round(b + (255 - b) * 0.7)})`;
-                            }
-                            return (
-                              <SelectItem
-                                key={option}
-                                value={option}
-                                className="rounded-none border-b border-white/10 pl-6 transition-all hover:brightness-95"
-                                style={{
-                                  backgroundColor: optionColor,
-                                  color: isDark ? "white" : "inherit",
-                                }}
-                              >
-                                {option}
-                              </SelectItem>
-                            );
-                          })}
-                        </React.Fragment>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Firmware version
-                </Label>
-                <Select
-                  value={firmwareFilter}
-                  onValueChange={setFirmwareFilter}
+                  <SelectValue placeholder="All categories" />
+                </SelectTrigger>
+                <SelectContent
+                  className="max-h-[400px] overflow-y-auto [&>*[data-slot=select-scroll-up-button]]:hidden [&>*[data-slot=select-scroll-down-button]]:hidden"
+                  position="popper"
+                  sideOffset={4}
                 >
-                  <SelectTrigger className="h-11 w-full min-w-0 bg-background shadow-xs">
-                    <SelectValue placeholder="All versions" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All versions</SelectItem>
-                    {firmwareVersions.map((version) => (
-                      <SelectItem key={version} value={version}>
-                        {version}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                  <SelectItem value="all">All categories</SelectItem>
+                  {annotationGroups.map((group) => {
+                    const hex = group.group_color.replace("#", "");
+                    const r = parseInt(hex.substring(0, 2), 16);
+                    const g = parseInt(hex.substring(2, 4), 16);
+                    const b = parseInt(hex.substring(4, 6), 16);
+                    const isDark = resolvedTheme === "dark";
+                    const headerColor = isDark
+                      ? `rgb(${Math.round(r * 0.85)}, ${Math.round(g * 0.85)}, ${Math.round(b * 0.85)})`
+                      : group.group_color;
 
-              <div className="space-y-2">
-                <Label
-                  htmlFor="date-from"
-                  className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-                >
-                  From date{" "}
-                  <span className="font-normal normal-case tracking-normal">
-                    (UTC)
-                  </span>
-                </Label>
-                <Input
-                  id="date-from"
-                  type="date"
-                  value={dateFromFilter}
-                  onChange={(e) => onDateFromFilterChange(e.target.value)}
-                  className="h-11 min-h-11 bg-background shadow-xs"
-                  title="UTC calendar day — matches dashboard period filters"
-                />
-              </div>
+                    return (
+                      <React.Fragment key={group.group_name}>
+                        <SelectItem
+                          value={`group:${group.group_name}`}
+                          className="rounded-none border-y border-white/20 font-semibold transition-all hover:brightness-90"
+                          style={{
+                            backgroundColor: headerColor,
+                            color: "white",
+                          }}
+                        >
+                          {group.group_name} (All)
+                        </SelectItem>
+                        {group.options.map((option) => {
+                          let optionColor: string;
+                          if (isDark) {
+                            optionColor = `rgb(${Math.round(r * 0.6)}, ${Math.round(g * 0.6)}, ${Math.round(b * 0.6)})`;
+                          } else {
+                            optionColor = `rgb(${Math.round(r + (255 - r) * 0.7)}, ${Math.round(g + (255 - g) * 0.7)}, ${Math.round(b + (255 - b) * 0.7)})`;
+                          }
+                          return (
+                            <SelectItem
+                              key={option}
+                              value={option}
+                              className="rounded-none border-b border-white/10 pl-6 transition-all hover:brightness-95"
+                              style={{
+                                backgroundColor: optionColor,
+                                color: isDark ? "white" : "inherit",
+                              }}
+                            >
+                              {option}
+                            </SelectItem>
+                          );
+                        })}
+                      </React.Fragment>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
 
-              <div className="space-y-2">
-                <Label
-                  htmlFor="date-to"
-                  className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+              <Select value={firmwareFilter} onValueChange={setFirmwareFilter}>
+                <SelectTrigger
+                  className="h-10 w-full min-w-0 bg-background shadow-xs"
+                  aria-label="Firmware version"
                 >
-                  To date{" "}
-                  <span className="font-normal normal-case tracking-normal">
-                    (UTC)
-                  </span>
-                </Label>
-                <Input
-                  id="date-to"
-                  type="date"
-                  value={dateToFilter}
-                  onChange={(e) => onDateToFilterChange(e.target.value)}
-                  className="h-11 min-h-11 bg-background shadow-xs"
-                  title="UTC calendar day — matches dashboard period filters"
-                />
-              </div>
+                  <SelectValue placeholder="All versions" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All versions</SelectItem>
+                  {firmwareVersions.map((version) => (
+                    <SelectItem key={version} value={version}>
+                      {version}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Input
+                id="date-from"
+                type="date"
+                value={dateFromFilter}
+                onChange={(e) => onDateFromFilterChange(e.target.value)}
+                className="h-10 min-h-10 bg-background shadow-xs"
+                title="From date (UTC) — matches dashboard period filters"
+                aria-label="From date (UTC)"
+              />
+              <Input
+                id="date-to"
+                type="date"
+                value={dateToFilter}
+                onChange={(e) => onDateToFilterChange(e.target.value)}
+                className="h-10 min-h-10 bg-background shadow-xs"
+                title="To date (UTC) — matches dashboard period filters"
+                aria-label="To date (UTC)"
+              />
             </div>
 
-            {/* Mode switches — full labels, not icon-only */}
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={latestOnly}
-                  onClick={() =>
-                    onChartModeChange(latestOnly ? "all" : "recent")
-                  }
+            {/* Mode switches — single-line chips */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={latestOnly}
+                onClick={() =>
+                  onChartModeChange(latestOnly ? "all" : "recent")
+                }
+                className={cn(
+                  "inline-flex h-9 items-center gap-2 rounded-md border px-2.5 text-sm transition-colors",
+                  latestOnly
+                    ? "border-primary/40 bg-primary/10 text-foreground"
+                    : "border-border bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                )}
+                title="Matches Latest / All tests in the page header"
+              >
+                <span
                   className={cn(
-                    "flex h-11 min-w-0 items-center gap-2.5 rounded-lg border px-3 text-left text-sm transition-colors sm:min-w-[14rem]",
+                    "flex size-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold",
                     latestOnly
-                      ? "border-primary/40 bg-primary/10 text-foreground"
-                      : "border-border bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-muted",
                   )}
-                  title="Matches Latest / All tests in the page header"
+                  aria-hidden
                 >
-                  <span
-                    className={cn(
-                      "flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold",
-                      latestOnly
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-muted",
-                    )}
-                    aria-hidden
-                  >
-                    {latestOnly ? "✓" : ""}
-                  </span>
-                  <span className="min-w-0 flex-1 leading-tight">
-                    <span className="block font-medium text-foreground">
-                      One row per inverter
-                    </span>
-                    <span className="block text-xs text-muted-foreground">
-                      Latest test only
-                    </span>
-                  </span>
-                </button>
-                <InfoTooltip content="Same as Latest / All tests in the header. On = one row per inverter (matches the summary cards)." />
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={filterLinked}
-                  onClick={() => onFilterLinkedChange(!filterLinked)}
-                  className={cn(
-                    "flex h-11 min-w-0 items-center gap-2.5 rounded-lg border px-3 text-left text-sm transition-colors sm:min-w-[14rem]",
-                    filterLinked
-                      ? "border-primary/40 bg-primary/10 text-foreground"
-                      : "border-border bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                  )}
-                  title={
-                    filterLinked
-                      ? "Table dates follow the dashboard period"
-                      : "Table dates are independent of the dashboard"
-                  }
-                >
-                  <span
-                    className={cn(
-                      "flex size-5 shrink-0 items-center justify-center rounded-md",
-                      filterLinked
-                        ? "text-primary"
-                        : "text-muted-foreground",
-                    )}
-                    aria-hidden
-                  >
-                    {filterLinked ? (
-                      <Link2 className="size-4" />
-                    ) : (
-                      <Unlink className="size-4" />
-                    )}
-                  </span>
-                  <span className="min-w-0 flex-1 leading-tight">
-                    <span className="block font-medium text-foreground">
-                      {filterLinked
-                        ? "Dates match dashboard"
-                        : "Dates set separately"}
-                    </span>
-                    <span className="block text-xs text-muted-foreground">
-                      {filterLinked
-                        ? "Pills update this table"
-                        : "Pick your own range"}
-                    </span>
-                  </span>
-                </button>
-                <InfoTooltip content="When on, table dates stay in sync with the dashboard period (7d / 30d / …). Category filters always apply to both." />
-              </div>
-            </div>
-
-            {/* Active filter chips — dismissible summary */}
-            {hasActiveFilters && (
-              <div className="flex flex-wrap items-center gap-2 border-t pt-4">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Showing:
+                  {latestOnly ? "✓" : ""}
                 </span>
-                {serialActive && (
-                  <button
-                    type="button"
-                    onClick={() => setSerialSearch("")}
-                    className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/60 px-2.5 text-xs font-medium transition-colors hover:bg-muted"
-                  >
-                    <span className="truncate">
-                      Serial: {serialSearch.trim()}
-                    </span>
-                    <X className="size-3.5 shrink-0 opacity-60" />
-                  </button>
+                <span className="font-medium text-foreground">
+                  One row per inverter
+                </span>
+              </button>
+              <InfoTooltip content="Same as Latest / All tests in the header. On = one row per inverter (matches the summary cards)." />
+
+              <button
+                type="button"
+                role="switch"
+                aria-checked={filterLinked}
+                onClick={() => onFilterLinkedChange(!filterLinked)}
+                className={cn(
+                  "inline-flex h-9 items-center gap-2 rounded-md border px-2.5 text-sm transition-colors",
+                  filterLinked
+                    ? "border-primary/40 bg-primary/10 text-foreground"
+                    : "border-border bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                 )}
-                {statusActive && (
-                  <button
-                    type="button"
-                    onClick={() => onStatusFilterChange("all")}
-                    className={cn(
-                      "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors",
-                      "activeClass" in statusMeta && statusMeta.activeClass
-                        ? statusMeta.activeClass
-                        : "border-border bg-muted/60 hover:bg-muted",
-                    )}
-                  >
-                    {statusMeta.short}
-                    <X className="size-3.5 shrink-0 opacity-80" />
-                  </button>
+                title={
+                  filterLinked
+                    ? "Table dates follow the dashboard period"
+                    : "Table dates are independent of the dashboard"
+                }
+              >
+                {filterLinked ? (
+                  <Link2 className="size-3.5 shrink-0 text-primary" />
+                ) : (
+                  <Unlink className="size-3.5 shrink-0 text-muted-foreground" />
                 )}
-                {annotationLabel && (
-                  <button
-                    type="button"
-                    onClick={() => onAnnotationFilterChange("all")}
-                    className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/60 px-2.5 text-xs font-medium transition-colors hover:bg-muted"
-                  >
-                    <span className="truncate">{annotationLabel}</span>
-                    <X className="size-3.5 shrink-0 opacity-60" />
-                  </button>
-                )}
-                {firmwareActive && (
-                  <button
-                    type="button"
-                    onClick={() => setFirmwareFilter("all")}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-muted/60 px-2.5 text-xs font-medium transition-colors hover:bg-muted"
-                  >
-                    FW {firmwareFilter}
-                    <X className="size-3.5 shrink-0 opacity-60" />
-                  </button>
-                )}
-                {datesActive && dateRangeLabel && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onClearDateFilter) onClearDateFilter();
-                      else {
-                        onDateFromFilterChange("");
-                        onDateToFilterChange("");
-                      }
-                    }}
-                    className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/60 px-2.5 text-xs font-medium transition-colors hover:bg-muted"
-                  >
-                    <CalendarRange className="size-3.5 shrink-0 opacity-70" />
-                    <span className="truncate">{dateRangeLabel}</span>
-                    <X className="size-3.5 shrink-0 opacity-60" />
-                  </button>
-                )}
-              </div>
-            )}
+                <span className="font-medium text-foreground">
+                  {filterLinked
+                    ? "Dates match dashboard"
+                    : "Dates set separately"}
+                </span>
+              </button>
+              <InfoTooltip content="When on, table dates stay in sync with the dashboard period (7d / 30d / …). Category filters always apply to both." />
+
+              {loading && (
+                <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                  Updating list…
+                </span>
+              )}
+            </div>
           </div>
         </div>
-        <div className="overflow-hidden rounded-lg border">
+
+        <div
+          className={cn(
+            "overflow-hidden rounded-lg border transition-opacity",
+            loading && data.length > 0 && "opacity-70",
+          )}
+        >
           <Table>
             <TableHeader className="bg-muted sticky top-0 z-10">
               {table.getHeaderGroups().map((headerGroup) => (
@@ -1219,7 +1148,30 @@ export function DataTable({
               ))}
             </TableHeader>
             <TableBody className="**:data-[slot=table-cell]:first:w-8">
-              {table.getRowModel().rows?.length ? (
+              {tablePending ? (
+                Array.from({ length: 8 }).map((_, i) => (
+                  <TableRow key={`pending-${i}`}>
+                    <TableCell>
+                      <Skeleton className="h-5 w-32" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-5 w-20" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-5 w-36" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-5 w-16" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-6 w-14 rounded-full" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-5 w-28" />
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : table.getRowModel().rows?.length ? (
                 <>
                   {table.getRowModel().rows.map((row) => (
                     <TableRow
