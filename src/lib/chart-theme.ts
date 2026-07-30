@@ -93,21 +93,28 @@ export function useCommittedSeriesKey(
 }
 
 /**
- * Re-trigger a CSS enter class (e.g. chart-reveal-ltr) when `seriesKey`
- * changes, without remounting children (avoids a blank ECharts frame).
+ * Apply a one-shot CSS enter class (e.g. chart-reveal-ltr) when `seriesKey`
+ * changes, without remounting children.
+ *
+ * The reveal class must be owned ONLY here — do not also put it on the host
+ * `className`. Dual application (static class + this effect) ran the wipe
+ * twice on empty→data mounts: first paint had the class, then layoutEffect
+ * removed/re-added it and restarted the animation (flash + second redraw).
  */
 export function useSeriesRevealClass(
   seriesKey: string,
   className = "chart-reveal-ltr",
 ): React.RefObject<HTMLDivElement | null> {
   const ref = React.useRef<HTMLDivElement | null>(null);
-  const prevKeyRef = React.useRef(seriesKey);
+  /** null until first non-empty key so the initial series gets one reveal. */
+  const prevKeyRef = React.useRef<string | null>(null);
 
   React.useLayoutEffect(() => {
-    if (seriesKey === prevKeyRef.current) return;
+    if (!seriesKey) return;
+    if (prevKeyRef.current === seriesKey) return;
     prevKeyRef.current = seriesKey;
     const el = ref.current;
-    if (!el || !seriesKey) return;
+    if (!el) return;
     el.classList.remove(className);
     // Force reflow so the next add restarts the animation
     void el.offsetWidth;

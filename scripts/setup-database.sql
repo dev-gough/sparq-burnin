@@ -89,6 +89,8 @@ CREATE TABLE TestData (
 CREATE INDEX idx_inverters_serial ON Inverters(serial_number);
 CREATE INDEX idx_tests_inv_id ON Tests(inv_id);
 CREATE INDEX idx_tests_start_time ON Tests(start_time);
+-- Summary cards / latest-per-inverter: time-range scan of valid tests
+-- (start_time_utc is added by migrate-db 001; re-run migrate after setup)
 CREATE INDEX idx_testdata_test_id ON TestData(test_id);
 CREATE INDEX idx_testdata_timestamp ON TestData(timestamp);
 

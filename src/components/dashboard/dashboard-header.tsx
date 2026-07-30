@@ -124,12 +124,15 @@ export function DashboardHeader({
   const [themeMounted, setThemeMounted] = React.useState(false);
   React.useEffect(() => setThemeMounted(true), []);
   const contextDates = dashboardRangeContextLabel(dashboardRange);
+  // Fixed-width clock (2-digit hour + always-shown dayPeriod) so the
+  // "Updated …" slot never changes width when dataAsOf stamps or reloads.
   const dataAsOfLabel = React.useMemo(() => {
     if (!dataAsOf) return null;
     try {
       return dataAsOf.toLocaleTimeString(undefined, {
-        hour: "numeric",
+        hour: "2-digit",
         minute: "2-digit",
+        hour12: true,
       });
     } catch {
       return null;
@@ -238,6 +241,12 @@ export function DashboardHeader({
     }
   };
 
+  // Meta lives in a fixed-width slot outside the centered controls so
+  // date/Updated content can never re-center the period + mode toggles.
+  // Widths sized for longest common labels: "Sep 30 – Oct 30" + "Updated 12:59 PM".
+  const metaDatesText = contextDates ?? "—";
+  const metaClockText = dataAsOfLabel ?? "––:–– ––";
+
   return (
     <header className="sticky top-0 z-20 flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-4 lg:px-6">
       <div className="flex min-w-0 items-center gap-1.5">
@@ -247,7 +256,9 @@ export function DashboardHeader({
         <InfoTooltip content={METRICS_HELP} side="bottom" />
       </div>
 
-      {/* Period + result mode — large touch targets (O12) */}
+      {/* Period + result mode only — large touch targets (O12).
+          Meta (dates / Updated) is intentionally NOT in this flex so
+          justify-center cannot reflow when those strings mount. */}
       <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:justify-center sm:gap-3">
         <ToggleGroup
           type="single"
@@ -258,8 +269,8 @@ export function DashboardHeader({
           variant="outline"
           className={cn(
             "hidden sm:flex",
-            // O39: skeleton-like mute while prefs load (not a faded live control)
-            !prefsReady && "pointer-events-none animate-pulse opacity-50",
+            // O39: mute while prefs load (no pulse — pulse looked like motion)
+            !prefsReady && "pointer-events-none opacity-50",
           )}
           aria-busy={!prefsReady}
         >
@@ -319,7 +330,7 @@ export function DashboardHeader({
           variant="outline"
           className={cn(
             "hidden md:flex",
-            !prefsReady && "pointer-events-none animate-pulse opacity-50",
+            !prefsReady && "pointer-events-none opacity-50",
           )}
           aria-label="Result mode"
         >
@@ -356,31 +367,30 @@ export function DashboardHeader({
             <SelectItem value="all">All tests</SelectItem>
           </SelectContent>
         </Select>
+      </div>
 
-        {/* O25 + O31: active UTC span + last refresh */}
-        {prefsReady && (contextDates || dataAsOfLabel) && (
-          <span className="hidden items-center gap-2 text-xs tabular-nums text-muted-foreground lg:inline-flex">
-            {contextDates &&
-              (isCustom ? (
-                <span
-                  className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 font-medium text-primary"
-                  title="UTC calendar days"
-                >
-                  {contextDates} · UTC
-                </span>
-              ) : (
-                <span title="UTC calendar days">{contextDates}</span>
-              ))}
-            {dataAsOfLabel && (
-              <span
-                className="text-muted-foreground/80"
-                title="Client time of last dashboard data update"
-              >
-                Updated {dataAsOfLabel}
-              </span>
-            )}
-          </span>
-        )}
+      {/* O25 + O31: fixed-width meta slot (lg+). Always painted; never
+          unmounts; never shares a justify-center flex with the toggles. */}
+      <div
+        className="hidden w-[15.5rem] shrink-0 items-center justify-end gap-2 text-xs tabular-nums text-muted-foreground lg:flex"
+        aria-live="polite"
+      >
+        <span
+          className={cn(
+            "min-w-0 max-w-[7.25rem] truncate whitespace-nowrap text-right",
+            isCustom &&
+              "max-w-[8.5rem] rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-medium text-primary",
+          )}
+          title="UTC calendar days"
+        >
+          {isCustom ? `${metaDatesText} · UTC` : metaDatesText}
+        </span>
+        <span
+          className="w-[8.25rem] shrink-0 whitespace-nowrap text-right text-muted-foreground/80"
+          title="Client time of last dashboard data update"
+        >
+          Updated {metaClockText}
+        </span>
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">

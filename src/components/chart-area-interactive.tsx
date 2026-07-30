@@ -99,7 +99,13 @@ export function ChartAreaInteractive({
   loading,
   refreshing = false,
 }: ChartAreaInteractiveProps) {
-  const [isDarkMode, setIsDarkMode] = React.useState(false);
+  // Sync read on first paint so theme doesn't flip option after mount
+  // (notMerge redraw = second flash on empty→data).
+  const [isDarkMode, setIsDarkMode] = React.useState(
+    () =>
+      typeof document !== "undefined" &&
+      document.documentElement.classList.contains("dark"),
+  );
   const chartRef = React.useRef<ReactECharts>(null);
   const isMobile = useIsMobile();
   const chartHeightPx = isMobile ? 360 : 320;
@@ -108,7 +114,6 @@ export function ChartAreaInteractive({
     const checkDarkMode = () => {
       setIsDarkMode(document.documentElement.classList.contains("dark"));
     };
-    checkDarkMode();
     const observer = new MutationObserver(checkDarkMode);
     observer.observe(document.documentElement, {
       attributes: true,
@@ -590,10 +595,12 @@ export function ChartAreaInteractive({
           <div
             ref={revealRef}
             className={
-              // Steady while holding stale series; L→R class re-triggered on paintKey
+              // Reveal class is applied only by useSeriesRevealClass (once per
+              // seriesKey). Do not put chart-reveal-ltr here — dual apply
+              // restarted the wipe on every fresh mount.
               refreshing
                 ? "opacity-90 transition-opacity duration-200"
-                : "chart-reveal-ltr opacity-100"
+                : "opacity-100"
             }
           >
             <ReactECharts

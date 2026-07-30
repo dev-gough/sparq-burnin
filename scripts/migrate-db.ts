@@ -532,6 +532,33 @@ const migrations: Migration[] = [
       END
       $$;
     `
+  },
+  {
+    id: '015',
+    name: 'tests_summary_valid_start_utc_index',
+    sql: `
+      -- Hero summary / period probes filter valid tests by start_time_utc.
+      -- Existing indexes are start_time (legacy local) and (inv_id, start_time_utc)
+      -- unique — neither supports a time-range index-only scan. This partial
+      -- covering index turns summary aggregates into index-only scans and
+      -- feeds DISTINCT ON (inv_id) latest-per-inverter without joining Inverters.
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM pg_indexes
+          WHERE tablename = 'tests' AND indexname = 'idx_tests_valid_start_inv'
+        ) THEN
+          RAISE NOTICE 'idx_tests_valid_start_inv already exists, skipping';
+        ELSE
+          CREATE INDEX idx_tests_valid_start_inv
+            ON Tests (start_time_utc DESC, inv_id)
+            INCLUDE (overall_status)
+            WHERE overall_status <> 'INVALID' AND start_time_utc IS NOT NULL;
+          RAISE NOTICE 'Created idx_tests_valid_start_inv on Tests(start_time_utc, inv_id) INCLUDE (overall_status)';
+        END IF;
+      END
+      $$;
+    `
   }
 ];
 

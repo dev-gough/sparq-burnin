@@ -21,19 +21,17 @@ export interface BucketStats {
   failedFiltered?: number;
 }
 
-/** Stable identity for the in-flight / desired fetch. */
+/** Stable identity for the desired series (not gated on `enabled`). */
 function buildRequestKey(opts: {
   dashboardRange: DashboardRange;
   chartMode: string;
   annotationFilter: string;
   bucket: ChartBucket;
   requestEpoch: number;
-  enabled: boolean;
 }): string {
-  const { dashboardRange, chartMode, annotationFilter, bucket, requestEpoch, enabled } =
+  const { dashboardRange, chartMode, annotationFilter, bucket, requestEpoch } =
     opts;
   return JSON.stringify({
-    enabled,
     chartMode,
     annotationFilter,
     bucket,
@@ -89,9 +87,8 @@ export function useBucketStats(opts: {
         annotationFilter,
         bucket,
         requestEpoch,
-        enabled,
       }),
-    [dashboardRange, chartMode, annotationFilter, bucket, requestEpoch, enabled],
+    [dashboardRange, chartMode, annotationFilter, bucket, requestEpoch],
   );
 
   const [data, setData] = React.useState<BucketStats[]>([]);
@@ -104,9 +101,29 @@ export function useBucketStats(opts: {
   const dataKeyRef = React.useRef(dataKey);
   dataKeyRef.current = dataKey;
 
-  // Synchronous: true on the same render that range/bucket/epoch changes
-  const loading = enabled && dataKey === null;
-  const refreshing = enabled && dataKey !== null && dataKey !== requestKey;
+  // Synchronous flags (same render as range/bucket/epoch changes).
+  //
+  // loading vs refreshing:
+  // - loading  → no series to soft-hold → skeleton. Covers empty→period remount:
+  //   a prior empty-period fetch (while hasData was still null) can leave
+  //   dataKey set with data=[]. Old logic treated that as "loaded", so ECharts
+  //   painted empty/sparse once, then continuous series when the real fetch
+  //   landed (double paint leaving empty state).
+  // - refreshing → soft-hold a previous non-empty series (freeze chart option).
+  //   Not gated on `enabled` so the has-data probe cannot unfreeze into a
+  //   continuous-fill of stale sparse buckets (7d ↔ 30d ↔ 90d).
+  const hasSeries = data.length > 0;
+  const keyMismatch = dataKey !== null && dataKey !== requestKey;
+  const loading = enabled && (dataKey === null || (keyMismatch && !hasSeries));
+  const refreshing = keyMismatch && hasSeries;
+
+  // When disabled with no series (confirmed empty / prefs), drop the stale
+  // dataKey so the next enable is a clean first load.
+  React.useEffect(() => {
+    if (!enabled && !hasSeries && dataKey !== null) {
+      setDataKey(null);
+    }
+  }, [enabled, hasSeries, dataKey]);
 
   React.useEffect(() => {
     if (!enabled) return;
@@ -133,7 +150,7 @@ export function useBucketStats(opts: {
 
         if (!response.ok) {
           setError(true);
-          // Clear refreshing without wiping soft-refresh series
+          // Mark key settled without wiping a soft-held non-empty series
           setDataKey(keyAtStart);
           return;
         }
@@ -150,7 +167,7 @@ export function useBucketStats(opts: {
         if (requestKeyRef.current !== keyAtStart) return;
         console.error("Error fetching bucket stats:", e);
         setError(true);
-        // First load: clear series. Soft refresh: keep previous series.
+        // First load / empty hold: clear series. Soft refresh: keep previous.
         if (dataKeyRef.current === null) setData([]);
         setDataKey(keyAtStart);
       }

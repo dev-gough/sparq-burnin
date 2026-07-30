@@ -87,7 +87,12 @@ export function FailureRateStrip({
   bucket,
   dashboardRange,
 }: FailureRateStripProps) {
-  const [isDarkMode, setIsDarkMode] = React.useState(false);
+  // Sync read on first paint — avoids notMerge theme flip after first draw.
+  const [isDarkMode, setIsDarkMode] = React.useState(
+    () =>
+      typeof document !== "undefined" &&
+      document.documentElement.classList.contains("dark"),
+  );
   const annotationOn = Boolean(
     annotationFilter && annotationFilter !== "all",
   );
@@ -95,7 +100,6 @@ export function FailureRateStrip({
   React.useEffect(() => {
     const check = () =>
       setIsDarkMode(document.documentElement.classList.contains("dark"));
-    check();
     const observer = new MutationObserver(check);
     observer.observe(document.documentElement, {
       attributes: true,
@@ -356,9 +360,10 @@ export function FailureRateStrip({
           <div
             ref={revealRef}
             className={
+              // Reveal owned by useSeriesRevealClass only (see chart-theme).
               refreshing
                 ? "opacity-90 transition-opacity duration-200"
-                : "chart-reveal-ltr opacity-100"
+                : "opacity-100"
             }
           >
             <ReactECharts

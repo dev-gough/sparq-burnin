@@ -100,6 +100,23 @@ function annotationGroupExistsSql(
 }
 
 /**
+ * Latest-per-inverter population for summary cards.
+ * Partition by inv_id (1:1 with serial_number) — no Inverters join required.
+ * DISTINCT ON is equivalent to ROW_NUMBER()…rn=1 and plans better with
+ * idx_tests_valid_start_inv.
+ */
+function latestPerInverterCte(timeFilter: string): string {
+  return `
+    SELECT DISTINCT ON (t.inv_id)
+      t.test_id,
+      t.overall_status
+    FROM Tests t
+    WHERE t.overall_status <> 'INVALID' ${timeFilter}
+    ORDER BY t.inv_id, t.start_time_utc DESC
+  `;
+}
+
+/**
  * Query summary stats for one time window.
  * Preserves annotation split semantics: total/passed unfiltered, failed filtered,
  * failureRate = filtered failures / all tests.
@@ -122,6 +139,7 @@ async function querySummaryStats(
     1
   );
   const timeFilter = windowSql ? `AND ${windowSql}` : "";
+  const isRecent = chartMode === "recent";
 
   const annotationActive =
     !!annotationFilter && annotationFilter !== "all";
@@ -157,116 +175,74 @@ async function querySummaryStats(
   let totalFailed: number | undefined;
 
   if (annotationActive) {
-    // Query 1: total, passed, and ALL failed WITHOUT annotation filter
-    let totalPassedQuery: string;
-    if (chartMode === "recent") {
-      totalPassedQuery = `
-            WITH latest_tests AS (
-              SELECT t.*, i.serial_number,
-                ROW_NUMBER() OVER (
-                  PARTITION BY i.serial_number
-                  ORDER BY t.start_time_utc DESC
-                ) as rn
-              FROM Tests t
-              JOIN Inverters i ON t.inv_id = i.inv_id
-              WHERE t.overall_status != 'INVALID' ${timeFilter}
+    // Single pass: totals unfiltered + failed with annotation EXISTS.
+    // Avoids the old double scan of the latest-per-inverter set.
+    const annotatedFail = summaryAnnotationFilterClause.replace(
+      /t\.test_id/g,
+      "latest.test_id",
+    );
+    let summaryQuery: string;
+    if (isRecent) {
+      summaryQuery = `
+            WITH latest AS (
+              ${latestPerInverterCte(timeFilter)}
             )
             SELECT
-              COUNT(*) as total,
-              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
-              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as total_failed
-            FROM latest_tests
-            WHERE rn = 1
+              COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE overall_status = 'PASS')::int AS passed,
+              COUNT(*) FILTER (WHERE overall_status = 'FAIL')::int AS total_failed,
+              COUNT(*) FILTER (
+                WHERE overall_status = 'FAIL' ${annotatedFail}
+              )::int AS failed
+            FROM latest
           `;
     } else {
-      totalPassedQuery = `
+      summaryQuery = `
             SELECT
-              COUNT(*) as total,
-              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
-              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as total_failed
+              COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE overall_status = 'PASS')::int AS passed,
+              COUNT(*) FILTER (WHERE overall_status = 'FAIL')::int AS total_failed,
+              COUNT(*) FILTER (
+                WHERE overall_status = 'FAIL' ${summaryAnnotationFilterClause}
+              )::int AS failed
             FROM Tests t
-            JOIN Inverters i ON t.inv_id = i.inv_id
-            WHERE t.overall_status != 'INVALID' ${timeFilter}
+            WHERE t.overall_status <> 'INVALID' ${timeFilter}
           `;
     }
 
-    const totalPassedResult =
-      timeParams.length > 0
-        ? await client.query(totalPassedQuery, timeParams)
-        : await client.query(totalPassedQuery);
-
-    total = parseInt(totalPassedResult.rows[0].total) || 0;
-    passed = parseInt(totalPassedResult.rows[0].passed) || 0;
-    totalFailed = parseInt(totalPassedResult.rows[0].total_failed) || 0;
-
-    // Query 2: failed count WITH annotation filter
-    let failedQuery: string;
-    if (chartMode === "recent") {
-      failedQuery = `
-            WITH latest_tests AS (
-              SELECT t.test_id, t.overall_status, i.serial_number,
-                ROW_NUMBER() OVER (
-                  PARTITION BY i.serial_number
-                  ORDER BY t.start_time_utc DESC
-                ) as rn
-              FROM Tests t
-              JOIN Inverters i ON t.inv_id = i.inv_id
-              WHERE t.overall_status != 'INVALID' ${timeFilter}
-            )
-            SELECT
-              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
-            FROM latest_tests
-            WHERE rn = 1
-              ${summaryAnnotationFilterClause.replace("t.test_id", "latest_tests.test_id")}
-          `;
-    } else {
-      failedQuery = `
-            SELECT
-              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
-            FROM Tests t
-            JOIN Inverters i ON t.inv_id = i.inv_id
-            WHERE t.overall_status != 'INVALID' ${timeFilter} ${summaryAnnotationFilterClause}
-          `;
-    }
-
-    const failedParams = annotationUsesParam
+    const bindParams = annotationUsesParam
       ? [...timeParams, filterValue!]
       : [...timeParams];
-    const failedResult =
-      failedParams.length > 0
-        ? await client.query(failedQuery, failedParams)
-        : await client.query(failedQuery);
-    failed = parseInt(failedResult.rows[0].failed) || 0;
+    const result =
+      bindParams.length > 0
+        ? await client.query(summaryQuery, bindParams)
+        : await client.query(summaryQuery);
+    const row = result.rows[0];
+    total = parseInt(row.total, 10) || 0;
+    passed = parseInt(row.passed, 10) || 0;
+    totalFailed = parseInt(row.total_failed, 10) || 0;
+    failed = parseInt(row.failed, 10) || 0;
   } else {
     let summaryQuery: string;
-    if (chartMode === "recent") {
+    if (isRecent) {
       summaryQuery = `
-            WITH latest_tests AS (
-              SELECT t.*, i.serial_number,
-                ROW_NUMBER() OVER (
-                  PARTITION BY i.serial_number
-                  ORDER BY t.start_time_utc DESC
-                ) as rn
-              FROM Tests t
-              JOIN Inverters i ON t.inv_id = i.inv_id
-              WHERE t.overall_status != 'INVALID' ${timeFilter}
-            )
             SELECT
-              COUNT(*) as total,
-              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
-              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
-            FROM latest_tests
-            WHERE rn = 1
+              COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE overall_status = 'PASS')::int AS passed,
+              COUNT(*) FILTER (WHERE overall_status = 'FAIL')::int AS failed
+            FROM (
+              ${latestPerInverterCte(timeFilter)}
+            ) latest
           `;
     } else {
+      // All tests: pure aggregate — no Inverters join
       summaryQuery = `
             SELECT
-              COUNT(*) as total,
-              COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
-              COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed
+              COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE overall_status = 'PASS')::int AS passed,
+              COUNT(*) FILTER (WHERE overall_status = 'FAIL')::int AS failed
             FROM Tests t
-            JOIN Inverters i ON t.inv_id = i.inv_id
-            WHERE t.overall_status != 'INVALID' ${timeFilter}
+            WHERE t.overall_status <> 'INVALID' ${timeFilter}
           `;
     }
 
@@ -276,9 +252,9 @@ async function querySummaryStats(
         : await client.query(summaryQuery);
     const row = summaryResult.rows[0];
 
-    total = parseInt(row.total) || 0;
-    passed = parseInt(row.passed) || 0;
-    failed = parseInt(row.failed) || 0;
+    total = parseInt(row.total, 10) || 0;
+    passed = parseInt(row.passed, 10) || 0;
+    failed = parseInt(row.failed, 10) || 0;
   }
 
   const failureRate = total > 0 ? (failed / total) * 100 : 0;

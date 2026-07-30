@@ -533,12 +533,21 @@ export function HeroMetrics({
         </CardHeader>
       </Card>
 
-      {/* O16: single all-time compare note (not thrice) */}
-      {isAllTime && !metricsPending && (
-        <p className="text-xs text-muted-foreground md:col-span-3">
+      {/* O16: single all-time compare note (not thrice).
+          Always reserve one text-xs line so charts never shift when:
+          - switching to/from all-time
+          - soft-refresh toggles metricsPending
+          Content is invisible (not unmounted) when not all-time. */}
+      <div className="min-h-5 md:col-span-3" role={isAllTime ? "note" : undefined}>
+        <p
+          className={cn(
+            "text-xs leading-5 text-muted-foreground",
+            !isAllTime && "invisible",
+          )}
+        >
           All-time view has no prior-period comparison.
         </p>
-      )}
+      </div>
     </div>
   );
 }
