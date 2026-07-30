@@ -1,7 +1,11 @@
 /**
  * Summary compare response contract tests (mocked pg Client).
- * Covers flat vs structured envelope, null previous for all, annotation split
+ * Covers flat vs structured envelope, null previous for all, annotation
  * query params, and failureRatePp from raw counts.
+ *
+ * Query shape (post summary SQL rewrite):
+ * - Latest mode uses DISTINCT ON (inv_id) in a `latest` subquery (no Inverters join)
+ * - Annotation mode is a single query with COUNT(*) FILTER + EXISTS (not 2 splits)
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
@@ -39,6 +43,10 @@ async function json(response: Response) {
   return response.json() as Promise<Record<string, unknown>>;
 }
 
+function isCountSql(sql: unknown): sql is string {
+  return typeof sql === "string" && /COUNT\s*\(/i.test(sql);
+}
+
 /** Default mock: relative windows return fixed current vs previous counts. */
 function installDefaultQueryMock() {
   queryMock.mockImplementation(async (sql: string, _params?: unknown[]) => {
@@ -46,19 +54,27 @@ function installDefaultQueryMock() {
       return { rows: [] };
     }
 
-    // Annotation path first (unfiltered totals include total_failed)
-    if (typeof sql === "string" && sql.includes("as total_failed")) {
-      return { rows: [{ total: "100", passed: "90", total_failed: "10" }] };
-    }
-
-    // Annotation path: filtered failed only (no total/passed columns)
+    // Annotation path: single query returns totals + filtered failed together
     if (
       typeof sql === "string" &&
-      sql.includes("as failed") &&
-      !sql.includes("as total") &&
-      !sql.includes("as passed")
+      /total_failed/i.test(sql) &&
+      /TestAnnotations|group_name/i.test(sql)
     ) {
-      return { rows: [{ failed: "3" }] };
+      return {
+        rows: [
+          {
+            total: "100",
+            passed: "90",
+            total_failed: "10",
+            failed: "3",
+          },
+        ],
+      };
+    }
+
+    // Legacy/unannotated total_failed only (shouldn't be hit by current route)
+    if (typeof sql === "string" && /total_failed/i.test(sql)) {
+      return { rows: [{ total: "100", passed: "90", total_failed: "10" }] };
     }
 
     // Previous 30d half-open: INTERVAL '60 days' ... INTERVAL '30 days'
@@ -79,10 +95,10 @@ function installDefaultQueryMock() {
       return { rows: [{ total: "1284", passed: "1253", failed: "31" }] };
     }
 
-    // all-time / no filter
+    // all-time / no INTERVAL filter (COUNT form is COUNT(*)::int AS total)
     if (
       typeof sql === "string" &&
-      sql.includes("COUNT(*) as total") &&
+      isCountSql(sql) &&
       !sql.includes("INTERVAL")
     ) {
       return { rows: [{ total: "5000", passed: "4800", failed: "200" }] };
@@ -198,16 +214,22 @@ describe("view=summary&compare=1", () => {
     expect(res.status).toBe(200);
     const body = await json(res);
     expect(body.chartMode).toBe("recent");
-    // recent branch uses latest_tests CTE
+    // recent branch uses DISTINCT ON (inv_id) latest-per-inverter
     const dataQueries = queryMock.mock.calls
       .map((c) => String(c[0]))
-      .filter((s) => s.includes("COUNT"));
-    expect(dataQueries.some((s) => s.includes("latest_tests"))).toBe(true);
+      .filter((s) => isCountSql(s));
+    expect(
+      dataQueries.some(
+        (s) =>
+          s.includes("DISTINCT ON") &&
+          (s.includes("inv_id") || s.includes("latest")),
+      ),
+    ).toBe(true);
   });
 });
 
-describe("annotation filter split queries", () => {
-  it("issues unfiltered then filtered queries with annotation param", async () => {
+describe("annotation filter queries", () => {
+  it("issues a single query with unfiltered totals and filtered failed", async () => {
     const res = await GET(
       req(
         "view=summary&chartMode=all&timeRange=30d&annotation=Hardware%20Failure"
@@ -224,41 +246,31 @@ describe("annotation filter split queries", () => {
       failurePercentageOfTotal: 30,
     });
 
-    const calls = queryMock.mock.calls.filter(
-      (c) => typeof c[0] === "string" && String(c[0]).includes("COUNT")
-    );
-    expect(calls.length).toBe(2);
+    const calls = queryMock.mock.calls.filter((c) => isCountSql(c[0]));
+    // One combined query (not the old unfiltered + filtered pair)
+    expect(calls.length).toBe(1);
 
-    // Query 1: unfiltered totals (no annotation param)
-    const q1sql = String(calls[0][0]);
-    expect(q1sql).toContain("total_failed");
-    expect(q1sql).not.toContain("TestAnnotations");
-    expect(calls[0][1]).toBeUndefined(); // only INTERVAL, no params
-
-    // Query 2: filtered failed with annotation text as last param
-    const q2sql = String(calls[1][0]);
-    expect(q2sql).toContain("TestAnnotations");
-    expect(calls[1][1]).toEqual(["Hardware Failure"]);
+    const qsql = String(calls[0][0]);
+    expect(qsql).toMatch(/total_failed/i);
+    expect(qsql).toContain("TestAnnotations");
+    expect(qsql).toMatch(/FILTER/i);
+    // INTERVAL window has no bound params; annotation text is the only bind
+    expect(calls[0][1]).toEqual(["Hardware Failure"]);
   });
 
-  it("compare with annotation runs split queries on both windows", async () => {
+  it("compare with annotation runs one query per window", async () => {
     await GET(
       req(
         "view=summary&compare=1&chartMode=all&timeRange=30d&annotation=Hardware%20Failure"
       )
     );
 
-    const dataCalls = queryMock.mock.calls.filter(
-      (c) => typeof c[0] === "string" && String(c[0]).includes("COUNT")
-    );
-    // 2 windows × 2 split queries = 4
-    expect(dataCalls.length).toBe(4);
+    const dataCalls = queryMock.mock.calls.filter((c) => isCountSql(c[0]));
+    // 2 windows × 1 combined annotation query = 2
+    expect(dataCalls.length).toBe(2);
 
-    const withAnnotation = dataCalls.filter((c) =>
-      String(c[0]).includes("TestAnnotations")
-    );
-    expect(withAnnotation.length).toBe(2);
-    for (const call of withAnnotation) {
+    for (const call of dataCalls) {
+      expect(String(call[0])).toContain("TestAnnotations");
       expect(call[1]).toEqual(["Hardware Failure"]);
     }
   });
