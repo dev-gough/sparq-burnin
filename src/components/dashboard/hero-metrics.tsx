@@ -271,7 +271,10 @@ export function HeroMetrics({
     }
 
     const identityAtStart = requestIdentity;
-    const isInitial = !hasDataRef.current && cachedFromStore === null;
+    // Snapshot cache inside the effect (not via cachedFromStore dep) so a
+    // successful load writing the store does not re-trigger this fetch.
+    const isInitial =
+      !hasDataRef.current && getCachedSummaryStats(fetchKey) === undefined;
     let cancelled = false;
     let cancelPrefetch: (() => void) | undefined;
 
@@ -321,7 +324,6 @@ export function HeroMetrics({
     annotationFilter,
     requestIdentity,
     enabled,
-    // intentionally not depending on cachedFromStore — load still fills cache
   ]);
 
   // Prefer store for the current key so a prefetched pill paints on the same
