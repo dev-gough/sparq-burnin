@@ -59,7 +59,7 @@
     "@types/pg-copy-streams": "^1.2.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "eslint": "^9",
+    "eslint": "^9.39.5",
     "eslint-config-next": "^16.2.12",
     "pg-copy-streams": "^7.0.0",
     "tailwindcss": "^4",
@@ -69,6 +69,7 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
-    "size-sensor": "1.0.4"
+    "size-sensor": "1.0.3",
+    "minimatch": "10.2.6"
   }
 }
