@@ -12,7 +12,7 @@
 **Branch:** `feature/https-ingest` — base branch is `master`. Diff your work
 against `master`.
 **Your task:** implement Phase 2 (items 2.1–2.5) and Phase 3 (tests) of
-`HTTPS_INGEST_POLISH_PLAN.md` in this repo. The plan file is the authoritative
+`docs/HTTPS_INGEST_POLISH_PLAN.md` in this repo. The plan file is the authoritative
 task list; this doc is the context you need to execute it well.
 
 Sequencing across repos (Devon's call): this repo's Phase 2/3 happens FIRST,
@@ -38,7 +38,7 @@ consolidation (Phase 2) and the test suite the feature ships with (Phase 3).
   correctness blockers.`). `tsc --noEmit` and `npm run lint` were clean at
   that commit.
 - **Uncommitted, intentional — do not revert:**
-  - `HTTPS_INGEST_POLISH_PLAN.md` — cross-repo coordination section updated
+  - `docs/HTTPS_INGEST_POLISH_PLAN.md` — cross-repo coordination section updated
     with the station's Phase-1 contract changes.
   - `tests/fixtures/hmac_golden_vectors.json` (untracked) — the shared golden
     HMAC fixture, copied verbatim from the station repo. Commit it with your
@@ -166,7 +166,7 @@ numbers.
 - Don't relitigate ratified decisions; DO flag new evidence that contradicts
   them (that's how the store-as-INVALID decision got corrected).
 - When your work changes the wire contract or the shared selection rules in
-  any way, update `HTTPS_INGEST_POLISH_PLAN.md` in BOTH repos (each has a
+  any way, update `docs/HTTPS_INGEST_POLISH_PLAN.md` in BOTH repos (each has a
   cross-repo coordination section) and note it for the station side — the
   station's Phase 2/3 session will read that section first.
 - Update the plan file's checkboxes with a short status note per item as you

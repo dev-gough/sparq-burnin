@@ -50,8 +50,9 @@ log
 # Local configuration (machine-specific)
 config.json
 
-# Annotation groups configuration
+# Annotation groups configuration (local vocabulary notes)
 ANNOTATIONGROUPS.md
+docs/ANNOTATIONGROUPS.md
 
 # Security reports
 docs/cve-report.md
@@ -61,7 +62,9 @@ docs/cve-report.md
 # Control Center ops status (watchdog / ingest)
 /data/.ops/
 
+# Local annotation dumps / exports
 burnin_annotations.*
+docs/archive/burnin_annotations.*
 docs/FAILURE_CLASSIFICATION_REPORT.md
 logs/
 scripts/export_annotation_table.py

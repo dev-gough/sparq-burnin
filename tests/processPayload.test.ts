@@ -4,7 +4,7 @@
  * HONEST SCOPE: these run against a scripted in-memory fake pg client, NOT a
  * real PostgreSQL. A scratch DB was not safely reachable in this environment
  * (schema/migration scripts resolve their target from config.json, i.e. the
- * live DB), so per HANDOFF.md these tests verify the FLOW — dedup ordering,
+ * live DB), so per docs/HANDOFF.md these tests verify the FLOW — dedup ordering,
  * transaction bracketing, 23505 race resolution, receipt writing, COPY
  * batching — while real-SQL semantics (tolerance intervals, index behavior,
  * COPY parsing) remain verified by inspection + the deployed migrations.

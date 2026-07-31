@@ -1115,8 +1115,8 @@ Only items that remain truly undecided or need post-MVP product choice:
 - Code: `src/app/page.tsx`, `src/components/chart-area-interactive.tsx`, `src/components/section-cards.tsx`, `src/components/data-table.tsx` (`DataTableProps`, internal `statusFilter`), `src/app/api/test-stats/route.ts`, `src/app/api/failure-analytics/route.ts`, `src/lib/validation.ts`, `src/app/test/[id]/page.tsx`, `src/components/TestAnnotations.tsx`, `src/app/globals.css`, `src/components/site-header.tsx`, `src/components/hover-sidebar.tsx`, `src/components/ui/sheet.tsx`, `src/components/ui/sonner.tsx`
 - Indexes: `scripts/setup-database.sql` (`idx_tests_start_time` on `start_time`); migrations unique `(inv_id, start_time_utc)`
 - Prior branch: `fable/ui-refresh` (commits `250d31f` … `b94d529`) — older master tip; expect conflicts
-- Auth: `src/lib/auth.ts`, `src/middleware.ts`, CLAUDE.md
-- Annotation vocabulary: `ANNOTATIONGROUPS.md`
+- Auth: `src/lib/auth.ts`, `src/proxy.ts`, `docs/CLAUDE.md`
+- Annotation vocabulary: `docs/ANNOTATIONGROUPS.md` (local)
 
 ---
 

@@ -1,172 +1,131 @@
-# Burnin Test Dashboard
+# BurnIn Dashboard
 
-A web-based dashboard for viewing and analyzing inverter burn-in test results. This dashboard provides real-time insights into test performance, failure tracking, and historical data analysis.
+**Manufacturing telemetry for inverter burn-in testing** — pass/fail volume, failure trends, annotations, and full test traces in one place.
 
-## What is this?
+Built for Sparq Systems manufacturing & engineering: open a shift, see what’s failing, drill into a unit, leave a note.
 
-The Burnin Test Dashboard displays test results from inverter burn-in testing operations. It allows you to:
-- View daily test pass/fail statistics
-- Filter and search through test records
-- Track specific inverters by serial number
-- Analyze test trends over time
-- Download detailed reports
-- Add and manage test annotations
+---
 
-## How to Use the Dashboard
+## Highlights
 
-### Dashboard Overview
+| | |
+|---|---|
+| **Command center home** | Volume chart, failure-rate strip, executive filters, soft-refresh table |
+| **Test detail** | Dense metadata, multi-series charts, annotate-first failure workflow |
+| **Station ingest** | HMAC-authenticated HTTPS push from burn-in stations (gzip JSON) |
+| **Access control** | Microsoft Entra ID (Azure AD); `@sparqsys.com` only |
+| **Ops ready** | Health probe, encrypted ops logs, migrations on deploy |
 
-When you first open the dashboard, you'll see three main sections:
+---
 
-1. **Summary Cards** - Quick statistics showing total tests, pass rates, and failure counts
-2. **Test Results Chart** - Visual graph showing daily pass/fail trends
-3. **Test Data Table** - Detailed list of all test records with filtering options
+## Stack
 
-### Using the Test Results Chart
+```text
+Next.js 16  ·  React 19  ·  TypeScript  ·  PostgreSQL
+Auth.js (NextAuth v5) + Microsoft Entra ID
+Apache ECharts  ·  TanStack Table  ·  shadcn/ui  ·  Tailwind CSS v4
+```
 
-The chart at the top displays daily test results over time:
+---
 
-- **Green area** = Passed tests
-- **Red area** = Failed tests
-- **Time range options**: Choose between "Last 7 days", "Last 30 days", "Last 3 months", or "All Time"
-- **View modes**:
-  - **All Tests** - Shows every test result
-  - **Latest per S/N** - Shows only the most recent test for each serial number
+## Quick start (local)
 
-**Clicking the chart**: Click on the chart line to filter the data table below to that specific date.
+**Requirements:** Node.js 20+, PostgreSQL 14+
 
-**Download Options**:
-- **Generate Report** - Downloads a CSV file with daily test statistics
-- **Failed Test Data** - Downloads a ZIP file containing data for all failed tests
+```bash
+git clone <repository-url>
+cd burnin          # or burnin-dashboard
+npm install
 
-### Filtering Test Data
+cp .env.example .env.local
+# set NEXTAUTH_SECRET, Azure AD vars, or SKIP_AUTH=true for local-only
 
-The data table has several powerful filtering options:
+cp config.template.json config.json
+# fill database (+ optional ingest stations)
 
-#### Search by Serial Number
-Type any part of an inverter serial number in the search box to find specific units.
+npm run setup-db   # schema
+npm run migrate    # ledgered migrations
+npm run dev        # http://localhost:3000
+```
 
-#### Status Filter
-- **Valid Only** (default) - Shows only PASS and FAIL tests
-- **All** - Shows all tests including invalid ones
-- **Pass** - Shows only passed tests
-- **Fail** - Shows only failed tests
-- **Invalid** - Shows only invalid tests
+| Command | Purpose |
+|---------|---------|
+| `npm run dev` | Dev server (Turbopack) |
+| `npm test` | Vitest suite |
+| `npm run lint` | ESLint |
+| `npm run migrate` | Apply DB migrations |
+| `npm run ingest` | Import CSVs from `data/to_process/` |
+| `npm start` | Production server (port **9001**) |
 
-#### Annotation Filter
-Filter tests by annotation tags. Annotations are custom labels that can be added to tests for categorization (e.g., "Channel Short", "Setup Issue - DC", etc.).
+> **Auth:** set `SKIP_AUTH=true` only on trusted local networks. Production uses Entra ID — see [`.env.example`](./.env.example).
 
-#### Firmware Version Filter
-Filter tests by the firmware version that was running during the test.
+---
 
-#### Date Range Filters
-- **From Date** - Show tests starting from this date
-- **To Date** - Show tests up to this date
-- Use both to create a custom date range
+## What you get in the UI
 
-#### Latest Only Toggle
-When enabled, shows only the most recent test for each inverter serial number. Useful for checking current status of all units.
+### Home
+- **Summary + compare** — totals and period-over-period context  
+- **Test volume** — pass/fail over time (bars → line when dense); filter-aware empty state  
+- **Failure rate strip** — aligned buckets with the volume chart  
+- **Find tests** — compact filters (status, annotations, firmware, custom date range with drag-select calendar)  
+- **Table** — soft reload when ranges change; open any row for detail  
 
-#### Filter Linking
-The link/unlink button controls whether filters affect both the chart and the table:
-- **Linked** (default) - Filters apply to both chart and data table
-- **Unlinked** - Filters only apply to the data table
+### Test page
+- Header with serial, firmware, timing, result  
+- Interactive parameter charts (fullscreen capable)  
+- Annotations with shared vocabulary / quick options  
 
-#### Clear Filters
-Resets all filters to their default values.
+### Stations & ingest
+- Stations admin (allowlisted) for remote enable/disable  
+- `POST /api/ingest/v1/tests` — per-station HMAC, idempotent ACK  
 
-### Viewing Test Details
+---
 
-Click on any row in the data table to open the detailed test page. This shows:
-- Complete test information
-- Time-series charts of test parameters (voltage, power, temperature, etc.)
-- Failure reasons (if applicable)
-- Full test logs and data
+## Repository layout
 
-### Understanding the Data Table Columns
+```text
+src/           App Router UI, API routes, lib
+scripts/       DB setup, migrations, ingest, deploy helpers
+tests/         Vitest unit / route tests
+docs/          Design notes, deploy, ingest API, lab procedures
+public/        Static assets
+config.template.json   Machine config shape (copy → config.json)
+.env.example           Auth & ops env template
+```
 
-- **Inverter Serial Number** - Unique identifier for each unit
-- **Firmware Version** - Software version running during the test
-- **Test Date** - When the test was started (displayed in your selected timezone)
-- **Test Duration** - How long the test ran
-- **Result** - PASS, FAIL, or INVALID status
-- **Annotations** - Custom notes or categories assigned to the test
+Machine-local (gitignored): `config.json`, `.env.local`, `data/`, `logs/`.
 
-### Timezone Settings
+---
 
-Use the timezone selector in the top-right corner to view dates and times in:
-- Your local timezone
-- UTC (Coordinated Universal Time)
-- Delhi/Kolkata time (IST)
+## Documentation
 
-### Filter Persistence
+| Doc | Topic |
+|-----|--------|
+| [`docs/README.md`](./docs/README.md) | Full doc index |
+| [`docs/INGEST_API.md`](./docs/INGEST_API.md) | Station HTTPS ingest contract |
+| [`docs/INGEST_PRODUCTION.md`](./docs/INGEST_PRODUCTION.md) | Production ingest rollout |
+| [`docs/CI_DEPLOY.md`](./docs/CI_DEPLOY.md) | Lab CI + deploy pipeline |
+| [`docs/DATABASE.md`](./docs/DATABASE.md) | Schema & CSV ingestion |
+| [`docs/DEPLOYMENT_GUIDE.md`](./docs/DEPLOYMENT_GUIDE.md) | Host deployment notes |
+| [`docs/CLAUDE.md`](./docs/CLAUDE.md) | Agent / contributor project notes |
 
-Your filter settings are automatically saved in your browser. When you navigate away and return to the dashboard, your filters will be restored exactly as you left them.
+---
 
-## For Developers
+## Security notes (public repo)
 
-### Prerequisites
+- **Never commit** `.env.local`, `config.json`, station HMAC secrets, or client secrets.  
+- Azure app registration: redirect URI, admin consent for Graph `User.Read`, and a live client secret (or cert) on the host.  
+- Tenant policies may block new client secrets — exclude this app under **Entra → Application policies → Block password addition** if you need to rotate.  
+- Ingest routes use **HMAC**, not browser sessions; keep station secrets out of the frontend.
 
-- Node.js 18+ installed
-- PostgreSQL database
-- Access to test data CSV files
-
-### Quick Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd burnin
-   ```
-
-   Please reach out to `dgough@sparqsys.com` for access to the repository.
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Configure the database**
-   - Create a PostgreSQL database
-   - Update database credentials in your environment configuration
-   - Run the schema setup:
-     ```bash
-     npm run setup-db
-     ```
-
-4. **Import test data**
-   - Place CSV files in `data/to_process/`
-   - Run the ingestion script:
-     ```bash
-     npm run ingest
-     ```
-
-5. **Start the development server**
-   ```bash
-   npm run dev
-   ```
-
-6. **Open the dashboard**
-   Navigate to [http://localhost:3000](http://localhost:3000)
-
-### Useful Commands
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run start` - Start production server
-- `npm run lint` - Check code quality
-- `npm run ingest` - Import new CSV files from data/to_process/
-- `npm run reprocess` - Clear database and re-import all processed files
-- `npm run db:schema` - Reset database schema
-
-### Technology Stack
-
-- **Framework**: Next.js 15 (React)
-- **Database**: PostgreSQL
-- **UI Components**: shadcn/ui with Radix UI
-- **Charts**: Apache ECharts
-- **Styling**: Tailwind CSS v4
+---
 
 ## Support
 
-For questions or issues, contact `dgough@sparqsys.com`
+Questions or access: **dgough@sparqsys.com**
+
+---
+
+<p align="center">
+  <sub>Sparq Systems · Burn-in manufacturing software</sub>
+</p>

@@ -359,7 +359,7 @@ orphaned annotations; duplicate rows after re-ingest.
 
 - [ ] All 13 cases recorded in the table above with pass/fail + notes.
 - [ ] LT-06 result noted against the final unchecked acceptance box in
-      `Zigbee_UART_Interface/HTTPS_INGEST_POLISH_PLAN.md` (item 1.3).
+      `Zigbee_UART_Interface` companion plan / `docs/HTTPS_INGEST_POLISH_PLAN.md` (item 1.3).
 - [ ] Any station knobs shrunk for testing restored to defaults.
 - [ ] Failures filed with: outbox meta JSON, station log excerpt, server
       response code, and the Tests/IngestReceipts rows involved.

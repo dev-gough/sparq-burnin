@@ -3,7 +3,7 @@
  * gzip bomb → 400 too_large, oversized compressed body → 400 too_large,
  * plus the surrounding error contract the station's retry policy depends on.
  *
- * Contract reminder (HANDOFF.md): the station treats any 4xx except
+ * Contract reminder (docs/HANDOFF.md): the station treats any 4xx except
  * 401/403/408/429 as permanent — these tests pin which conditions produce
  * which status so a retryable condition can never silently become a 4xx.
  */

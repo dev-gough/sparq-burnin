@@ -89,7 +89,7 @@ export interface ResultRowEvaluation {
  *
  * If you change these rules in ANY way, the station's `_row_priority()` must
  * change too — flag it in the cross-repo coordination sections of BOTH repos'
- * HTTPS_INGEST_POLISH_PLAN.md.
+ * docs/HTTPS_INGEST_POLISH_PLAN.md.
  *
  * The optional `log` callback receives the same operator-facing messages the
  * legacy CSV ingester has always printed (the HTTPS path passes none).

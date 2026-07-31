@@ -124,7 +124,7 @@ async function annotationExists(
 
 async function main() {
   const client = new Client(getDatabaseConfig());
-  const csvFilePath = './testAnnotations.csv';
+  const csvFilePath = './docs/archive/testAnnotations.csv';
 
   if (!fs.existsSync(csvFilePath)) {
     console.error(`❌ CSV file not found: ${csvFilePath}`);

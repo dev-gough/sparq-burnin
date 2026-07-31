@@ -237,7 +237,7 @@ const migrations: Migration[] = [
           RAISE NOTICE 'group_name column already exists, skipping addition';
         END IF;
 
-        -- Update existing options with group assignments based on ANNOTATIONGROUPS.md
+        -- Update existing options with group assignments based on docs/ANNOTATIONGROUPS.md
         UPDATE AnnotationQuickOptions SET group_name = 'Manufacturing Defect / Inverter Failure'
         WHERE option_text IN (
           'Channel Short BA',
@@ -257,7 +257,7 @@ const migrations: Migration[] = [
           'Device Timeout'
         );
 
-        -- Update existing quick options to match ANNOTATIONGROUPS.md
+        -- Update existing quick options to match docs/ANNOTATIONGROUPS.md
         DELETE FROM AnnotationQuickOptions;
 
         INSERT INTO AnnotationQuickOptions (option_text, group_name, display_order) VALUES
