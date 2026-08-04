@@ -24,7 +24,7 @@ pytest tests (station); do not re-test those by hand.
 | LT-07 | Remote disable mid-test | 2 | PASS | 2026-07-30, new semantics: mid-test disable → upload still accepted; reason shown in GUI; new starts refused; re-enable unblocked. (Dashboard visibility gap was an unrelated UI-overhaul bug — INVALID rows stripped in SQL — fixed in 312281c) |
 | LT-08 | Clock skew + wrong secret | 2 | PASS | 2026-07-31, both legs: 401 → retained (`error_class: auth`), recovered after fix, no `failed_permanent`. Findings: (1) operator alert under-loud — upload column says "retrying" without why, ERROR line scrolls away, readiness text omits upload/auth state → station fast-follow for Thomas; (2) backward clock step delays pending retries by up to step size + cap (wall-clock `next_attempt_at`, persisted by design; benign, self-heals); (3) wrong secret also 401s policy polls — station kept last-known policy and warned, never failed closed |
 | LT-09 | Server deploy/restart mid-upload | 2 | | |
-| LT-10 | RETEST multi-row results CSV | 2 | | |
+| LT-10 | RETEST multi-row results CSV | 2 | PASS | 2026-08-04, seeded recipe: donor row from run A injected into run B's results CSV for SN ...1001; analyzer appended real row → station selected the priority-4 row and keyed with RUN B's start (`...:2026-08-04T10:06:33`), identical to 34 controls; no duplicate:true, zero dup groups. Bonus retest-limit leg (demote-to-FAIL) still optional |
 | LT-11 | Nonce replay rejection | 2 | PASS | signed request replayed from labserver: 400 invalid_schema then 401 replay; nonce consumed pre-processing |
 | LT-12 | `npm run reprocess` with HTTPS rows | 3 | | |
 | LT-13 | pCloud FileSync cutover rehearsal | 3 | | |
