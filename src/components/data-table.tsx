@@ -82,6 +82,13 @@ const STATUS_OPTIONS = [
       "border-rose-600 bg-rose-600 text-white shadow-sm hover:bg-rose-600 hover:text-white dark:border-rose-500 dark:bg-rose-600",
   },
   {
+    value: "RETEST",
+    label: "Retest",
+    short: "Retest",
+    activeClass:
+      "border-sky-600 bg-sky-600 text-white shadow-sm hover:bg-sky-600 hover:text-white dark:border-sky-500 dark:bg-sky-600",
+  },
+  {
     value: "INVALID",
     label: "Invalid",
     short: "Invalid",
@@ -242,21 +249,24 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
           ? "default"
           : status === "FAIL"
             ? "destructive"
-            : "secondary";
+            : status === "RETEST"
+              ? "outline"
+              : "secondary";
+      const extraClass =
+        status === "PASS"
+          ? "dark:bg-green-900/30 dark:text-green-400 dark:border-green-800"
+          : status === "RETEST"
+            ? "border-sky-600 bg-sky-50 text-sky-900 dark:border-sky-500 dark:bg-sky-950/50 dark:text-sky-200"
+            : "";
       return (
-        <Badge
-          variant={variant}
-          className={`px-2 ${status === "PASS" ? "dark:bg-green-900/30 dark:text-green-400 dark:border-green-800" : ""}`}
-        >
+        <Badge variant={variant} className={`px-2 ${extraClass}`}>
           {status === "PASS" ? (
             <>
               <IconCircleCheckFilled className="w-3 h-3 mr-1 fill-green-500 dark:fill-green-400" />
               PASS
             </>
-          ) : status === "FAIL" ? (
-            "FAIL"
           ) : (
-            "INVALID"
+            status || "—"
           )}
         </Badge>
       );

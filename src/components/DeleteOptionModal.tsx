@@ -168,6 +168,7 @@ export default function DeleteOptionModal({
                               variant={
                                 test.overall_status === 'PASS' ? 'default' :
                                 test.overall_status === 'FAIL' ? 'destructive' :
+                                test.overall_status === 'RETEST' ? 'outline' :
                                 'secondary'
                               }
                             >

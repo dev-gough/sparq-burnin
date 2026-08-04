@@ -35,6 +35,9 @@ function statusBadgeClass(status: string | null | undefined): string {
   if (status === "FAIL") {
     return "bg-destructive text-destructive-foreground border-transparent"
   }
+  if (status === "RETEST") {
+    return "border-sky-600 bg-sky-50 text-sky-900 dark:border-sky-500 dark:bg-sky-950/50 dark:text-sky-200"
+  }
   return ""
 }
 

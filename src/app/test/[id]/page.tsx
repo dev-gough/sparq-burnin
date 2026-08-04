@@ -1759,12 +1759,15 @@ export default function TestPage() {
                 variant={
                   testData.overall_status === 'PASS' ? 'default' :
                     testData.overall_status === 'FAIL' ? 'destructive' :
-                      'secondary'
+                      testData.overall_status === 'RETEST' ? 'outline' :
+                        'secondary'
                 }
                 className={
                   testData.overall_status === 'PASS'
                     ? 'bg-emerald-600 text-white dark:bg-emerald-500 dark:text-emerald-950'
-                    : undefined
+                    : testData.overall_status === 'RETEST'
+                      ? 'border-sky-600 bg-sky-50 text-sky-900 dark:border-sky-500 dark:bg-sky-950/50 dark:text-sky-200'
+                      : undefined
                 }
               >
                 {testData.overall_status}
@@ -1780,6 +1783,7 @@ export default function TestPage() {
                 <SelectContent>
                   <SelectItem value="PASS">PASS</SelectItem>
                   <SelectItem value="FAIL">FAIL</SelectItem>
+                  <SelectItem value="RETEST">RETEST</SelectItem>
                   <SelectItem value="INVALID">INVALID</SelectItem>
                 </SelectContent>
               </Select>

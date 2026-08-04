@@ -652,6 +652,7 @@ function buildReportCsv(reportData: {
     totalPassed: number;
     totalFailed: number;
     totalInvalid: number;
+    totalRetest?: number;
     overallPassRate: number;
     overallFailRate: number;
   };
@@ -661,6 +662,7 @@ function buildReportCsv(reportData: {
     passed: number;
     failed: number;
     invalid: number;
+    retest?: number;
     passRate: number;
     failRate: number;
   }>;
@@ -671,11 +673,12 @@ function buildReportCsv(reportData: {
   csv += `Total Passed: ${reportData.totals.totalPassed}\n`;
   csv += `Total Failed: ${reportData.totals.totalFailed}\n`;
   csv += `Total Invalid: ${reportData.totals.totalInvalid}\n`;
+  csv += `Total Retest: ${reportData.totals.totalRetest ?? 0}\n`;
   csv += `Overall Pass Rate: ${reportData.totals.overallPassRate}%\n`;
   csv += `Overall Fail Rate: ${reportData.totals.overallFailRate}%\n\n`;
   csv += "DAILY BREAKDOWN\n";
   csv +=
-    "Date,Total Tests,Passed,Failed,Invalid,Pass Rate (%),Fail Rate (%)\n";
+    "Date,Total Tests,Passed,Failed,Invalid,Retest,Pass Rate (%),Fail Rate (%)\n";
   reportData.dailyData.forEach((day) => {
     csv +=
       [
@@ -684,6 +687,7 @@ function buildReportCsv(reportData: {
         day.passed,
         day.failed,
         day.invalid,
+        day.retest ?? 0,
         day.passRate,
         day.failRate,
       ].join(",") + "\n";

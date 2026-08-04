@@ -20,6 +20,7 @@ import {
   type SummaryDelta,
   type SummaryStats,
 } from '@/lib/summary-delta';
+import { outcomeStatusSql } from '@/lib/overall-status';
 
 interface TestStats {
   date: string;
@@ -104,6 +105,9 @@ function annotationGroupExistsSql(
  * Partition by inv_id (1:1 with serial_number) — no Inverters join required.
  * DISTINCT ON is equivalent to ROW_NUMBER()…rn=1 and plans better with
  * idx_tests_valid_start_inv.
+ *
+ * INVALID and RETEST are skipped: RETEST is interim (a later PASS/FAIL is the
+ * real outcome); INVALID is not a rate-bearing result.
  */
 function latestPerInverterCte(timeFilter: string): string {
   return `
@@ -111,7 +115,7 @@ function latestPerInverterCte(timeFilter: string): string {
       t.test_id,
       t.overall_status
     FROM Tests t
-    WHERE t.overall_status <> 'INVALID' ${timeFilter}
+    WHERE ${outcomeStatusSql("t.overall_status")} ${timeFilter}
     ORDER BY t.inv_id, t.start_time_utc DESC
   `;
 }
@@ -206,7 +210,7 @@ async function querySummaryStats(
                 WHERE overall_status = 'FAIL' ${summaryAnnotationFilterClause}
               )::int AS failed
             FROM Tests t
-            WHERE t.overall_status <> 'INVALID' ${timeFilter}
+            WHERE ${outcomeStatusSql("t.overall_status")} ${timeFilter}
           `;
     }
 
@@ -235,14 +239,15 @@ async function querySummaryStats(
             ) latest
           `;
     } else {
-      // All tests: pure aggregate — no Inverters join
+      // All tests: pure aggregate — no Inverters join. Still exclude INVALID +
+      // RETEST from hero denominators (RETEST rows remain visible in the table).
       summaryQuery = `
             SELECT
               COUNT(*)::int AS total,
               COUNT(*) FILTER (WHERE overall_status = 'PASS')::int AS passed,
               COUNT(*) FILTER (WHERE overall_status = 'FAIL')::int AS failed
             FROM Tests t
-            WHERE t.overall_status <> 'INVALID' ${timeFilter}
+            WHERE ${outcomeStatusSql("t.overall_status")} ${timeFilter}
           `;
     }
 
@@ -505,8 +510,8 @@ export async function GET(request: NextRequest) {
       if (latestOnly) {
         // Latest-per-inverter in the window (DISTINCT ON inv_id — no serial join
         // until the page is known), then annotate only those rows.
-        // INVALID stays excluded HERE ONLY: "Latest" means the inverter's most
-        // recent real result, and its counts must agree with the summary hero.
+        // INVALID + RETEST excluded HERE ONLY: "Latest" means the inverter's most
+        // recent decisive result (RETEST is interim). Counts match the summary hero.
         const annSql = testsAnnotationSql("lt.test_id");
         testsQuery = `
           WITH latest AS (
@@ -520,7 +525,7 @@ export async function GET(request: NextRequest) {
               t.failure_description AS failure_reason,
               t.start_time_utc AS start_time
             FROM Tests t
-            WHERE t.overall_status != 'INVALID'
+            WHERE ${outcomeStatusSql("t.overall_status")}
               ${timeFilter}
             ORDER BY t.inv_id, t.start_time_utc DESC
           ),
@@ -559,8 +564,8 @@ export async function GET(request: NextRequest) {
         `;
       } else {
         // All tests in window: page first, annotate the page only.
-        // No INVALID exclusion — the table's status filter (client-side) owns
-        // visibility, so the "Invalid" chip can actually match rows.
+        // No INVALID/RETEST exclusion — the table's status filter (client-side)
+        // owns visibility, so the "Invalid" / "Retest" chips can match rows.
         const annSql = testsAnnotationSql("t.test_id");
         testsQuery = `
           WITH page AS (
@@ -773,7 +778,8 @@ export async function GET(request: NextRequest) {
       );
       const timeFilter = windowSql ? `AND ${windowSql}` : "";
 
-      // Same population as summary: latest-per-serial when recent, else all valid tests
+      // Same population as summary: latest-per-serial when recent, else all
+      // decisive outcomes (excludes INVALID + RETEST from rates/insights).
       let baseTestsCte: string;
       if (chartMode === "recent") {
         baseTestsCte = `
@@ -785,7 +791,7 @@ export async function GET(request: NextRequest) {
               ) as rn
             FROM Tests t
             JOIN Inverters i ON t.inv_id = i.inv_id
-            WHERE t.overall_status != 'INVALID' ${timeFilter}
+            WHERE ${outcomeStatusSql("t.overall_status")} ${timeFilter}
           ),
           base_tests AS (
             SELECT * FROM latest_tests WHERE rn = 1
@@ -796,7 +802,7 @@ export async function GET(request: NextRequest) {
             SELECT t.*, i.serial_number
             FROM Tests t
             JOIN Inverters i ON t.inv_id = i.inv_id
-            WHERE t.overall_status != 'INVALID' ${timeFilter}
+            WHERE ${outcomeStatusSql("t.overall_status")} ${timeFilter}
           )`;
       }
 
@@ -1027,7 +1033,7 @@ export async function GET(request: NextRequest) {
           FROM Tests t
           JOIN Inverters i ON t.inv_id = i.inv_id
           WHERE ${timeFilter}
-            t.overall_status != 'INVALID'
+            ${outcomeStatusSql("t.overall_status")}
             ${annotationFilter}
         ),
         volume AS (
@@ -1051,7 +1057,7 @@ export async function GET(request: NextRequest) {
           FROM Tests t
           JOIN Inverters i ON t.inv_id = i.inv_id
           WHERE ${timeFilter}
-            t.overall_status != 'INVALID'
+            ${outcomeStatusSql("t.overall_status")}
             -- intentionally NO annotation filter (rank-then-tag)
         ),
         strip AS (
@@ -1077,7 +1083,8 @@ export async function GET(request: NextRequest) {
         ORDER BY COALESCE(v.test_date, s.test_date) ASC
       `;
     } else {
-      // All-tests mode: no per-serial rank; strip population = all valid tests in bucket
+      // All-tests mode: no per-serial rank; strip population = decisive outcomes
+      // only (INVALID + RETEST out of chart denominators; still in the table).
       query = `
         WITH volume AS (
           SELECT
@@ -1086,7 +1093,7 @@ export async function GET(request: NextRequest) {
             COUNT(CASE WHEN t.overall_status = 'FAIL' THEN 1 END) AS failed
           FROM Tests t
           WHERE ${timeFilter}
-            t.overall_status != 'INVALID'
+            ${outcomeStatusSql("t.overall_status")}
             ${annotationFilter}
           GROUP BY ${bucketExpr}
         ),
@@ -1097,7 +1104,7 @@ export async function GET(request: NextRequest) {
             t.overall_status
           FROM Tests t
           WHERE ${timeFilter}
-            t.overall_status != 'INVALID'
+            ${outcomeStatusSql("t.overall_status")}
             -- intentionally NO annotation filter (rank-then-tag)
         ),
         strip AS (

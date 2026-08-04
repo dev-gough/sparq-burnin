@@ -3,6 +3,7 @@ import { Client } from "pg";
 import { getDatabaseConfig } from "@/lib/config";
 import { requireAuth } from "@/lib/auth-check";
 import { validateTimeRange, getTimeRangeDays } from "@/lib/validation";
+import { outcomeStatusSql } from "@/lib/overall-status";
 
 export async function GET(request: NextRequest) {
   // Check authentication
@@ -44,17 +45,17 @@ export async function GET(request: NextRequest) {
             ) as rn
           FROM Tests t
           JOIN Inverters i ON t.inv_id = i.inv_id
-          WHERE t.overall_status != 'INVALID' ${timeFilter}
+          WHERE ${outcomeStatusSql("t.overall_status")} ${timeFilter}
         )
         SELECT * FROM latest_tests WHERE rn = 1
       `;
     } else {
-      // All tests
+      // All decisive outcomes (exclude INVALID + RETEST from rate denominators)
       baseTestsQuery = `
         SELECT t.*, i.serial_number
         FROM Tests t
         JOIN Inverters i ON t.inv_id = i.inv_id
-        WHERE t.overall_status != 'INVALID' ${timeFilter}
+        WHERE ${outcomeStatusSql("t.overall_status")} ${timeFilter}
       `;
     }
 

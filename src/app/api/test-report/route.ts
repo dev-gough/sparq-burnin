@@ -10,6 +10,7 @@ interface DailyReportData {
   passed: number;
   failed: number;
   invalid: number;
+  retest: number;
   passRate: number;
   failRate: number;
 }
@@ -24,6 +25,7 @@ interface ReportSummary {
     totalPassed: number;
     totalFailed: number;
     totalInvalid: number;
+    totalRetest: number;
     overallPassRate: number;
     overallFailRate: number;
   };
@@ -66,7 +68,8 @@ export async function GET(request: NextRequest) {
         COUNT(*) as total,
         COUNT(CASE WHEN overall_status = 'PASS' THEN 1 END) as passed,
         COUNT(CASE WHEN overall_status = 'FAIL' THEN 1 END) as failed,
-        COUNT(CASE WHEN overall_status = 'INVALID' THEN 1 END) as invalid
+        COUNT(CASE WHEN overall_status = 'INVALID' THEN 1 END) as invalid,
+        COUNT(CASE WHEN overall_status = 'RETEST' THEN 1 END) as retest
       FROM Tests 
       ${whereClause}
       GROUP BY DATE(start_time_utc)
@@ -80,6 +83,7 @@ export async function GET(request: NextRequest) {
       const passed = parseInt(row.passed) || 0;
       const failed = parseInt(row.failed) || 0;
       const invalid = parseInt(row.invalid) || 0;
+      const retest = parseInt(row.retest) || 0;
       
       return {
         date: row.test_date,
@@ -87,6 +91,7 @@ export async function GET(request: NextRequest) {
         passed,
         failed,
         invalid,
+        retest,
         passRate: total > 0 ? Math.round((passed / total) * 10000) / 100 : 0,
         failRate: total > 0 ? Math.round((failed / total) * 10000) / 100 : 0,
       };
@@ -99,8 +104,9 @@ export async function GET(request: NextRequest) {
         totalPassed: acc.totalPassed + day.passed,
         totalFailed: acc.totalFailed + day.failed,
         totalInvalid: acc.totalInvalid + day.invalid,
+        totalRetest: acc.totalRetest + day.retest,
       }),
-      { totalTests: 0, totalPassed: 0, totalFailed: 0, totalInvalid: 0 }
+      { totalTests: 0, totalPassed: 0, totalFailed: 0, totalInvalid: 0, totalRetest: 0 }
     );
     
     const overallPassRate = totals.totalTests > 0 

@@ -31,6 +31,13 @@ describe('evaluateResultRow priorities', () => {
     expect(e.endTimeUtc).toBe('2025-06-16T03:30:00.000Z')
   })
 
+  it('RETEST from station is preserved at priority 4 (not demoted to INVALID)', () => {
+    const e = evaluateResultRow(row({ overallStatus: 'RETEST' }), DEBUG_FW)
+    expect(e.priority).toBe(4)
+    expect(e.overallStatus).toBe('RETEST')
+    expect(e.invalidReason).toBe('')
+  })
+
   it('debug firmware → INVALID, priority 3 (server-side-only demotion)', () => {
     const e = evaluateResultRow(row({ firmwareVersion: DEBUG_FW }), DEBUG_FW)
     expect(e.priority).toBe(3)

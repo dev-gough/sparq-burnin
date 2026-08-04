@@ -355,7 +355,7 @@ export default function StationsPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="px-4 pb-3 space-y-2.5 text-sm">
-                    <div className="grid grid-cols-4 md:grid-cols-8 gap-1.5">
+                    <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 gap-1.5">
                       <StatTile label="Total" value={st.totalTests} />
                       <StatTile
                         label="Pass"
@@ -371,6 +371,11 @@ export default function StationsPage() {
                         label="Invalid"
                         value={st.invalidCount}
                         accent="text-amber-600 dark:text-amber-400"
+                      />
+                      <StatTile
+                        label="Retest"
+                        value={st.retestCount}
+                        accent="text-sky-600 dark:text-sky-400"
                       />
                       <StatTile label="Pass %" value={passRate} />
                       <StatTile label="Serials" value={st.uniqueSerials} />

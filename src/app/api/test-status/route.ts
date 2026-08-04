@@ -2,13 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Client } from 'pg';
 import { getDatabaseConfig } from '@/lib/config';
 import { requireAuth } from '@/lib/auth-check';
-
-const ALLOWED_STATUSES = ['PASS', 'FAIL', 'INVALID'] as const;
-type AllowedStatus = (typeof ALLOWED_STATUSES)[number];
-
-function isAllowedStatus(s: unknown): s is AllowedStatus {
-  return typeof s === 'string' && (ALLOWED_STATUSES as readonly string[]).includes(s);
-}
+import { isOverallStatus, OVERALL_STATUSES } from '@/lib/overall-status';
 
 /**
  * GET /api/test-status?testId=123
@@ -108,9 +102,11 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    if (!isAllowedStatus(status)) {
+    if (!isOverallStatus(status)) {
       return NextResponse.json(
-        { error: 'Invalid status. Must be PASS, FAIL, or INVALID' },
+        {
+          error: `Invalid status. Must be one of: ${OVERALL_STATUSES.join(', ')}`,
+        },
         { status: 400 }
       );
     }
