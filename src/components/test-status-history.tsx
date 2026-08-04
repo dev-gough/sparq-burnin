@@ -101,10 +101,6 @@ export function TestStatusHistory({ testId, refreshKey = 0 }: TestStatusHistoryP
       <PopoverContent align="start" className="w-96 p-0" sideOffset={6}>
         <div className="border-b px-3 py-2">
           <p className="text-sm font-medium">Status history</p>
-          <p className="text-xs text-muted-foreground">
-            Manual overrides recorded after this feature shipped. Ingest-time
-            status is not backfilled for older tests.
-          </p>
         </div>
         <div className="max-h-72 overflow-y-auto">
           {loading && !revisions ? (
