@@ -299,15 +299,38 @@ failing while stations hammer.
 **Purpose:** the P1 1.6 bug — station used to publish the FIRST row and the
 idempotency key then blocked the correct one.
 
-1. Produce a real fail → retest → pass sequence so the station's results CSV
-   has multiple rows for the inverter.
+> **Architecture note (2026-08-04):** the current station writes a FRESH
+> results CSV per run (`test-<run_id>/results/<serial>_<runstart>.csv`), so
+> the retest flow (automatic queue in `db/retest_tracking.db`, amber
+> highlight, just re-run the same serials) never produces a multi-row file
+> organically. Multi-row selection (`load_result_row`) is a compatibility
+> layer for legacy files and same-run re-finalization — so this test SEEDS
+> the condition at the seam where such files genuinely arrive.
 
-**Expected:** the station uploads the same row the server-side rule would
-pick (highest priority: valid > INVALID > short-duration > start>end; first
-row wins ties), and the dashboard shows that row's status. The rule is
-documented on `evaluateResultRow` in `src/lib/ingest/validate.ts`.
-**Fail signals:** dashboard shows the wrong attempt; second (correct) row
-rejected as duplicate.
+1. Run A: short test (~6 min) on the target serials (also the donor file).
+2. Run B: start a > 2 h test on the same serials. MID-RUN, for 1–2
+   inverters, copy run A's results CSV (header + row) to run B's future
+   results path. The filename timestamp must EXACTLY match the `test-<...>`
+   folder suffix (`<serial>_<runB-start>.csv`, serial unpadded) — a
+   mismatched name is silently ignored and the test degenerates to a
+   normal run. Untouched inverters are the control group.
+3. At B's end the analyzer appends the real row (no second header) and the
+   enqueue reads a genuine 2-row file. Do not edit the file after test end
+   (selection is frozen into the outbox at enqueue).
+
+**Expected:** doctored inverters behave identically to controls — the
+station picks the real row (priority: valid > INVALID > short-duration >
+start>end; first row wins ties; rule documented on `evaluateResultRow` in
+`src/lib/ingest/validate.ts`), the outbox meta key carries RUN B's start
+time, and the dashboard gains B's row for every serial.
+**Fail signals:** doctored serial's meta keyed with run A's start; its
+upload acks `duplicate:true` with no new dashboard row (the old bug's
+signature — first row republished into the idempotency wall).
+
+**Bonus leg (recommended):** a third ≥ 2 h run on the same serials hits the
+retest limit (`max_retest_results`, default 3) and DEMOTES the verdict to
+FAIL — the only way simulated-FPGA inverters produce a genuine FAIL through
+the full HTTPS path (first honest data for hero/Latest views).
 
 ### LT-11 — Nonce replay rejection (5 minutes, curl)
 
