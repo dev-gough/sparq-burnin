@@ -559,6 +559,40 @@ const migrations: Migration[] = [
       END
       $$;
     `
+  },
+  {
+    id: '016',
+    name: 'test_status_revisions',
+    sql: `
+      -- Audit log for Tests.overall_status changes (UI overrides, future automated
+      -- writers). Append-only: who changed what, from → to, when.
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_name = 'teststatusrevisions'
+        ) THEN
+          CREATE TABLE TestStatusRevisions (
+            revision_id SERIAL PRIMARY KEY,
+            test_id INTEGER NOT NULL REFERENCES Tests(test_id) ON DELETE CASCADE,
+            old_status VARCHAR(10),
+            new_status VARCHAR(10) NOT NULL,
+            changed_by_email VARCHAR(255),
+            changed_by_name VARCHAR(255),
+            changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            source VARCHAR(50) NOT NULL DEFAULT 'ui'
+          );
+          CREATE INDEX idx_teststatusrevisions_test_id
+            ON TestStatusRevisions(test_id);
+          CREATE INDEX idx_teststatusrevisions_changed_at
+            ON TestStatusRevisions(changed_at DESC);
+          RAISE NOTICE 'Created TestStatusRevisions table with indexes';
+        ELSE
+          RAISE NOTICE 'TestStatusRevisions already exists, skipping';
+        END IF;
+      END
+      $$;
+    `
   }
 ];
 

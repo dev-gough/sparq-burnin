@@ -15,6 +15,7 @@ import Link from "next/link"
 import ReactECharts from "echarts-for-react"
 import type { EChartsOption } from "echarts"
 import TestAnnotations from "@/components/TestAnnotations"
+import { TestStatusHistory } from "@/components/test-status-history"
 
 interface FailureInfo {
   test_id: number
@@ -1336,6 +1337,7 @@ export default function TestPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [updatingStatus, setUpdatingStatus] = useState(false)
+  const [statusHistoryKey, setStatusHistoryKey] = useState(0)
   const [fullScreenState, setFullScreenState] = useState<FullScreenState | null>(null)
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const { formatInTimezone } = useTimezone()
@@ -1503,6 +1505,7 @@ export default function TestPage() {
 
       // Update local state
       setTestData(prev => prev ? { ...prev, overall_status: newStatus } : null)
+      setStatusHistoryKey((k) => k + 1)
     } catch (err) {
       console.error('Error updating test status:', err)
       alert('Failed to update test status')
@@ -1780,6 +1783,10 @@ export default function TestPage() {
                   <SelectItem value="INVALID">INVALID</SelectItem>
                 </SelectContent>
               </Select>
+              <TestStatusHistory
+                testId={testData.test_id}
+                refreshKey={statusHistoryKey}
+              />
               {updatingStatus && <span className="text-sm text-muted-foreground">Updating...</span>}
             </div>
             <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
