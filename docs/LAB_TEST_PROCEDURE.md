@@ -36,8 +36,14 @@ only after everything else passes).
 
 - Station config `[DashboardIngest]`: `enable = true`,
   `station_id = LabBurnIn-1` (must match the server config key exactly),
-  `url = http://192.168.20.12:9001` (explicit `http://`), `hmac_secret` =
-  the `LabBurnIn-1` secret from the server's config.json.
+  `hmac_secret` = the `LabBurnIn-1` secret from the server's config.json.
+  `url` is now `http://burnin.labserver.local/api/ingest/v1/tests` — a
+  **reverse proxy on port 80** forwards to the dashboard (9001). Two
+  consequences: (1) the proxy must pass the request path through untouched
+  (HMAC signs the path — a rewrite breaks auth for every station); (2)
+  anything that blocks/filters station traffic must target **port 80**, not
+  9001 (discovered the hard way in LT-06). The policy poll URL is derived
+  from `url` unless `control_url` is set explicitly.
 - Station PC clock NTP-synced (HMAC skew window is ±300 s).
 - **Timezone contract**: the station attaches its local UTC offset to every
   wire timestamp (`2026-07-28T12:25:36-04:00`); the server honors it, and only
@@ -227,10 +233,23 @@ timestamps at the boundary, dashboard chart unusable.
 **Purpose:** closes the ONE unchecked acceptance box in the zigbee plan
 (Tk responsiveness could not be verified headless).
 
-1. Firewall or unplug the labserver for ≥ 1 h while the station completes
-   1–2 tests (short tests fine).
+1. Blackhole the dashboard from the STATION side (keeps Gitea and the
+   dashboard service itself untouched, and DROP > service-stop because
+   hanging requests stress the GUI harder than instant connection-refused):
+   ```
+   sudo iptables -I OUTPUT 1 -p tcp -d 192.168.20.12 --dport 80 -j DROP
+   ```
+   Port **80** (the reverse proxy), inserted at position 1 — an appended
+   rule sits behind the ESTABLISHED accept and the client's keep-alive
+   socket sails through it. Confirm via the STATION LOG flipping to
+   "Station policy poll failed" (curl proves nothing about the app's own
+   path), and server-side via `MAX(seen_at)` in `IngestNonces` going stale.
+   The window starts at the first failed poll. Keep it up ≥ 1 h while the
+   station completes 1–2 tests (short tests fine); remove with the same
+   command using `-D`.
 2. Interact with the master GUI throughout: menus, readiness text, starting
-   another test.
+   another test. Redo the checks *after* the first failed poll — anything
+   observed before it was under normal networking.
 
 **Expected:** GUI stays responsive the entire time (network runs on the
 worker thread); uploads back off exponentially to the cap; policy readiness
