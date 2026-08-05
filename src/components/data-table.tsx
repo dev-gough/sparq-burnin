@@ -318,6 +318,13 @@ interface DataTableProps {
   statusFilter: string;
   onStatusFilterChange: (status: string) => void;
   /**
+   * Station scope (lifted — applies to hero, charts, and table like the
+   * category filter). Select renders only when stationOptions is non-empty.
+   */
+  stationFilter: string;
+  onStationFilterChange: (station: string) => void;
+  stationOptions: string[];
+  /**
    * Same Result mode as the header (Latest / All tests).
    * Drives the table’s latest-per-inverter fetch so FAIL counts match the hero.
    */
@@ -464,6 +471,9 @@ export function DataTable({
   onDateRangeChange,
   statusFilter,
   onStatusFilterChange,
+  stationFilter,
+  onStationFilterChange,
+  stationOptions,
   chartMode,
   onChartModeChange,
 }: DataTableProps) {
@@ -514,13 +524,14 @@ export function DataTable({
     () => ({
       latestOnly,
       annotationFilter: annotationFilter || "all",
+      stationFilter: stationFilter || "all",
       dateFrom: dateFromFilter || "",
       dateTo: dateToFilter || "",
       // Empty dates = all-time open window (linked "All" pill or cleared filters)
       timeRange:
         !dateFromFilter && !dateToFilter ? "all" : undefined,
     }),
-    [latestOnly, annotationFilter, dateFromFilter, dateToFilter],
+    [latestOnly, annotationFilter, stationFilter, dateFromFilter, dateToFilter],
   );
 
   // Hydration-safe: null on server; warm session cache after client mount.
@@ -754,12 +765,14 @@ export function DataTable({
   const firmwareActive = Boolean(firmwareFilter && firmwareFilter !== "all");
   const serialActive = serialSearch.trim().length > 0;
   const statusActive = statusFilter !== "all";
+  const stationActive = Boolean(stationFilter && stationFilter !== "all");
   const datesActive = Boolean(dateFromFilter || dateToFilter);
   const hasActiveFilters =
     serialActive ||
     statusActive ||
     annotationActive ||
     firmwareActive ||
+    stationActive ||
     datesActive;
 
   const clearAllFilters = () => {
@@ -767,6 +780,7 @@ export function DataTable({
     onStatusFilterChange("all");
     setFirmwareFilter("all");
     onAnnotationFilterChange("all");
+    onStationFilterChange("all");
     onChartModeChange("all");
     if (onClearDateFilter) {
       onClearDateFilter();
@@ -865,6 +879,16 @@ export function DataTable({
                     <X className="size-3 shrink-0 opacity-60" />
                   </button>
                 )}
+                {stationActive && (
+                  <button
+                    type="button"
+                    onClick={() => onStationFilterChange("all")}
+                    className="inline-flex h-7 max-w-[12rem] items-center gap-1 rounded-full border border-border bg-background px-2 text-xs font-medium hover:bg-muted"
+                  >
+                    <span className="truncate">{stationFilter}</span>
+                    <X className="size-3 shrink-0 opacity-60" />
+                  </button>
+                )}
                 {datesActive && dateRangeLabel && (
                   <button
                     type="button"
@@ -956,8 +980,13 @@ export function DataTable({
               </div>
             </div>
 
-            {/* Category / firmware / dates — denser grid */}
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {/* Category / firmware / station / dates — denser grid */}
+            <div
+              className={cn(
+                "grid gap-2 sm:grid-cols-2",
+                stationOptions.length > 0 ? "xl:grid-cols-5" : "xl:grid-cols-4",
+              )}
+            >
               <Select
                 value={annotationFilter}
                 onValueChange={onAnnotationFilterChange}
@@ -1039,6 +1068,28 @@ export function DataTable({
                   ))}
                 </SelectContent>
               </Select>
+
+              {stationOptions.length > 0 && (
+                <Select
+                  value={stationFilter}
+                  onValueChange={onStationFilterChange}
+                >
+                  <SelectTrigger
+                    className="h-9 min-h-9 w-full min-w-0 bg-background shadow-xs"
+                    aria-label="Test station"
+                  >
+                    <SelectValue placeholder="All stations" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All stations</SelectItem>
+                    {stationOptions.map((station) => (
+                      <SelectItem key={station} value={station}>
+                        {station}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
 
               <div className="sm:col-span-2">
                 <DateRangePicker

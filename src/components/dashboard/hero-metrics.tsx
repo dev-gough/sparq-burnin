@@ -33,6 +33,8 @@ interface HeroMetricsProps {
   dashboardRange: DashboardRange;
   chartMode: string;
   annotationFilter: string;
+  /** Station id scope or "all" — same population rules as the charts/table. */
+  stationFilter?: string;
   requestEpoch: number;
   onFailuresClick: () => void;
   /** Skip fetch until parent localStorage prefs are ready. Default true. */
@@ -211,6 +213,7 @@ export function HeroMetrics({
   dashboardRange,
   chartMode,
   annotationFilter,
+  stationFilter = "all",
   requestEpoch,
   onFailuresClick,
   enabled = true,
@@ -220,8 +223,9 @@ export function HeroMetrics({
       dashboardRange,
       chartMode,
       annotationFilter,
+      stationFilter,
     }),
-    [dashboardRange, chartMode, annotationFilter],
+    [dashboardRange, chartMode, annotationFilter, stationFilter],
   );
 
   /**
@@ -245,12 +249,13 @@ export function HeroMetrics({
       JSON.stringify({
         chartMode,
         annotationFilter,
+        stationFilter,
         requestEpoch,
         kind: dashboardRange.kind,
         from: dashboardRange.kind === "custom" ? dashboardRange.from : null,
         to: dashboardRange.kind === "custom" ? dashboardRange.to : null,
       }),
-    [dashboardRange, chartMode, annotationFilter, requestEpoch],
+    [dashboardRange, chartMode, annotationFilter, stationFilter, requestEpoch],
   );
   const identityRef = React.useRef(requestIdentity);
   identityRef.current = requestIdentity;
@@ -295,6 +300,7 @@ export function HeroMetrics({
           currentRange: dashboardRange,
           chartMode,
           annotationFilter,
+          stationFilter,
         });
       } catch (e) {
         if (cancelled || identityRef.current !== identityAtStart) return;
@@ -322,6 +328,7 @@ export function HeroMetrics({
     dashboardRange,
     chartMode,
     annotationFilter,
+    stationFilter,
     requestIdentity,
     enabled,
   ]);

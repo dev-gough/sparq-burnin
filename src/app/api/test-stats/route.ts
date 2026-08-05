@@ -133,6 +133,8 @@ async function querySummaryStats(
     annotationFilter: string | null;
     isGroupFilter: boolean;
     filterValue: string | null;
+    /** Exact station_id scope; null = no station filter. */
+    stationValue: string | null;
   }
 ): Promise<SummaryStats> {
   const { chartMode, window, annotationFilter, isGroupFilter, filterValue } = opts;
@@ -142,17 +144,25 @@ async function querySummaryStats(
     "t.start_time_utc",
     1
   );
-  const timeFilter = windowSql ? `AND ${windowSql}` : "";
+  // Station scope folds into the time filter — both are population scopes
+  // applied identically to every query shape below (incl. latest-per-inverter).
+  const baseParams: string[] = [...timeParams];
+  let stationSql = "";
+  if (opts.stationValue) {
+    baseParams.push(opts.stationValue);
+    stationSql = ` AND t.station_id = $${baseParams.length}`;
+  }
+  const timeFilter = (windowSql ? `AND ${windowSql}` : "") + stationSql;
   const isRecent = chartMode === "recent";
 
   const annotationActive =
     !!annotationFilter && annotationFilter !== "all";
 
   let summaryAnnotationFilterClause = "";
-  /** When true, bind filterValue after timeParams for the annotation EXISTS. */
+  /** When true, bind filterValue after baseParams for the annotation EXISTS. */
   let annotationUsesParam = false;
   if (annotationActive) {
-    const annotationParamIndex = timeParams.length + 1;
+    const annotationParamIndex = baseParams.length + 1;
     if (isGroupFilter && filterValue) {
       const groupExists = annotationGroupExistsSql(
         "t.test_id",
@@ -215,8 +225,8 @@ async function querySummaryStats(
     }
 
     const bindParams = annotationUsesParam
-      ? [...timeParams, filterValue!]
-      : [...timeParams];
+      ? [...baseParams, filterValue!]
+      : [...baseParams];
     const result =
       bindParams.length > 0
         ? await client.query(summaryQuery, bindParams)
@@ -252,8 +262,8 @@ async function querySummaryStats(
     }
 
     const summaryResult =
-      timeParams.length > 0
-        ? await client.query(summaryQuery, timeParams)
+      baseParams.length > 0
+        ? await client.query(summaryQuery, baseParams)
         : await client.query(summaryQuery);
     const row = summaryResult.rows[0];
 
@@ -294,6 +304,17 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const view = searchParams.get("view");
 
+    // Station scope — shared filter like annotation: applies to summary,
+    // tests, annotation-summary, and the bucketed chart views. Exact
+    // station_id match, parameterized. "all" / blank / oversized → no filter.
+    // Deliberately NOT applied to the has-data probe: the global empty state
+    // must reflect the period, or an empty station selection would unmount
+    // the filter UI needed to clear it.
+    const rawStationFilter = searchParams.get("station");
+    const stationValue = rawStationFilter?.trim() ?? "";
+    const stationActive =
+      stationValue !== "" && stationValue !== "all" && stationValue.length <= 128;
+
     if (view === "summary") {
       // Get summary statistics
       const summaryChartMode = validateChartMode(searchParams.get("chartMode"));
@@ -333,6 +354,7 @@ export async function GET(request: NextRequest) {
         annotationFilter: summaryAnnotationFilter,
         isGroupFilter: isSummaryGroupFilter,
         filterValue: summaryFilterValue,
+        stationValue: stationActive ? stationValue : null,
       };
 
       let currentStats: SummaryStats;
@@ -445,8 +467,13 @@ export async function GET(request: NextRequest) {
       const annotationActive =
         !!annotationFilter && annotationFilter !== "all";
 
-      // Param layout: [timeParams…] [annotation?] limit offset
+      // Param layout: [timeParams…] [station?] [annotation?] limit offset
       const testsQueryParams: (string | number)[] = [...timeParams];
+      let testsStationSql = "";
+      if (stationActive) {
+        testsQueryParams.push(stationValue);
+        testsStationSql = `AND t.station_id = $${testsQueryParams.length}`;
+      }
       let annParamIdx: number | null = null;
       if (annotationActive && filterValue) {
         if (isGroupFilter) {
@@ -527,6 +554,7 @@ export async function GET(request: NextRequest) {
             FROM Tests t
             WHERE ${outcomeStatusSql("t.overall_status")}
               ${timeFilter}
+              ${testsStationSql}
             ORDER BY t.inv_id, t.start_time_utc DESC
           ),
           filtered AS (
@@ -581,6 +609,7 @@ export async function GET(request: NextRequest) {
             FROM Tests t
             WHERE TRUE
               ${timeFilter}
+              ${testsStationSql}
               ${annSql}
             ORDER BY t.start_time_utc DESC
             LIMIT $${limitParamIdx}
@@ -776,7 +805,14 @@ export async function GET(request: NextRequest) {
         "t.start_time_utc",
         1
       );
-      const timeFilter = windowSql ? `AND ${windowSql}` : "";
+      // Station scope folds into the time filter (population scope, both CTEs)
+      const summaryParams: string[] = [...timeParams];
+      let stationSql = "";
+      if (stationActive) {
+        summaryParams.push(stationValue);
+        stationSql = ` AND t.station_id = $${summaryParams.length}`;
+      }
+      const timeFilter = (windowSql ? `AND ${windowSql}` : "") + stationSql;
 
       // Same population as summary: latest-per-serial when recent, else all
       // decisive outcomes (excludes INVALID + RETEST from rates/insights).
@@ -838,7 +874,7 @@ export async function GET(request: NextRequest) {
           ) AS untagged_failed
         FROM base_tests
         `,
-        timeParams
+        summaryParams
       );
 
       const totalFailed = parseInt(countsResult.rows[0]?.total_failed ?? "0", 10);
@@ -863,9 +899,9 @@ export async function GET(request: NextRequest) {
           AND ta.current_test_id IS NOT NULL
         GROUP BY COALESCE(aqo.group_name, 'Other')
         ORDER BY count DESC
-        LIMIT $${timeParams.length + 1}
+        LIMIT $${summaryParams.length + 1}
         `,
-        [...timeParams, limit]
+        [...summaryParams, limit]
       );
 
       // Top quick-option texts among failed tests
@@ -883,9 +919,9 @@ export async function GET(request: NextRequest) {
           AND ta.current_test_id IS NOT NULL
         GROUP BY aqo.option_text, aqo.group_name
         ORDER BY count DESC
-        LIMIT $${timeParams.length + 1}
+        LIMIT $${summaryParams.length + 1}
         `,
-        [...timeParams, limit]
+        [...summaryParams, limit]
       );
 
       const pct = (count: number) =>
@@ -920,15 +956,8 @@ export async function GET(request: NextRequest) {
     const bucket = validateBucket(searchParams.get("bucket")); // day/week/month/quarter/year
     const rawTimeRange = searchParams.get("timeRange");
     const chartAnnotationFilter = searchParams.get("annotation");
-    const rawStationFilter = searchParams.get("station");
     const rawDateFrom = searchParams.get("dateFrom");
     const rawDateTo = searchParams.get("dateTo");
-
-    // Station scope (charts only): exact station_id match, parameterized.
-    // "all" / blank / oversized values → no filter.
-    const stationValue = rawStationFilter?.trim() ?? "";
-    const stationActive =
-      stationValue !== "" && stationValue !== "all" && stationValue.length <= 128;
 
     // Validate date inputs
     const { dateFrom, dateTo, error: chartDateError } = validateDateRange(rawDateFrom, rawDateTo);

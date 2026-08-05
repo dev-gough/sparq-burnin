@@ -67,11 +67,31 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
     initial.statusFilter,
   );
   /**
-   * Station scope for the main charts (strip + volume) only — hero and table
-   * stay deployment-wide. Session state, not persisted: a stale persisted id
-   * would silently filter charts after a config change hides the toggle.
+   * Station scope — shared filter like annotation: applies to hero, charts,
+   * failure causes, and table. Session state, not persisted: a stale persisted
+   * id would silently keep filtering after the station stops appearing in data.
    */
   const [stationFilter, setStationFilter] = React.useState<string>("all");
+  /** Station ids seen in Tests; empty (e.g. prod today) hides the select. */
+  const [stationOptions, setStationOptions] = React.useState<string[]>([]);
+
+  React.useEffect(() => {
+    const abort = new AbortController();
+    fetch("/api/stations/options", { signal: abort.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { stations?: unknown } | null) => {
+        if (abort.signal.aborted) return;
+        if (json && Array.isArray(json.stations)) {
+          setStationOptions(
+            json.stations.filter((s): s is string => typeof s === "string"),
+          );
+        }
+      })
+      .catch(() => {
+        // No station select on failure — same as a deployment without stations.
+      });
+    return () => abort.abort();
+  }, []);
 
   const [tableDateFrom, setTableDateFrom] = React.useState<string>(
     initial.tableDateFrom,
@@ -211,13 +231,14 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
   /** Hover intent: warm summary + strip + volume for a period pill. */
   const handlePeriodPillPrefetch = React.useCallback(
     (kind: DashboardPill) => {
-      prefetchSummaryPill(kind, { chartMode, annotationFilter });
+      prefetchSummaryPill(kind, { chartMode, annotationFilter, stationFilter });
       prefetchStripPill(kind);
       prefetchVolumePill(kind);
     },
     [
       chartMode,
       annotationFilter,
+      stationFilter,
       prefetchStripPill,
       prefetchVolumePill,
     ],
@@ -548,6 +569,7 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
                 dashboardRange={dashboardRange}
                 chartMode={chartMode}
                 annotationFilter={annotationFilter}
+                stationFilter={stationFilter}
                 requestEpoch={requestEpoch}
                 onFailuresClick={handleFailuresClick}
                 enabled={loadDashboardData}
@@ -581,7 +603,6 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
                 annotationFilter={annotationFilter}
                 onAnnotationFilterChange={setAnnotationFilter}
                 stationFilter={stationFilter}
-                onStationFilterChange={setStationFilter}
                 requestEpoch={requestEpoch}
                 enabled={loadDashboardData}
               />
@@ -600,6 +621,9 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
                   onDateRangeChange={handleTableDateRangeChange}
                   statusFilter={statusFilter}
                   onStatusFilterChange={setStatusFilter}
+                  stationFilter={stationFilter}
+                  onStationFilterChange={setStationFilter}
+                  stationOptions={stationOptions}
                   chartMode={chartMode}
                   onChartModeChange={(mode) => {
                     if (mode === "all" || mode === "recent") setChartMode(mode);

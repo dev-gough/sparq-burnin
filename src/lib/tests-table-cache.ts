@@ -21,6 +21,8 @@ export type TestsTableRow = {
 export type TestsTableFetchKey = {
   latestOnly: boolean;
   annotationFilter: string;
+  /** Station id scope, or "all" (default) for no station filter. */
+  stationFilter?: string;
   dateFrom: string;
   dateTo: string;
   /** Optional timeRange when dates empty (e.g. "all") — part of key for clarity */
@@ -59,6 +61,7 @@ export function testsTableCacheKey(key: TestsTableFetchKey): string {
   return JSON.stringify({
     latestOnly: key.latestOnly,
     annotation: key.annotationFilter || "all",
+    station: key.stationFilter || "all",
     dateFrom: key.dateFrom || "",
     dateTo: key.dateTo || "",
     timeRange: key.timeRange || "",

@@ -49,6 +49,9 @@ export function buildTestsTableUrl(
   if (key.annotationFilter && key.annotationFilter !== "all") {
     params.set("annotation", key.annotationFilter);
   }
+  if (key.stationFilter && key.stationFilter !== "all") {
+    params.set("station", key.stationFilter);
+  }
   if (key.dateFrom) params.set("dateFrom", key.dateFrom);
   if (key.dateTo) params.set("dateTo", key.dateTo);
   if (key.timeRange && !key.dateFrom && !key.dateTo) {

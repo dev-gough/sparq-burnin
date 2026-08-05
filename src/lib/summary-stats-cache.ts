@@ -29,6 +29,8 @@ export type SummaryStatsFetchKey = {
   dashboardRange: DashboardRange;
   chartMode: string;
   annotationFilter: string;
+  /** Station id scope, or "all" (default) for no station filter. */
+  stationFilter?: string;
 };
 
 const PERIOD_PILLS: DashboardPill[] = ["7d", "30d", "90d", "all"];
@@ -55,6 +57,7 @@ export function summaryStatsCacheKey(key: SummaryStatsFetchKey): string {
   return JSON.stringify({
     chartMode,
     annotationFilter,
+    stationFilter: key.stationFilter ?? "all",
     kind: dashboardRange.kind,
     from: dashboardRange.kind === "custom" ? dashboardRange.from : null,
     to: dashboardRange.kind === "custom" ? dashboardRange.to : null,
@@ -94,6 +97,9 @@ function buildSummaryUrl(key: SummaryStatsFetchKey): string {
     chartMode: key.chartMode,
     annotation: key.annotationFilter,
   });
+  if (key.stationFilter && key.stationFilter !== "all") {
+    params.set("station", key.stationFilter);
+  }
   appendDashboardRangeParams(params, key.dashboardRange);
   return `/api/test-stats?${params}`;
 }
@@ -199,8 +205,9 @@ export function prefetchSiblingPillSummaryStats(opts: {
   currentRange: DashboardRange;
   chartMode: string;
   annotationFilter: string;
+  stationFilter?: string;
 }): void {
-  const { currentRange, chartMode, annotationFilter } = opts;
+  const { currentRange, chartMode, annotationFilter, stationFilter } = opts;
 
   for (const kind of PERIOD_PILLS) {
     if (currentRange.kind === kind) continue;
@@ -208,6 +215,7 @@ export function prefetchSiblingPillSummaryStats(opts: {
       dashboardRange: { kind },
       chartMode,
       annotationFilter,
+      stationFilter,
     });
   }
 }
@@ -242,11 +250,12 @@ export function scheduleSiblingPillSummaryPrefetch(
 /** Hover/focus intent for one period pill. */
 export function prefetchSummaryPill(
   kind: DashboardPill,
-  opts: { chartMode: string; annotationFilter: string },
+  opts: { chartMode: string; annotationFilter: string; stationFilter?: string },
 ): void {
   prefetchSummaryStats({
     dashboardRange: { kind },
     chartMode: opts.chartMode,
     annotationFilter: opts.annotationFilter,
+    stationFilter: opts.stationFilter,
   });
 }
