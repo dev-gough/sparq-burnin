@@ -6,6 +6,11 @@ export type SidebarTrigger = "hover" | "click";
 
 export interface UserSettings {
   sidebarTrigger: SidebarTrigger;
+  /**
+   * When true, dashboard charts omit calendar days (or buckets) with no tests
+   * instead of filling a continuous date axis with zeros.
+   */
+  hideEmptyChartDays: boolean;
 }
 
 interface SettingsContextType {
@@ -15,6 +20,7 @@ interface SettingsContextType {
 
 const defaultSettings: UserSettings = {
   sidebarTrigger: "hover",
+  hideEmptyChartDays: false,
 };
 
 const SettingsContext = React.createContext<SettingsContextType | null>(null);

@@ -25,6 +25,7 @@ import {
   dashboardRangeLabel,
   type DashboardRange,
 } from "@/lib/dashboard-range";
+import { useSettings } from "@/contexts/settings-context";
 
 interface FailureRateStripProps {
   data: BucketStats[];
@@ -108,18 +109,31 @@ export function FailureRateStrip({
     return () => observer.disconnect();
   }, []);
 
+  const { settings } = useSettings();
+  const hideEmptyChartDays = settings.hideEmptyChartDays;
+
   const fieldsMissing = annotationOn && !hasStripFields(data);
 
   // Align domain with volume chart: fill missing calendar days on day bucket
-  // so both strip and volume share the same continuous axis (O9).
+  // so both strip and volume share the same continuous axis (O9) — unless the
+  // user opted to hide empty days (active-activity buckets only).
   const plotData = React.useMemo(() => {
     if (fieldsMissing) return [];
+    if (hideEmptyChartDays) {
+      return data.filter(
+        (row) =>
+          (row.passed || 0) + (row.failed || 0) > 0 ||
+          (row.totalUnfiltered ?? 0) > 0,
+      );
+    }
     if (!dashboardRange) return data;
     return fillContinuousDayBuckets(data, dashboardRange, bucket);
-  }, [data, dashboardRange, bucket, fieldsMissing]);
+  }, [data, dashboardRange, bucket, fieldsMissing, hideEmptyChartDays]);
 
   const continuousDays =
-    !!dashboardRange && shouldFillContinuousDays(dashboardRange, bucket);
+    !hideEmptyChartDays &&
+    !!dashboardRange &&
+    shouldFillContinuousDays(dashboardRange, bucket);
 
   const series = React.useMemo(() => {
     if (fieldsMissing) return [];

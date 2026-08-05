@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useSettings } from "@/contexts/settings-context";
 import { useTheme } from "next-themes";
-import { Monitor, Moon, Sun, MousePointer2, Hand, Download, Upload, Loader2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Monitor, Moon, Sun, MousePointer2, Hand, Download, Upload, Loader2, ChartColumn } from "lucide-react";
 
 interface RestoreResult {
   success?: boolean;
@@ -230,6 +231,41 @@ export default function SettingsPage() {
                       </Label>
                     </div>
                   </RadioGroup>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Dashboard Settings */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Dashboard</CardTitle>
+                <CardDescription>
+                  Preferences for charts and views on the main dashboard
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="hide-empty-chart-days"
+                    checked={settings.hideEmptyChartDays}
+                    onCheckedChange={(checked) =>
+                      updateSettings({ hideEmptyChartDays: checked === true })
+                    }
+                    className="mt-0.5"
+                  />
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor="hide-empty-chart-days"
+                      className="text-base font-medium cursor-pointer flex items-center gap-2"
+                    >
+                      <ChartColumn className="h-4 w-4" />
+                      Hide days with no tests
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      When enabled, dashboard charts only show days that had at least one
+                      test. Empty calendar days are omitted instead of appearing as zeros.
+                    </p>
+                  </div>
                 </div>
               </CardContent>
             </Card>

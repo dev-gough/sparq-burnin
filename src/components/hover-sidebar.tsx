@@ -150,6 +150,11 @@ export function HoverSidebar() {
     };
   }, [settings.sidebarTrigger, isOpen]);
 
+  // Auth pages (sign-in / error) should not show navigation — user is not in-app yet.
+  if (pathname?.startsWith("/auth/")) {
+    return null;
+  }
+
   return (
     <div
       id="hover-sidebar"

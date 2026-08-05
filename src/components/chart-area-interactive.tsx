@@ -38,6 +38,7 @@ import {
   type BucketStats,
 } from "@/hooks/useBucketStats";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useSettings } from "@/contexts/settings-context";
 import { cn } from "@/lib/utils";
 
 /** Bucket total below this is treated as thin sample (opacity + tooltip cue). */
@@ -112,6 +113,8 @@ export function ChartAreaInteractive({
   const chartRef = React.useRef<ReactECharts>(null);
   const isMobile = useIsMobile();
   const chartHeightPx = isMobile ? 360 : 320;
+  const { settings } = useSettings();
+  const hideEmptyChartDays = settings.hideEmptyChartDays;
 
   React.useEffect(() => {
     const checkDarkMode = () => {
@@ -126,18 +129,16 @@ export function ChartAreaInteractive({
   }, []);
 
   // Volume only: drop strip-only empty buckets (FULL OUTER JOIN zeros under annotation),
-  // then fill calendar gaps on day bucket so Jul 8 → Jul 16 never looks adjacent.
-  const chartData = React.useMemo(
-    () =>
-      fillContinuousDayBuckets(
-        volumeSeriesFromBuckets(data),
-        dashboardRange,
-        bucket,
-      ),
-    [data, dashboardRange, bucket],
-  );
+  // then fill calendar gaps on day bucket so Jul 8 → Jul 16 never looks adjacent —
+  // unless the user opted to hide empty days entirely.
+  const chartData = React.useMemo(() => {
+    const volume = volumeSeriesFromBuckets(data);
+    if (hideEmptyChartDays) return volume;
+    return fillContinuousDayBuckets(volume, dashboardRange, bucket);
+  }, [data, dashboardRange, bucket, hideEmptyChartDays]);
 
-  const continuousDays = shouldFillContinuousDays(dashboardRange, bucket);
+  const continuousDays =
+    !hideEmptyChartDays && shouldFillContinuousDays(dashboardRange, bucket);
   const activeDaysOnly =
     bucket === "day" &&
     !continuousDays &&
