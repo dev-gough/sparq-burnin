@@ -64,7 +64,9 @@ docs/cve-report.md
 
 # Local annotation dumps / exports
 burnin_annotations.*
-docs/archive/burnin_annotations.*
 docs/FAILURE_CLASSIFICATION_REPORT.md
 logs/
 scripts/export_annotation_table.py
+
+# Private / non-public docs and data dumps (lab-only)
+docs/archive/

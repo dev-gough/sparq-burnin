@@ -1,7 +1,7 @@
 /**
  * Schema tests for the HTTPS ingest payload (plan Phase 3).
  *
- * Contract notes (see docs/HANDOFF.md): any 4xx except 401/403/408/429 is terminal
+ * Contract notes: any 4xx except 401/403/408/429 is terminal
  * for the station — a payload rejected here is dropped client-side. These
  * tests pin exactly what we reject so that boundary can't drift accidentally.
  */

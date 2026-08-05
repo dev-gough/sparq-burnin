@@ -388,8 +388,8 @@ AZURE_AD_CLIENT_ID=your-azure-client-id
 AZURE_AD_CLIENT_SECRET=your-azure-client-secret
 AZURE_AD_TENANT_ID=your-azure-tenant-id
 
-# Access Control
-ALLOWED_EMAIL_DOMAIN=@sparqsys.com
+# Access Control (your org email domain)
+ALLOWED_EMAIL_DOMAIN=@example.com
 
 # Development Settings
 SKIP_AUTH=false

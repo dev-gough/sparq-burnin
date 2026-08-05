@@ -6,7 +6,7 @@
 | **Date** | 2026-07-29 |
 | **Branch** | `grok/ui-refresh` |
 | **Source** | Adversarial UI/UX review of main dashboard (`/`) |
-| **Related** | `docs/ui-refresh-design.md` (executive command-center redesign — largely implemented) |
+| **Related** | Dashboard command-center redesign (shipped on `grok/ui-refresh`) |
 | **Audience** | Implementers banging out items in priority order |
 
 ---
@@ -20,9 +20,8 @@ Turn the adversarial review into a **checklist of implementable optimizations**.
 - a **sparse high-risk day** (e.g. 50% fails on ~5 tests), and  
 - a **typical high-volume day** (~1% fails on >100 tests).
 
-Screenshot evidence from the review lives under `/tmp/grok-screenshots/ux-review/` (not committed).
-
 ---
+
 
 ## Guiding principles
 

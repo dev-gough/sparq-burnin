@@ -134,7 +134,7 @@ Single flag: **`enabled`** (blocks Start Test on master + HTTPS ingest). This is
 |-------|--------|
 | Storage | Postgres `StationControls` |
 | Admin UI | **Stations** sidebar tab (hidden unless allowlisted) |
-| Admin auth | Entra session + `STATION_ADMIN_ALLOWLIST` (env, default `dgough@sparqsys.com`) |
+| Admin auth | Entra session + `STATION_ADMIN_ALLOWLIST` (env; comma-separated emails, no public default) |
 | Station poll | `GET /api/stations/v1/config` (HMAC, empty body hash) |
 | Offline | Cache last policy on disk; disabled stays disabled until re-enabled |
 | `policy_stale_sec` | Master config (default 48h) — cache still applied; age for ops awareness |
@@ -143,7 +143,7 @@ Single flag: **`enabled`** (blocks Start Test on master + HTTPS ingest). This is
 Admin env:
 
 ```env
-STATION_ADMIN_ALLOWLIST=dgough@sparqsys.com
+STATION_ADMIN_ALLOWLIST=admin@example.com
 ```
 
 ## Nonce replay store

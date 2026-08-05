@@ -104,7 +104,6 @@ Machine-local (gitignored): `config.json`, `.env.local`, `data/`, `logs/`.
 | [`docs/README.md`](./docs/README.md) | Full doc index |
 | [`docs/INGEST_API.md`](./docs/INGEST_API.md) | Station HTTPS ingest contract |
 | [`docs/INGEST_PRODUCTION.md`](./docs/INGEST_PRODUCTION.md) | Production ingest rollout |
-| [`docs/CI_DEPLOY.md`](./docs/CI_DEPLOY.md) | Lab CI + deploy pipeline |
 | [`docs/DATABASE.md`](./docs/DATABASE.md) | Schema & CSV ingestion |
 | [`docs/DEPLOYMENT_GUIDE.md`](./docs/DEPLOYMENT_GUIDE.md) | Host deployment notes |
 | [`docs/CLAUDE.md`](./docs/CLAUDE.md) | Agent / contributor project notes |
