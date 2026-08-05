@@ -40,6 +40,9 @@ interface AnnotationInsightsProps {
   chartMode: string;
   annotationFilter: string;
   onAnnotationFilterChange: (filter: string) => void;
+  /** Active station scope ("all" = none). Applies to the main charts only. */
+  stationFilter: string;
+  onStationFilterChange: (filter: string) => void;
   requestEpoch: number;
   /** Skip fetch until parent localStorage prefs are ready. Default true. */
   enabled?: boolean;
@@ -122,6 +125,8 @@ export function AnnotationInsights({
   chartMode,
   annotationFilter,
   onAnnotationFilterChange,
+  stationFilter,
+  onStationFilterChange,
   requestEpoch,
   enabled = true,
 }: AnnotationInsightsProps) {
@@ -129,6 +134,24 @@ export function AnnotationInsights({
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const hasDataRef = React.useRef(false);
+  /** Configured ingest stations; empty (e.g. prod today) hides the row. */
+  const [stations, setStations] = React.useState<string[]>([]);
+
+  React.useEffect(() => {
+    const abort = new AbortController();
+    fetch("/api/stations/options", { signal: abort.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { stations?: unknown } | null) => {
+        if (abort.signal.aborted) return;
+        if (json && Array.isArray(json.stations)) {
+          setStations(json.stations.filter((s): s is string => typeof s === "string"));
+        }
+      })
+      .catch(() => {
+        // No stations row on failure — same as an unconfigured deployment.
+      });
+    return () => abort.abort();
+  }, []);
 
   const epochRef = React.useRef(requestEpoch);
   epochRef.current = requestEpoch;
@@ -382,6 +405,44 @@ export function AnnotationInsights({
           <p className="py-1 text-sm text-muted-foreground" role="status">
             Could not load failure causes.
           </p>
+        )}
+
+        {/* Station scope — charts only. Rendered outside the failure-data
+            states above so it stays usable when the period has no failures.
+            Deployments with zero configured stations never see this row. */}
+        {stations.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-border/60 pt-2">
+            <span className="mr-0.5 w-12 shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Stations
+            </span>
+            {stations.map((stationId) => {
+              const active = stationFilter === stationId;
+              return (
+                <button
+                  key={`station:${stationId}`}
+                  type="button"
+                  onClick={() =>
+                    onStationFilterChange(active ? "all" : stationId)
+                  }
+                  aria-pressed={active}
+                  title={`Only chart tests ingested from ${stationId} (failure-rate and volume charts)`}
+                  className={cn(
+                    chipBase,
+                    active
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border/80 bg-background text-foreground hover:bg-muted",
+                  )}
+                >
+                  <span className="max-w-[11rem] truncate">{stationId}</span>
+                </button>
+              );
+            })}
+            {stationFilter !== "all" && (
+              <span className="text-[10px] text-muted-foreground">
+                charts only
+              </span>
+            )}
+          </div>
         )}
       </CardContent>
     </Card>

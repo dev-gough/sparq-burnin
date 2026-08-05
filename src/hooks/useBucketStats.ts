@@ -30,6 +30,7 @@ function buildRequestKey(opts: {
   dashboardRange: DashboardRange;
   chartMode: string;
   annotationFilter: string;
+  stationFilter: string;
   bucket: ChartBucket;
   requestEpoch: number;
 }): string {
@@ -38,6 +39,7 @@ function buildRequestKey(opts: {
   return JSON.stringify({
     chartMode,
     annotationFilter,
+    stationFilter: opts.stationFilter,
     bucket,
     requestEpoch,
     kind: dashboardRange.kind,
@@ -50,12 +52,14 @@ function toFetchKey(opts: {
   dashboardRange: DashboardRange;
   chartMode: string;
   annotationFilter: string;
+  stationFilter: string;
   bucket: ChartBucket;
 }): BucketStatsFetchKey {
   return {
     dashboardRange: opts.dashboardRange,
     chartMode: opts.chartMode,
     annotationFilter: opts.annotationFilter,
+    stationFilter: opts.stationFilter,
     bucket: opts.bucket,
   };
 }
@@ -81,6 +85,8 @@ export function useBucketStats(opts: {
   dashboardRange: DashboardRange;
   chartMode: string;
   annotationFilter: string;
+  /** Configured station id or "all" (default). Scopes charts only. */
+  stationFilter?: string;
   bucket: ChartBucket;
   requestEpoch: number;
   /** When false, skip fetch (e.g. until localStorage prefs hydrate). Default true. */
@@ -109,6 +115,7 @@ export function useBucketStats(opts: {
     dashboardRange,
     chartMode,
     annotationFilter,
+    stationFilter = "all",
     bucket,
     requestEpoch,
     enabled = true,
@@ -122,9 +129,10 @@ export function useBucketStats(opts: {
         dashboardRange,
         chartMode,
         annotationFilter,
+        stationFilter,
         bucket,
       }),
-    [dashboardRange, chartMode, annotationFilter, bucket],
+    [dashboardRange, chartMode, annotationFilter, stationFilter, bucket],
   );
 
   const requestKey = React.useMemo(
@@ -133,10 +141,18 @@ export function useBucketStats(opts: {
         dashboardRange,
         chartMode,
         annotationFilter,
+        stationFilter,
         bucket,
         requestEpoch,
       }),
-    [dashboardRange, chartMode, annotationFilter, bucket, requestEpoch],
+    [
+      dashboardRange,
+      chartMode,
+      annotationFilter,
+      stationFilter,
+      bucket,
+      requestEpoch,
+    ],
   );
 
   /**
@@ -216,6 +232,7 @@ export function useBucketStats(opts: {
             currentRange: dashboardRange,
             chartMode,
             annotationFilter,
+            stationFilter,
             bucket,
             useSmartBucketPerPill: prefetchSmartBucketPerPill,
           });
@@ -246,6 +263,7 @@ export function useBucketStats(opts: {
     dashboardRange,
     chartMode,
     annotationFilter,
+    stationFilter,
     bucket,
     enabled,
     prefetchSiblingPills,
@@ -262,10 +280,17 @@ export function useBucketStats(opts: {
         dashboardRange: range,
         chartMode,
         annotationFilter,
+        stationFilter,
         bucket: nextBucket,
       });
     },
-    [chartMode, annotationFilter, bucket, prefetchSmartBucketPerPill],
+    [
+      chartMode,
+      annotationFilter,
+      stationFilter,
+      bucket,
+      prefetchSmartBucketPerPill,
+    ],
   );
 
   return {

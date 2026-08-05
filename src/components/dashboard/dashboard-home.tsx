@@ -66,6 +66,12 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
   const [statusFilter, setStatusFilter] = React.useState<string>(
     initial.statusFilter,
   );
+  /**
+   * Station scope for the main charts (strip + volume) only — hero and table
+   * stay deployment-wide. Session state, not persisted: a stale persisted id
+   * would silently filter charts after a config change hides the toggle.
+   */
+  const [stationFilter, setStationFilter] = React.useState<string>("all");
 
   const [tableDateFrom, setTableDateFrom] = React.useState<string>(
     initial.tableDateFrom,
@@ -176,6 +182,7 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
     dashboardRange,
     chartMode,
     annotationFilter,
+    stationFilter,
     bucket: stripBucket,
     requestEpoch,
     enabled: loadDashboardData,
@@ -193,6 +200,7 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
     dashboardRange,
     chartMode,
     annotationFilter,
+    stationFilter,
     bucket,
     requestEpoch,
     enabled: loadDashboardData,
@@ -572,6 +580,8 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
                 chartMode={chartMode}
                 annotationFilter={annotationFilter}
                 onAnnotationFilterChange={setAnnotationFilter}
+                stationFilter={stationFilter}
+                onStationFilterChange={setStationFilter}
                 requestEpoch={requestEpoch}
                 enabled={loadDashboardData}
               />

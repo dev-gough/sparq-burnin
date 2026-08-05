@@ -37,6 +37,14 @@ describe("bucketStatsCacheKey", () => {
     ).not.toBe(base);
   });
 
+  it("treats missing stationFilter as 'all' and differs by station", () => {
+    const base = bucketStatsCacheKey(baseKey());
+    expect(bucketStatsCacheKey(baseKey({ stationFilter: "all" }))).toBe(base);
+    expect(
+      bucketStatsCacheKey(baseKey({ stationFilter: "BurnInTest-1" })),
+    ).not.toBe(base);
+  });
+
   it("includes custom from/to", () => {
     const a = bucketStatsCacheKey(
       baseKey({
@@ -134,6 +142,13 @@ describe("loadBucketStats cache + dedupe", () => {
     expect(url).toContain("annotation=group%3AHW");
     expect(url).toContain("bucket=week");
     expect(url).toContain("timeRange=90d");
+    expect(url).not.toContain("station=");
+  });
+
+  it("appends station param only when a station is selected", async () => {
+    await loadBucketStats(baseKey({ stationFilter: "BurnInTest-1" }));
+    const url = String(vi.mocked(fetch).mock.calls[0][0]);
+    expect(url).toContain("station=BurnInTest-1");
   });
 });
 

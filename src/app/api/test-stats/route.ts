@@ -920,8 +920,15 @@ export async function GET(request: NextRequest) {
     const bucket = validateBucket(searchParams.get("bucket")); // day/week/month/quarter/year
     const rawTimeRange = searchParams.get("timeRange");
     const chartAnnotationFilter = searchParams.get("annotation");
+    const rawStationFilter = searchParams.get("station");
     const rawDateFrom = searchParams.get("dateFrom");
     const rawDateTo = searchParams.get("dateTo");
+
+    // Station scope (charts only): exact station_id match, parameterized.
+    // "all" / blank / oversized values → no filter.
+    const stationValue = rawStationFilter?.trim() ?? "";
+    const stationActive =
+      stationValue !== "" && stationValue !== "all" && stationValue.length <= 128;
 
     // Validate date inputs
     const { dateFrom, dateTo, error: chartDateError } = validateDateRange(rawDateFrom, rawDateTo);
@@ -957,6 +964,15 @@ export async function GET(request: NextRequest) {
       if (days !== null) {
         timeFilter = `t.start_time_utc >= CURRENT_DATE - INTERVAL '${days} days' AND`;
       }
+    }
+
+    // Station clause applies to BOTH volume and strip populations (it scopes
+    // the population like the time window, unlike the annotation tag filter).
+    // Bound before the annotation param so downstream index math still holds.
+    let stationSql = "";
+    if (stationActive) {
+      chartTimeParams.push(stationValue);
+      stationSql = `AND t.station_id = $${chartTimeParams.length}`;
     }
 
     // Annotation match for volume prefilter (legacy) and strip rank-then-tag EXISTS
@@ -1034,6 +1050,7 @@ export async function GET(request: NextRequest) {
           JOIN Inverters i ON t.inv_id = i.inv_id
           WHERE ${timeFilter}
             ${outcomeStatusSql("t.overall_status")}
+            ${stationSql}
             ${annotationFilter}
         ),
         volume AS (
@@ -1058,6 +1075,7 @@ export async function GET(request: NextRequest) {
           JOIN Inverters i ON t.inv_id = i.inv_id
           WHERE ${timeFilter}
             ${outcomeStatusSql("t.overall_status")}
+            ${stationSql}
             -- intentionally NO annotation filter (rank-then-tag)
         ),
         strip AS (
@@ -1094,6 +1112,7 @@ export async function GET(request: NextRequest) {
           FROM Tests t
           WHERE ${timeFilter}
             ${outcomeStatusSql("t.overall_status")}
+            ${stationSql}
             ${annotationFilter}
           GROUP BY ${bucketExpr}
         ),
@@ -1105,6 +1124,7 @@ export async function GET(request: NextRequest) {
           FROM Tests t
           WHERE ${timeFilter}
             ${outcomeStatusSql("t.overall_status")}
+            ${stationSql}
             -- intentionally NO annotation filter (rank-then-tag)
         ),
         strip AS (

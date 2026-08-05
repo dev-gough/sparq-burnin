@@ -27,6 +27,8 @@ export type BucketStatsFetchKey = {
   dashboardRange: DashboardRange;
   chartMode: string;
   annotationFilter: string;
+  /** Configured ingest station id, or "all" (default) for no station scope. */
+  stationFilter?: string;
   bucket: ChartBucket;
 };
 
@@ -59,6 +61,7 @@ export function bucketStatsCacheKey(key: BucketStatsFetchKey): string {
   return JSON.stringify({
     chartMode,
     annotationFilter,
+    stationFilter: key.stationFilter ?? "all",
     bucket,
     kind: dashboardRange.kind,
     from: dashboardRange.kind === "custom" ? dashboardRange.from : null,
@@ -99,6 +102,9 @@ function buildStatsUrl(key: BucketStatsFetchKey): string {
     annotation: key.annotationFilter,
     bucket: key.bucket,
   });
+  if (key.stationFilter && key.stationFilter !== "all") {
+    params.set("station", key.stationFilter);
+  }
   appendDashboardRangeParams(params, key.dashboardRange);
   return `/api/test-stats?${params}`;
 }
@@ -168,6 +174,7 @@ export function prefetchSiblingPillBucketStats(opts: {
   currentRange: DashboardRange;
   chartMode: string;
   annotationFilter: string;
+  stationFilter?: string;
   /** Bucket used for the current request (fallback when not smart-per-pill). */
   bucket: ChartBucket;
   /**
@@ -180,6 +187,7 @@ export function prefetchSiblingPillBucketStats(opts: {
     currentRange,
     chartMode,
     annotationFilter,
+    stationFilter = "all",
     bucket,
     useSmartBucketPerPill = false,
   } = opts;
@@ -204,6 +212,7 @@ export function prefetchSiblingPillBucketStats(opts: {
       dashboardRange: range,
       chartMode,
       annotationFilter,
+      stationFilter,
       bucket: nextBucket,
     });
   }
