@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs'
 import path from 'path'
-import { createDecipheriv } from 'crypto'
+import { createDecipheriv, createHash } from 'crypto'
 
 export type LogSourceId = 'app' | 'email' | 'next' | 'files'
 
@@ -88,13 +88,30 @@ function classifyFile(name: string): LogSourceId | null {
   return null
 }
 
+/** Dated app/next/email logs only. Rejects path separators and leftover files. */
+export function isSafeLogFileName(name: string): boolean {
+  if (!name || name !== path.basename(name)) return false
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) return false
+  const source = classifyFile(name)
+  return source === 'app' || source === 'next' || source === 'email'
+}
+
+export const MAX_ARCHIVE_FILE_BYTES = 16 * 1024 * 1024
+
+export interface OpsLogFileMeta {
+  name: string
+  source: LogSourceId
+  size: number
+  modifiedAt: string
+}
+
 async function listCandidateFiles(
   days: number,
   sources: Set<LogSourceId>
-): Promise<{ abs: string; name: string; source: LogSourceId; mtime: Date }[]> {
+): Promise<{ abs: string; name: string; source: LogSourceId; mtime: Date; size: number }[]> {
   const dir = logDir()
   const daysSet = new Set(dayStrings(days))
-  const results: { abs: string; name: string; source: LogSourceId; mtime: Date }[] = []
+  const results: { abs: string; name: string; source: LogSourceId; mtime: Date; size: number }[] = []
 
   // Primary log dir + burnin legacy ./log + nested layouts
   const cwd = /* turbopackIgnore: true */ process.cwd()
@@ -133,7 +150,7 @@ async function listCandidateFiles(
           const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
           if (st.mtimeMs < cutoff) continue
         }
-        results.push({ abs, name, source, mtime: st.mtime })
+        results.push({ abs, name, source, mtime: st.mtime, size: st.size })
       } catch {
         // skip
       }
@@ -253,5 +270,46 @@ export async function collectOpsLogs(opts: {
     files,
     truncated,
     notes,
+  }
+}
+
+export async function listOpsLogFiles(opts: {
+  days: number
+  sources: Set<LogSourceId>
+}): Promise<OpsLogFileMeta[]> {
+  const candidates = await listCandidateFiles(opts.days, opts.sources)
+  return candidates.map((c) => ({
+    name: c.name,
+    source: c.source,
+    size: c.size,
+    modifiedAt: c.mtime.toISOString(),
+  }))
+}
+
+export async function readOpsLogFileRaw(name: string): Promise<{
+  name: string
+  source: LogSourceId
+  bytes: Buffer
+  size: number
+  modifiedAt: string
+  sha256: string
+} | null> {
+  if (!isSafeLogFileName(name)) return null
+  const source = classifyFile(name)
+  if (!source) return null
+
+  const all = await listCandidateFiles(MAX_DAYS, new Set([source]))
+  const match = all.find((c) => c.name === name)
+  if (!match) return null
+  if (match.size > MAX_ARCHIVE_FILE_BYTES) return null
+
+  const bytes = await fs.readFile(/* turbopackIgnore: true */ match.abs)
+  return {
+    name: match.name,
+    source: match.source,
+    bytes,
+    size: bytes.byteLength,
+    modifiedAt: match.mtime.toISOString(),
+    sha256: createHash('sha256').update(bytes).digest('hex'),
   }
 }

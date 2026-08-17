@@ -27,6 +27,7 @@ const publicPaths = [
   '/auth/signin',
   '/api/health',
   '/api/ops/logs',
+  '/api/ops/log-files',
   '/api/ingest/v1/tests',
   '/api/stations/v1/config',
 ]
