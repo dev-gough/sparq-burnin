@@ -269,11 +269,11 @@ class CSVIngester {
     });
   }
 
-  async processResultsCSV(filePath: string): Promise<number[]> {
+  async processResultsCSV(filePath: string): Promise<{ testIds: number[]; duplicate: boolean }> {
     console.log(`Processing results CSV: ${filePath}`);
     const testIds: number[] = [];
 
-    return this.profiler.time('process_results_csv', () => new Promise<number[]>((resolve, reject) => {
+    return this.profiler.time('process_results_csv', () => new Promise<{ testIds: number[]; duplicate: boolean }>((resolve, reject) => {
       const tests: TestResultsCsvRow[] = [];
 
       createReadStream(filePath)
@@ -384,7 +384,7 @@ class CSVIngester {
                 console.log(
                   `⏭️  Skipping ${path.basename(filePath)}: test already exists for inverter ${testToProcess.serialNumber} at ${startTimeUtc} (test_id ${existingTest.testId}, source ${existingTest.sourceFile}). Cross-pipeline duplicate.`
                 );
-                resolve(testIds);
+                resolve({ testIds, duplicate: true });
                 return;
               }
 
@@ -424,7 +424,7 @@ class CSVIngester {
             } else {
               console.log(`No valid tests found in ${path.basename(filePath)}`);
             }
-            resolve(testIds);
+            resolve({ testIds, duplicate: false });
           } catch (error) {
             reject(error);
           }
@@ -542,6 +542,31 @@ class CSVIngester {
         })
         .on('error', reject);
     });
+  }
+
+  private async findExactTestFileOnDisk(filenameWithSeconds: string, filenameWithoutSeconds: string): Promise<string | null> {
+    const testsDir = path.join(this.toProcessPath, 'tests');
+    for (const filename of [filenameWithSeconds, filenameWithoutSeconds]) {
+      const candidate = path.join(testsDir, filename);
+      try {
+        await fs.access(candidate);
+        return candidate;
+      } catch {
+        // try the other spelling
+      }
+    }
+    return null;
+  }
+
+  private async parkIngestedPair(resultsFile: string, testFile: string | null): Promise<void> {
+    await this.moveFile(resultsFile, path.join(this.processedPath, 'results'));
+    if (testFile) {
+      await this.moveFile(testFile, path.join(this.processedPath, 'tests'));
+    }
+    console.log(
+      `🅿️  Parked already-ingested pair in processed/: ${path.basename(resultsFile)}` +
+        (testFile ? ` + ${path.basename(testFile)}` : '')
+    );
   }
 
   private async findExactTestFileMatch(filenameWithSeconds: string, filenameWithoutSeconds: string): Promise<string | null> {
@@ -715,6 +740,7 @@ class CSVIngester {
 
     const exactMatches: Array<{ resultsFile: string; testFile: string; testId: number }> = [];
     const queuedFiles: Array<{ resultsFile: string; serialNumber: string; startTime: Date; expectedFilename: string }> = [];
+    let parkedDuplicates = 0;
 
     // Process each results file for exact matches
     for (const resultsFile of resultsFiles) {
@@ -730,10 +756,13 @@ class CSVIngester {
 
       // Look for exact match (try with seconds first, then without)
       const exactTestFile = await this.findExactTestFileMatch(filenameWithSeconds, filenameWithoutSeconds);
+      const exactOnDisk = exactTestFile ?? await this.findExactTestFileOnDisk(
+        filenameWithSeconds,
+        filenameWithoutSeconds
+      );
 
       if (exactTestFile) {
-        // Process results file to get test ID
-        const testIds = await this.processResultsCSV(resultsFile);
+        const { testIds, duplicate } = await this.processResultsCSV(resultsFile);
 
         if (testIds.length > 0) {
           exactMatches.push({
@@ -741,7 +770,14 @@ class CSVIngester {
             testFile: exactTestFile,
             testId: testIds[0]
           });
+        } else if (duplicate) {
+          await this.parkIngestedPair(resultsFile, exactTestFile);
+          parkedDuplicates += 1;
         }
+      } else if (exactOnDisk) {
+        // Test CSV is already in TestData.source_file — pair was ingested.
+        await this.parkIngestedPair(resultsFile, exactOnDisk);
+        parkedDuplicates += 1;
       } else {
         console.log(`❌ No exact match found for: ${filenameWithSeconds} or ${filenameWithoutSeconds}`);
         queuedFiles.push({
@@ -782,7 +818,7 @@ class CSVIngester {
         timeDeltaMap.set(queued.serialNumber, closestResult.timeDelta);
 
         // Process results file to get test ID
-        const testIds = await this.processResultsCSV(queued.resultsFile);
+        const { testIds, duplicate } = await this.processResultsCSV(queued.resultsFile);
 
         if (testIds.length > 0) {
           closestMatches.push({
@@ -790,6 +826,9 @@ class CSVIngester {
             testFile: closestResult.filePath,
             testId: testIds[0]
           });
+        } else if (duplicate) {
+          await this.parkIngestedPair(queued.resultsFile, closestResult.filePath);
+          parkedDuplicates += 1;
         }
       } else {
         console.log(`❌ No closest match found for: ${path.basename(queued.resultsFile)}`);
@@ -832,6 +871,7 @@ class CSVIngester {
     console.log(`\n📈 Final Processing Summary:`);
     console.log(`   ✅ Exact matches: ${exactMatches.length}`);
     console.log(`   🔍 Closest matches: ${closestMatches.length}`);
+    console.log(`   🅿️  Already ingested (parked): ${parkedDuplicates}`);
     console.log(`   ❌ Unmatched files: ${unmatched.length}`);
     console.log(`   📄 Total processed: ${newTests}`);
 

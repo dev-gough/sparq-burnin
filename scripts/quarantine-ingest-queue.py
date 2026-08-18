@@ -10,9 +10,10 @@ script moves those CSVs to
 (same filesystem = rename, no extra disk). Watchdog treats anything already
 under quarantine/ or processed/ as seen and will not recopy it from pCloud.
 Watchdog also skips leftover pCloud results whose matching test is already
-in processed/ (those were never in to_process, so quarantine cannot see
-them). Restart burnin-watchdog after pulling a watchdog.py that knows
-about both — an old process will recopy the pile.
+in processed/, and any basename already stored in Tests.source_file
+(needed after a DB-only restore, when processed/ is empty). Restart
+burnin-watchdog after pulling a watchdog.py that knows about all three
+— an old process will recopy the pile.
 
 Does not delete anything. Does not touch the database. Does not write into
 processed/ (that directory is successfully ingested files only).

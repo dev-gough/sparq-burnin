@@ -71,12 +71,13 @@ def load_quarantine_names(kind):
     return names
 
 
-def already_tracked(filename, kind, quarantine_names):
+def already_tracked(filename, kind, quarantine_names, ingested_names=None):
     """Where we already have this basename, if anywhere.
 
     to_process  — sitting in the live queue
-    processed   — successfully ingested
+    processed   — successfully ingested (files on disk)
     quarantine  — unmatched slush, do not recopy from pCloud
+    ingested    — Tests/TestData.source_file (survives a DB-only restore)
     """
     if os.path.exists(os.path.join(main_dir, 'to_process', kind, filename)):
         return 'to_process'
@@ -84,26 +85,107 @@ def already_tracked(filename, kind, quarantine_names):
         return 'processed'
     if filename in quarantine_names:
         return 'quarantine'
+    if ingested_names and filename in ingested_names:
+        return 'ingested'
     return None
 
 
+def load_ingested_names():
+    """Basenames already stored in Tests.source_file.
+
+    Lab often restores the prod DB without prod's processed/ tree. File-only
+    tracking then recopies every historical pCloud pair. Tests.source_file is
+    the results basename; we also add the matching inverter_* test name so
+    leftover extra results still see the test as ingested.
+
+    HTTPS rows use source_file 'https:…' and are ignored (they will not match
+    a CSV basename). Does not scan TestData — that table is huge.
+    """
+    names = set()
+    db = config.get('database') or {}
+    host = str(db.get('host') or 'localhost')
+    port = str(db.get('port') or 5432)
+    name = db.get('name')
+    user = db.get('user')
+    if not name or not user:
+        logger.warning("database.name/user missing in config; cannot skip already-ingested files")
+        return names
+
+    env = os.environ.copy()
+    if db.get('password') is not None:
+        env['PGPASSWORD'] = str(db['password'])
+
+    sql = "SELECT source_file FROM Tests WHERE source_file IS NOT NULL"
+    cmd = [
+        'psql',
+        '-h', host,
+        '-p', port,
+        '-U', str(user),
+        '-d', str(name),
+        '-tAc', sql,
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=30,
+        )
+    except FileNotFoundError:
+        logger.warning("psql not on PATH; cannot skip already-ingested pCloud files")
+        return names
+    except subprocess.TimeoutExpired:
+        logger.warning("psql timed out loading ingested filenames")
+        return names
+
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or '').strip().splitlines()
+        logger.warning(
+            "psql failed loading ingested filenames (exit %s): %s",
+            result.returncode,
+            err[-1] if err else 'no output',
+        )
+        return names
+
+    for line in result.stdout.splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith('https:'):
+            continue
+        base = os.path.basename(raw)
+        names.add(base)
+        if not base.startswith('inverter_'):
+            names.add('inverter_' + base)
+
+    logger.info(f"Loaded {len(names)} ingested filenames from database")
+    return names
+
+
 def index_test_files(data_dir):
-    """Parse pCloud test names once per source, grouped by serial."""
+    """Parse pCloud test names once per source, grouped by serial.
+
+    Returns (by_serial, results_named_count). Results-shaped names in the
+    test directory are leftover misfiles, not parse errors.
+    """
     by_sn = {}
+    results_named = 0
     try:
         names = os.listdir(data_dir)
     except OSError as e:
         logger.warning(f"Could not list test directory {data_dir}: {e}")
-        return by_sn
+        return by_sn, results_named
     for test_file in names:
         test_info = parse_test_file(test_file)
         if not test_info:
+            if parse_results_file(test_file):
+                results_named += 1
+                continue
             if "conflicted" not in test_file and "Copy" not in test_file:
                 logger.info(f'parse_test_file failed for file: {test_file}')
             continue
         sn, started = test_info
         by_sn.setdefault(sn, []).append((test_file, started))
-    return by_sn
+    return by_sn, results_named
 
 
 def copy_action_for_test(test_where):
@@ -113,6 +195,7 @@ def copy_action_for_test(test_where):
     to_process      — test waiting in the queue, copy late-arriving results
     processed       — already ingested with its pair; extra pCloud results
                       cannot pair (ingest only looks in to_process/tests)
+    ingested        — already in the DB (source_file), even if processed/ is empty
     quarantine      — parked slush; do not drop an orphan results file
     """
     if test_where is None:
@@ -428,11 +511,15 @@ def main():
             # Check and process each source directory
             files_copied = 0
             skipped_processed_pair = 0
+            skipped_ingested = 0
+            skipped_no_match = 0
+            skipped_results_named = 0
             total_results_files = 0
             ingest_triggered = False
             ingest_success = None
             quarantined_results = load_quarantine_names('results')
             quarantined_tests = load_quarantine_names('tests')
+            ingested_names = load_ingested_names()
             
             for source_dir in source_directories:
                 results_dir = source_dir['results_dir']
@@ -451,11 +538,17 @@ def main():
                 results_files = os.listdir(results_dir)
                 total_results_files += len(results_files)
                 logger.debug(f"Found {len(results_files)} files in {source_name} results directory")
-                tests_by_sn = index_test_files(data_dir)
+                tests_by_sn, results_named = index_test_files(data_dir)
+                skipped_results_named += results_named
 
                 for file in results_files:
                     results_path = os.path.join(results_dir, file)
-                    if already_tracked(file, 'results', quarantined_results):
+                    results_where = already_tracked(
+                        file, 'results', quarantined_results, ingested_names
+                    )
+                    if results_where:
+                        if results_where == 'ingested':
+                            skipped_ingested += 1
                         continue
                     results_info = parse_results_file(file)
                     if results_info:
@@ -473,7 +566,7 @@ def main():
                             test_file, S = max(test_candidates, key=lambda x: x[1])
                             if S >= three_days_before_T:
                                 test_where = already_tracked(
-                                    test_file, 'tests', quarantined_tests
+                                    test_file, 'tests', quarantined_tests, ingested_names
                                 )
                                 action = copy_action_for_test(test_where)
 
@@ -488,28 +581,34 @@ def main():
                                     shutil.copy2(results_path, os.path.join(to_process_results_dir, file))
                                     logger.info(f"[{source_name}] Test file {test_file} already exists (to_process), copied only {file} to {to_process_results_dir}")
                                     files_copied += 1
-                                elif test_where == 'processed':
+                                elif test_where in ('processed', 'ingested'):
                                     # Already ingested with its pair. Extra pCloud
                                     # results for this test would sit unmatched.
                                     skipped_processed_pair += 1
                                     logger.debug(
-                                        f"[{source_name}] Test file {test_file} already processed; "
-                                        f"skipping leftover results {file}"
+                                        f"[{source_name}] Test file {test_file} already "
+                                        f"{test_where}; skipping leftover results {file}"
                                     )
                             else:
                                 logger.warning(f"[{source_name}] Test file {test_file} is more than 3 days before results file {file}; skipping")
                         else:
-                            logger.warning(f"[{source_name}] No matching test file found for {file}; skipping")
+                            skipped_no_match += 1
+                            logger.debug(f"[{source_name}] No matching test file found for {file}; skipping")
             
             # Always log a summary (heartbeat every cycle, but less verbose when no files copied)
-            skip_note = (
-                f", skipped {skipped_processed_pair} leftover results (matching test already processed)"
-                if skipped_processed_pair
-                else ""
-            )
+            skip_bits = []
+            if skipped_ingested:
+                skip_bits.append(f"{skipped_ingested} already ingested")
+            if skipped_processed_pair:
+                skip_bits.append(f"{skipped_processed_pair} leftover results (test already processed/ingested)")
+            if skipped_no_match:
+                skip_bits.append(f"{skipped_no_match} with no matching test")
+            if skipped_results_named:
+                skip_bits.append(f"{skipped_results_named} results-named files in data/")
+            skip_note = f", skipped {', '.join(skip_bits)}" if skip_bits else ""
             if files_copied > 0:
                 logger.info(f"Cycle {cycle_count}: Checked {total_results_files} files across {len(source_directories)} source directories, copied {files_copied} new files{skip_note}")
-            elif skipped_processed_pair and (cycle_count == 1 or cycle_count % 10 == 0):
+            elif skip_bits and (cycle_count == 1 or cycle_count % 10 == 0):
                 logger.info(f"Cycle {cycle_count}: Checked {total_results_files} files across {len(source_directories)} source directories, copied 0 new files{skip_note}")
             elif cycle_count % 10 == 0:
                 logger.info(f"Cycle {cycle_count}: Checked {total_results_files} files across {len(source_directories)} source directories, copied {files_copied} new files (heartbeat)")
@@ -548,6 +647,8 @@ def main():
                 'nextCycleAt': next_cycle.isoformat().replace('+00:00', 'Z'),
                 'lastFilesCopied': files_copied,
                 'lastSkippedProcessedPair': skipped_processed_pair,
+                'lastSkippedIngested': skipped_ingested,
+                'lastSkippedNoMatch': skipped_no_match,
                 'lastIngestTriggered': ingest_triggered,
                 'lastIngestSuccess': ingest_success,
             })
