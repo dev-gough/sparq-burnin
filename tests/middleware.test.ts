@@ -30,6 +30,7 @@ const publicPaths = [
   '/api/ops/log-files',
   '/api/ingest/v1/tests',
   '/api/stations/v1/config',
+  '/api/stations/v1/enroll', // token-HMAC auth (station auto-enrollment)
 ]
 
 const protectedPaths = [
@@ -40,6 +41,8 @@ const protectedPaths = [
   '/api/test-stats',
   '/api/stations', // admin API (session-auth) — only /api/stations/v1/* is public
   '/api/stations/admin-status',
+  '/api/stations/enrollments', // enrollment approval queue — admin only
+  '/api/stations/tokens', // bootstrap token mint/list — admin only
   '/api/annotations/backup',
 ]
 

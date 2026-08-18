@@ -5,10 +5,10 @@ import zlib from 'zlib'
 const gunzipAsync = promisify(zlib.gunzip)
 import { verifyIngestRequest } from '@/lib/ingestAuth'
 import {
-  getStation,
   ingestPayloadSchema,
   loadIngestConfig,
   processIngestPayload,
+  resolveStationSecret,
 } from '@/lib/ingest'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -46,21 +46,19 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // HMAC identity only (config secret). Runtime enablement is StationControls.
+  // HMAC identity only (DB credential first, config.json fallback).
+  // Runtime enablement is StationControls.
   let earlyAuth
   try {
     earlyAuth = await verifyIngestRequest({
       request,
       rawBody,
       stationIdHeader,
-      getStation: (id) => {
-        const s = getStation(id)
-        if (!s) return undefined
-        return { secret: s.secret }
-      },
+      getStation: (id) => resolveStationSecret(id),
     })
   } catch (err) {
-    // Nonce store unreachable — fail closed; station treats 500 as transient.
+    // Nonce store / credential store unreachable — fail closed; station
+    // treats 500 as transient.
     console.error('ingest auth (nonce store) failed:', err)
     return errorJson(500, 'server_error', 'Failed to verify request')
   }

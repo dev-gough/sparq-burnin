@@ -1,4 +1,5 @@
 import { loadConfig } from '@/lib/config'
+import { getPool } from '@/lib/db'
 
 export interface StationConfig {
   secret: string
@@ -86,4 +87,31 @@ export function getStation(
   stationId: string
 ): StationConfig | undefined {
   return loadIngestConfig().stations[stationId]
+}
+
+/**
+ * DB-first station secret resolution (docs/STATION_ENROLLMENT_PLAN.md §3.3).
+ *
+ * StationCredentials (auto-enrolled / rotated secrets) wins over the legacy
+ * config.json / INGEST_STATIONS_JSON path so a rotation beats a stale config
+ * entry; revoked rows are skipped by the query — a revoked DB credential falls
+ * back to config (legacy stations are never in the DB, so revocation of an
+ * enrolled credential is effective).
+ *
+ * DB errors PROPAGATE: HMAC-verifying callers must fail closed (500), same as
+ * the nonce store — never silently degrade auth to the config path when the
+ * DB is unreachable.
+ */
+export async function resolveStationSecret(
+  stationId: string
+): Promise<StationConfig | undefined> {
+  const r = await getPool().query(
+    `SELECT secret FROM StationCredentials
+     WHERE station_id = $1 AND revoked_at IS NULL`,
+    [stationId]
+  )
+  if (r.rows.length > 0) {
+    return { secret: r.rows[0].secret as string }
+  }
+  return getStation(stationId)
 }

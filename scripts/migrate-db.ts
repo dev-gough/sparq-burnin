@@ -593,6 +593,88 @@ const migrations: Migration[] = [
       END
       $$;
     `
+  },
+  {
+    id: '017',
+    name: 'station_enrollment',
+    sql: `
+      -- Station auto-enrollment (docs/STATION_ENROLLMENT_PLAN.md §3.1):
+      -- bootstrap tokens baked into station builds, per-station credentials
+      -- (DB-first secret resolution with config.json fallback), and an
+      -- enrollment audit trail doubling as the pending-approval queue.
+      --
+      -- Secrets are stored PLAINTEXT by necessity: they are HMAC keys, so the
+      -- server must hold the raw value to verify signatures (hashing would
+      -- make verification impossible). Revocation/expiry is the control —
+      -- same trust posture as today's config.json ingest.stations.
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_name = 'enrollmenttokens'
+        ) THEN
+          CREATE TABLE EnrollmentTokens (
+            token_id     TEXT PRIMARY KEY,
+            token_secret TEXT NOT NULL,
+            label        TEXT NOT NULL,
+            created_by   TEXT NOT NULL,
+            created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            expires_at   TIMESTAMPTZ NOT NULL,
+            max_uses     INTEGER,
+            uses         INTEGER NOT NULL DEFAULT 0,
+            revoked_at   TIMESTAMPTZ
+          );
+          RAISE NOTICE 'Created EnrollmentTokens table';
+        ELSE
+          RAISE NOTICE 'EnrollmentTokens already exists, skipping';
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_name = 'stationcredentials'
+        ) THEN
+          CREATE TABLE StationCredentials (
+            station_id   TEXT PRIMARY KEY,
+            secret       TEXT NOT NULL,
+            token_id     TEXT REFERENCES EnrollmentTokens(token_id),
+            fingerprint  JSONB,
+            enrolled_ip  TEXT,
+            created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            revoked_at   TIMESTAMPTZ
+          );
+          RAISE NOTICE 'Created StationCredentials table';
+        ELSE
+          RAISE NOTICE 'StationCredentials already exists, skipping';
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_name = 'stationenrollments'
+        ) THEN
+          CREATE TABLE StationEnrollments (
+            id           BIGSERIAL PRIMARY KEY,
+            station_id   TEXT NOT NULL,
+            secret       TEXT NOT NULL,
+            token_id     TEXT REFERENCES EnrollmentTokens(token_id),
+            fingerprint  JSONB,
+            request_ip   TEXT,
+            status       TEXT NOT NULL CHECK (status IN ('auto_approved','pending','approved','rejected')),
+            requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            decided_at   TIMESTAMPTZ,
+            decided_by   TEXT
+          );
+          -- One pending row per station_id: repeated 202-retries hit
+          -- ON CONFLICT DO NOTHING against this partial index.
+          CREATE UNIQUE INDEX uq_stationenrollments_pending
+            ON StationEnrollments (station_id) WHERE status = 'pending';
+          RAISE NOTICE 'Created StationEnrollments table with uq_stationenrollments_pending';
+        ELSE
+          RAISE NOTICE 'StationEnrollments already exists, skipping';
+        END IF;
+      END
+      $$;
+    `
   }
 ];
 

@@ -23,8 +23,12 @@ export interface StationControlRow {
   updatedAt: string | null
   updatedBy: string | null
   revision: number
-  /** Present in config.json ingest.stations */
+  /** Has a usable secret: config.json ingest.stations OR an active (non-revoked) StationCredentials row */
   hasSecret: boolean
+  /** Has a StationCredentials row (enrolled via the auto-enrollment flow) */
+  hasDbCredential: boolean
+  /** When the DB credential was soft-revoked (null = active or no DB credential) */
+  credentialRevokedAt: string | null
   lastIngestAt: string | null
   stats: StationTestStats
 }
@@ -207,16 +211,34 @@ export async function listStationControls(): Promise<StationControlRow[]> {
       controlByStation.set(row.station_id as string, row)
     }
 
+    // DB credentials (auto-enrollment, migration 017) — read fresh so a
+    // freshly enrolled station appears immediately and a revoke is visible
+    // on the very next read.
+    const creds = await client.query(
+      `SELECT station_id, revoked_at FROM StationCredentials`
+    )
+    const credByStation = new Map<string, { revokedAt: string | null }>()
+    for (const row of creds.rows) {
+      credByStation.set(row.station_id as string, {
+        revokedAt: row.revoked_at
+          ? new Date(row.revoked_at as string).toISOString()
+          : null,
+      })
+    }
+
     // Station universe = config.json stations ∪ stations seen in Tests
-    // (via the cached stats) ∪ StationControls rows; blank ids excluded.
+    // (via the cached stats) ∪ StationControls rows ∪ StationCredentials
+    // rows; blank ids excluded.
     const ids = new Set<string>()
     for (const id of configIds) if (id) ids.add(id)
     for (const id of statsByStation.keys()) ids.add(id)
     for (const id of controlByStation.keys()) if (id) ids.add(id)
+    for (const id of credByStation.keys()) if (id) ids.add(id)
 
     return [...ids].sort().map((stationId) => {
       const c = controlByStation.get(stationId)
       const stats = statsByStation.get(stationId) ?? { ...EMPTY_STATS }
+      const cred = credByStation.get(stationId)
       return {
         stationId,
         enabled: c ? Boolean(c.enabled) : true,
@@ -226,7 +248,11 @@ export async function listStationControls(): Promise<StationControlRow[]> {
           : null,
         updatedBy: c ? ((c.updated_by as string) ?? null) : null,
         revision: c ? Number(c.revision) || 0 : 0,
-        hasSecret: Boolean(ingest.stations[stationId]?.secret),
+        hasSecret:
+          Boolean(ingest.stations[stationId]?.secret) ||
+          Boolean(cred && cred.revokedAt === null),
+        hasDbCredential: Boolean(cred),
+        credentialRevokedAt: cred?.revokedAt ?? null,
         lastIngestAt: stats.lastIngestAt,
         stats,
       }

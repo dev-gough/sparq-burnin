@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyIngestRequest } from '@/lib/ingestAuth'
-import { getStation } from '@/lib/ingest/stations'
+import { resolveStationSecret } from '@/lib/ingest/stations'
 import { getStationControl } from '@/lib/stationControls'
 
 export const runtime = 'nodejs'
@@ -15,18 +15,15 @@ export async function GET(request: NextRequest) {
   const stationIdHeader = request.headers.get('x-station-id')?.trim() || ''
   const rawBody = Buffer.alloc(0)
 
-  // Identity only — policy enablement comes from StationControls, not config.json
+  // Identity only (DB credential first, config.json fallback) — policy
+  // enablement comes from StationControls, not the secret store.
   let earlyAuth
   try {
     earlyAuth = await verifyIngestRequest({
       request,
       rawBody,
       stationIdHeader,
-      getStation: (id) => {
-        const s = getStation(id)
-        if (!s) return undefined
-        return { secret: s.secret }
-      },
+      getStation: (id) => resolveStationSecret(id),
     })
   } catch (err) {
     // Nonce store unreachable — fail closed; station treats 500 as transient.

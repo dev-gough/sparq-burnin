@@ -28,6 +28,11 @@ vi.mock('@/lib/ingest', async (importOriginal) => {
     }),
     getStation: (id: string) =>
       id === STATION ? { secret: SECRET } : undefined,
+    // The route resolves secrets DB-first via resolveStationSecret; tests
+    // stand in the config-only resolution (DB path covered by
+    // stationSecretResolver.test.ts).
+    resolveStationSecret: async (id: string) =>
+      id === STATION ? { secret: SECRET } : undefined,
     processIngestPayload: (...args: unknown[]) => processMock(...args),
   }
 })

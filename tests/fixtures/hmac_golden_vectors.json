@@ -49,6 +49,18 @@
       "bodyUtf8": "{}",
       "bodySha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
       "expectedSignature": "5db8cfb84d3b80ebdbd4cdb5244c3c5cd2782017d5bd3a653ccbae65208b4bea"
+    },
+    {
+      "name": "post_enroll_token_signed",
+      "secret": "test-enroll-token-secret",
+      "stationId": "MFG-LINE3PC-a4f2",
+      "method": "POST",
+      "path": "/api/stations/v1/enroll",
+      "timestamp": "1750002000",
+      "nonce": "abcdef0123456789abcdef0123456789",
+      "bodyUtf8": "{\"stationId\":\"MFG-LINE3PC-a4f2\",\"secret\":\"9f2c5a1e8b7d4c3f6a0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a\",\"fingerprint\":{\"hostname\":\"LINE3PC\",\"machineId\":\"d4be1a7c9e02\",\"os\":\"Windows-10\",\"appVersion\":\"1.0.0\"}}",
+      "bodySha256": "6a0d83f56a9f0a6df775384ca8b27d82a4defc6cd6b2b277134b0e35a7c1a9bf",
+      "expectedSignature": "c99c37544392aa6cb8343504286920677caf38be9ffa17a256966b68afdd789b"
     }
   ]
 }

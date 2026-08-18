@@ -106,7 +106,17 @@ export async function verifyIngestRequest(params: {
   request: Request
   rawBody: Buffer
   stationIdHeader: string
-  getStation: (stationId: string) => { secret: string } | undefined
+  /**
+   * Secret resolver. May be sync (config.json lookup) or async (DB-first
+   * resolveStationSecret). A rejected promise propagates so callers FAIL
+   * CLOSED, matching the nonce-store contract.
+   */
+  getStation: (
+    stationId: string
+  ) =>
+    | { secret: string }
+    | undefined
+    | Promise<{ secret: string } | undefined>
   skewSec?: number
 }): Promise<IngestAuthResult> {
   const stationId = params.stationIdHeader?.trim() || ''
@@ -122,7 +132,7 @@ export async function verifyIngestRequest(params: {
     return { ok: false, reason: 'missing_headers' }
   }
 
-  const station = params.getStation(stationId)
+  const station = await params.getStation(stationId)
   if (!station) {
     return { ok: false, reason: 'unknown_station' }
   }
@@ -157,6 +167,66 @@ export async function verifyIngestRequest(params: {
       })
     },
     claimNonce: (n) => recordNonce(`${stationId}:${n}`, stationId, skewSec * 2),
+  })
+
+  if (!result.ok) {
+    return { ok: false, reason: result.reason }
+  }
+  return { ok: true, stationId, bodySha256Hex }
+}
+
+/**
+ * HMAC verification for POST /api/stations/v1/enroll (station auto-enrollment,
+ * docs/STATION_ENROLLMENT_PLAN.md §3.2).
+ *
+ * Same canonical string and X-Ingest-* headers as ingest, but the HMAC key is
+ * the BOOTSTRAP TOKEN secret (looked up by the caller via X-Enroll-Token-Id)
+ * and the X-Station-Id header carries the *candidate* station id. Nonces are
+ * namespaced per token (`enroll:<token_id>:<nonce>`) so enrollment replay
+ * protection can never collide with an enrolled station's ingest nonces.
+ */
+export async function verifyEnrollRequest(params: {
+  request: Request
+  rawBody: Buffer
+  stationIdHeader: string
+  tokenId: string
+  tokenSecret: string
+  skewSec?: number
+}): Promise<IngestAuthResult> {
+  const stationId = params.stationIdHeader?.trim() || ''
+  const { timestamp, nonce, signature } = readSignedHeaders(
+    params.request,
+    'x-ingest'
+  )
+
+  if (!stationId || !timestamp || !nonce || !signature) {
+    return { ok: false, reason: 'missing_headers' }
+  }
+
+  const skewSec =
+    params.skewSec ?? Number(process.env.INGEST_HMAC_SKEW_SEC || DEFAULT_SKEW_SEC)
+  const url = new URL(params.request.url)
+
+  let bodySha256Hex = ''
+
+  const result = await verifyHmacCore({
+    timestamp,
+    nonce,
+    signature,
+    skewSec,
+    computeExpectedSignature: () => {
+      bodySha256Hex = sha256Hex(params.rawBody)
+      return signIngestRequest(params.tokenSecret, {
+        timestamp,
+        nonce,
+        method: params.request.method,
+        path: url.pathname,
+        stationId,
+        bodySha256Hex,
+      })
+    },
+    claimNonce: (n) =>
+      recordNonce(`enroll:${params.tokenId}:${n}`, stationId, skewSec * 2),
   })
 
   if (!result.ok) {

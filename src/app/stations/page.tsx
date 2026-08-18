@@ -11,7 +11,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Loader2, RefreshCw, Server } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Inbox,
+  KeyRound,
+  Loader2,
+  RefreshCw,
+  Server,
+} from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface StationTestStats {
@@ -36,8 +44,33 @@ interface StationRow {
   updatedBy: string | null;
   revision: number;
   hasSecret: boolean;
+  hasDbCredential: boolean;
+  credentialRevokedAt: string | null;
   lastIngestAt: string | null;
   stats: StationTestStats;
+}
+
+interface EnrollmentRow {
+  id: number;
+  stationId: string;
+  tokenId: string | null;
+  fingerprint: Record<string, string> | null;
+  requestIp: string | null;
+  status: string;
+  requestedAt: string | null;
+  decidedAt: string | null;
+  decidedBy: string | null;
+}
+
+interface TokenRow {
+  tokenId: string;
+  label: string;
+  createdBy: string;
+  createdAt: string | null;
+  expiresAt: string | null;
+  maxUses: number | null;
+  uses: number;
+  revokedAt: string | null;
 }
 
 function formatTime(iso: string | null): string {
@@ -135,13 +168,28 @@ export default function StationsPage() {
   const reasonDraftRef = React.useRef(reasonDraft);
   reasonDraftRef.current = reasonDraft;
 
+  const [enrollments, setEnrollments] = React.useState<EnrollmentRow[]>([]);
+  const [tokens, setTokens] = React.useState<TokenRow[]>([]);
+  const [enrollBusyId, setEnrollBusyId] = React.useState<number | null>(null);
+  const [tokenBusyId, setTokenBusyId] = React.useState<string | null>(null);
+  const [credBusyId, setCredBusyId] = React.useState<string | null>(null);
+  const [mintLabel, setMintLabel] = React.useState("");
+  const [mintDays, setMintDays] = React.useState("30");
+  const [minting, setMinting] = React.useState(false);
+  const [mintedToken, setMintedToken] = React.useState<string | null>(null);
+  const [copied, setCopied] = React.useState(false);
+
   const load = React.useCallback(async (opts?: { silent?: boolean }) => {
     const silent = Boolean(opts?.silent);
     if (silent) setRefreshing(true);
     else setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/stations");
+      const [res, enrollRes, tokenRes] = await Promise.all([
+        fetch("/api/stations"),
+        fetch("/api/stations/enrollments").catch(() => null),
+        fetch("/api/stations/tokens").catch(() => null),
+      ]);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setError(body.error || `Failed to load (${res.status})`);
@@ -159,6 +207,14 @@ export default function StationsPage() {
         }
         return next;
       });
+      if (enrollRes?.ok) {
+        const body = await enrollRes.json().catch(() => ({}));
+        setEnrollments((body.enrollments || []) as EnrollmentRow[]);
+      }
+      if (tokenRes?.ok) {
+        const body = await tokenRes.json().catch(() => ({}));
+        setTokens((body.tokens || []) as TokenRow[]);
+      }
       setLastFetchedAt(new Date());
     } catch (e) {
       console.error(e);
@@ -226,6 +282,124 @@ export default function StationsPage() {
     }
   };
 
+  const decideEnrollment = async (id: number, action: "approve" | "reject") => {
+    setEnrollBusyId(id);
+    try {
+      const res = await fetch(`/api/stations/enrollments/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.error || `${action} failed (${res.status})`);
+        return;
+      }
+      await load({ silent: true });
+    } catch (e) {
+      console.error(e);
+      alert(`${action} failed`);
+    } finally {
+      setEnrollBusyId(null);
+    }
+  };
+
+  const mintToken = async () => {
+    setMinting(true);
+    try {
+      const res = await fetch("/api/stations/tokens", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: mintLabel.trim(),
+          expiresInDays: Number(mintDays),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(body.error || `Mint failed (${res.status})`);
+        return;
+      }
+      setMintedToken(body.bootstrapToken || null);
+      setCopied(false);
+      setMintLabel("");
+      await load({ silent: true });
+    } catch (e) {
+      console.error(e);
+      alert("Mint failed");
+    } finally {
+      setMinting(false);
+    }
+  };
+
+  const copyMintedToken = async () => {
+    if (!mintedToken) return;
+    try {
+      await navigator.clipboard.writeText(mintedToken);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      console.error(e);
+      alert("Copy failed — select and copy the token manually.");
+    }
+  };
+
+  const revokeToken = async (tokenId: string) => {
+    if (
+      !window.confirm(
+        `Revoke bootstrap token ${tokenId}? Builds carrying it can no longer enroll.`
+      )
+    ) {
+      return;
+    }
+    setTokenBusyId(tokenId);
+    try {
+      const res = await fetch(
+        `/api/stations/tokens/${encodeURIComponent(tokenId)}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.error || `Revoke failed (${res.status})`);
+        return;
+      }
+      await load({ silent: true });
+    } catch (e) {
+      console.error(e);
+      alert("Revoke failed");
+    } finally {
+      setTokenBusyId(null);
+    }
+  };
+
+  const revokeCredential = async (stationId: string) => {
+    if (
+      !window.confirm(
+        `Revoke the credential for ${stationId}? The station immediately loses ingest and policy access until it re-enrolls.`
+      )
+    ) {
+      return;
+    }
+    setCredBusyId(stationId);
+    try {
+      const res = await fetch(
+        `/api/stations/credentials/${encodeURIComponent(stationId)}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.error || `Revoke failed (${res.status})`);
+        return;
+      }
+      await load({ silent: true });
+    } catch (e) {
+      console.error(e);
+      alert("Revoke failed");
+    } finally {
+      setCredBusyId(null);
+    }
+  };
+
   if (sessionStatus === "loading" || (loading && isAdmin !== false)) {
     return <StationsPageSkeleton />;
   }
@@ -250,6 +424,8 @@ export default function StationsPage() {
       </div>
     );
   }
+
+  const pendingEnrollments = enrollments.filter((e) => e.status === "pending");
 
   return (
     <div className="ml-10">
@@ -293,6 +469,81 @@ export default function StationsPage() {
               {error}
             </p>
           )}
+
+          <Card className="py-0 gap-0 shadow-sm">
+            <CardHeader className="py-2.5 px-4 pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Inbox className="size-4" />
+                Pending enrollments
+                {pendingEnrollments.length > 0 && (
+                  <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                    {pendingEnrollments.length} awaiting approval
+                  </span>
+                )}
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Enrollment requests for station ids that already hold an active
+                credential. Approving replaces the stored credential with the
+                candidate secret; the station converges on its next retry.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-4 pb-3 space-y-2 text-sm">
+              {pendingEnrollments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No pending enrollment requests.
+                </p>
+              ) : (
+                pendingEnrollments.map((e) => (
+                  <div
+                    key={e.id}
+                    className="rounded-md border bg-muted/30 px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-mono text-sm">{e.stationId}</div>
+                      <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                        <span>IP: {e.requestIp ?? "—"}</span>
+                        <span>Requested: {formatTime(e.requestedAt)}</span>
+                        {e.tokenId && <span>Token: {e.tokenId}</span>}
+                        {e.fingerprint?.hostname && (
+                          <span>Host: {e.fingerprint.hostname}</span>
+                        )}
+                        {e.fingerprint?.os && <span>OS: {e.fingerprint.os}</span>}
+                        {e.fingerprint?.machineId && (
+                          <span>Machine: {e.fingerprint.machineId}</span>
+                        )}
+                        {e.fingerprint?.appVersion && (
+                          <span>App: {e.fingerprint.appVersion}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        className="h-8 px-3"
+                        disabled={enrollBusyId === e.id}
+                        onClick={() => decideEnrollment(e.id, "approve")}
+                      >
+                        {enrollBusyId === e.id ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          "Approve"
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-3"
+                        disabled={enrollBusyId === e.id}
+                        onClick={() => decideEnrollment(e.id, "reject")}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
 
           {!loading && stations.length === 0 && !error && (
             <Card>
@@ -344,6 +595,11 @@ export default function StationsPage() {
                         {!s.hasSecret && (
                           <span className="text-xs text-muted-foreground">
                             · no secret
+                          </span>
+                        )}
+                        {s.credentialRevokedAt && (
+                          <span className="text-xs font-medium text-red-600 dark:text-red-400">
+                            · credential revoked
                           </span>
                         )}
                         {s.reason && !s.enabled && (
@@ -425,6 +681,21 @@ export default function StationsPage() {
                           )}
                         </Button>
                       )}
+                      {s.hasDbCredential && !s.credentialRevokedAt && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0 h-9 px-3 text-destructive hover:text-destructive"
+                          disabled={credBusyId === s.stationId}
+                          onClick={() => revokeCredential(s.stationId)}
+                        >
+                          {credBusyId === s.stationId ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            "Revoke credential"
+                          )}
+                        </Button>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-muted-foreground">
@@ -443,6 +714,155 @@ export default function StationsPage() {
               );
             })}
           </div>
+
+          <Card className="py-0 gap-0 shadow-sm">
+            <CardHeader className="py-2.5 px-4 pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <KeyRound className="size-4" />
+                Bootstrap tokens
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Baked into station builds for zero-touch enrollment. The full
+                token is shown exactly once when minted — copy it into the
+                build script.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-4 pb-3 space-y-2.5 text-sm">
+              <div className="flex gap-2 items-stretch flex-wrap">
+                <input
+                  aria-label="Token label"
+                  className="min-w-0 flex-1 rounded-md border bg-background px-3 py-1.5 text-sm h-9"
+                  value={mintLabel}
+                  onChange={(e) => setMintLabel(e.target.value)}
+                  placeholder='Label (e.g. "MFG shipment 2026-09")'
+                />
+                <input
+                  aria-label="Token expiry in days"
+                  type="number"
+                  min={1}
+                  className="w-28 rounded-md border bg-background px-3 py-1.5 text-sm h-9"
+                  value={mintDays}
+                  onChange={(e) => setMintDays(e.target.value)}
+                  placeholder="Days"
+                  title="Expiry (days)"
+                />
+                <Button
+                  size="sm"
+                  className="shrink-0 h-9 px-3"
+                  disabled={minting || !mintLabel.trim() || !(Number(mintDays) > 0)}
+                  onClick={mintToken}
+                >
+                  {minting ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    "Mint token"
+                  )}
+                </Button>
+              </div>
+
+              {mintedToken && (
+                <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2">
+                  <div className="text-[11px] font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wide">
+                    Copy now — shown only once
+                  </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <code className="min-w-0 flex-1 break-all font-mono text-xs">
+                      {mintedToken}
+                    </code>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 h-8 px-2.5"
+                      onClick={copyMintedToken}
+                    >
+                      {copied ? (
+                        <>
+                          <Check className="size-3.5" /> Copied
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="size-3.5" /> Copy
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {tokens.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No bootstrap tokens minted yet.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {tokens.map((t) => {
+                    // Compared against the last fetch time (state) rather than
+                    // Date.now() so render stays pure; staleness is bounded by
+                    // the 30 s poll.
+                    const nowMs = lastFetchedAt?.getTime() ?? 0;
+                    const expired =
+                      t.expiresAt != null &&
+                      nowMs > 0 &&
+                      new Date(t.expiresAt).getTime() <= nowMs;
+                    return (
+                      <div
+                        key={t.tokenId}
+                        className="rounded-md border bg-muted/30 px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1.5"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline gap-2 flex-wrap">
+                            <span className="text-sm font-medium">
+                              {t.label}
+                            </span>
+                            <code className="font-mono text-xs text-muted-foreground">
+                              {t.tokenId}
+                            </code>
+                            {t.revokedAt ? (
+                              <span className="text-xs font-medium text-red-600 dark:text-red-400">
+                                Revoked
+                              </span>
+                            ) : expired ? (
+                              <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                                Expired
+                              </span>
+                            ) : (
+                              <span className="text-xs font-medium text-green-600 dark:text-green-400">
+                                Active
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                            <span>Expires: {formatTime(t.expiresAt)}</span>
+                            <span>
+                              Uses: {t.uses}
+                              {t.maxUses != null ? ` / ${t.maxUses}` : ""}
+                            </span>
+                            <span>By: {t.createdBy}</span>
+                            <span>Created: {formatTime(t.createdAt)}</span>
+                          </div>
+                        </div>
+                        {!t.revokedAt && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0 h-8 px-3 text-destructive hover:text-destructive"
+                            disabled={tokenBusyId === t.tokenId}
+                            onClick={() => revokeToken(t.tokenId)}
+                          >
+                            {tokenBusyId === t.tokenId ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              "Revoke"
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
