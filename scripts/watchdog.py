@@ -87,6 +87,41 @@ def already_tracked(filename, kind, quarantine_names):
     return None
 
 
+def index_test_files(data_dir):
+    """Parse pCloud test names once per source, grouped by serial."""
+    by_sn = {}
+    try:
+        names = os.listdir(data_dir)
+    except OSError as e:
+        logger.warning(f"Could not list test directory {data_dir}: {e}")
+        return by_sn
+    for test_file in names:
+        test_info = parse_test_file(test_file)
+        if not test_info:
+            if "conflicted" not in test_file and "Copy" not in test_file:
+                logger.info(f'parse_test_file failed for file: {test_file}')
+            continue
+        sn, started = test_info
+        by_sn.setdefault(sn, []).append((test_file, started))
+    return by_sn
+
+
+def copy_action_for_test(test_where):
+    """What to copy given where the matching test already lives.
+
+    None            — new pair, copy test + results
+    to_process      — test waiting in the queue, copy late-arriving results
+    processed       — already ingested with its pair; extra pCloud results
+                      cannot pair (ingest only looks in to_process/tests)
+    quarantine      — parked slush; do not drop an orphan results file
+    """
+    if test_where is None:
+        return 'both'
+    if test_where == 'to_process':
+        return 'results'
+    return None
+
+
 def write_watchdog_status(payload: dict) -> None:
     """Atomically write watchdog cycle status for Control Center health metrics."""
     try:
@@ -392,6 +427,7 @@ def main():
             
             # Check and process each source directory
             files_copied = 0
+            skipped_processed_pair = 0
             total_results_files = 0
             ingest_triggered = False
             ingest_success = None
@@ -415,6 +451,7 @@ def main():
                 results_files = os.listdir(results_dir)
                 total_results_files += len(results_files)
                 logger.debug(f"Found {len(results_files)} files in {source_name} results directory")
+                tests_by_sn = index_test_files(data_dir)
 
                 for file in results_files:
                     results_path = os.path.join(results_dir, file)
@@ -426,16 +463,11 @@ def main():
                         # Calculate 3 days before the results file's timestamp
                         three_days_before_T = T - datetime.timedelta(days=3)
 
-                        # Find matching test files in data_dir
-                        test_candidates = []
-                        for test_file in os.listdir(data_dir):
-                            test_info = parse_test_file(test_file)
-                            if (not test_info):
-                                if "conflicted" not in test_file and "Copy" not in test_file:
-                                    logger.info(f'parse_test_file failed for file: {test_file}')
-                                continue
-                            if test_info and test_info[0] == sn and test_info[1] <= T:
-                                test_candidates.append((test_file, test_info[1]))
+                        test_candidates = [
+                            (test_file, started)
+                            for test_file, started in tests_by_sn.get(sn, [])
+                            if started <= T
+                        ]
                         if test_candidates:
                             # Select the latest test file before T
                             test_file, S = max(test_candidates, key=lambda x: x[1])
@@ -443,30 +475,42 @@ def main():
                                 test_where = already_tracked(
                                     test_file, 'tests', quarantined_tests
                                 )
+                                action = copy_action_for_test(test_where)
 
-                                if test_where is None:
+                                if action == 'both':
                                     test_path = os.path.join(data_dir, test_file)
                                     shutil.copy2(test_path, os.path.join(to_process_tests_dir, test_file))
                                     shutil.copy2(results_path, os.path.join(to_process_results_dir, file))
                                     logger.info(f"[{source_name}] Copied {test_file} to {to_process_tests_dir} and {file} to {to_process_results_dir}")
                                     files_copied += 1
-                                elif test_where == 'quarantine':
-                                    # Test was parked as unmatched slush — do not
-                                    # drop an orphan results file back in the queue.
-                                    continue
-                                else:
-                                    # Test already in to_process or processed
+                                elif action == 'results':
+                                    # Test is waiting in to_process — late results
                                     shutil.copy2(results_path, os.path.join(to_process_results_dir, file))
-                                    logger.info(f"[{source_name}] Test file {test_file} already exists ({test_where}), copied only {file} to {to_process_results_dir}")
+                                    logger.info(f"[{source_name}] Test file {test_file} already exists (to_process), copied only {file} to {to_process_results_dir}")
                                     files_copied += 1
+                                elif test_where == 'processed':
+                                    # Already ingested with its pair. Extra pCloud
+                                    # results for this test would sit unmatched.
+                                    skipped_processed_pair += 1
+                                    logger.debug(
+                                        f"[{source_name}] Test file {test_file} already processed; "
+                                        f"skipping leftover results {file}"
+                                    )
                             else:
                                 logger.warning(f"[{source_name}] Test file {test_file} is more than 3 days before results file {file}; skipping")
                         else:
                             logger.warning(f"[{source_name}] No matching test file found for {file}; skipping")
             
             # Always log a summary (heartbeat every cycle, but less verbose when no files copied)
+            skip_note = (
+                f", skipped {skipped_processed_pair} leftover results (matching test already processed)"
+                if skipped_processed_pair
+                else ""
+            )
             if files_copied > 0:
-                logger.info(f"Cycle {cycle_count}: Checked {total_results_files} files across {len(source_directories)} source directories, copied {files_copied} new files")
+                logger.info(f"Cycle {cycle_count}: Checked {total_results_files} files across {len(source_directories)} source directories, copied {files_copied} new files{skip_note}")
+            elif skipped_processed_pair and (cycle_count == 1 or cycle_count % 10 == 0):
+                logger.info(f"Cycle {cycle_count}: Checked {total_results_files} files across {len(source_directories)} source directories, copied 0 new files{skip_note}")
             elif cycle_count % 10 == 0:
                 logger.info(f"Cycle {cycle_count}: Checked {total_results_files} files across {len(source_directories)} source directories, copied {files_copied} new files (heartbeat)")
             else:
@@ -503,6 +547,7 @@ def main():
                 'lastCycleFinishedAt': cycle_finished.isoformat().replace('+00:00', 'Z'),
                 'nextCycleAt': next_cycle.isoformat().replace('+00:00', 'Z'),
                 'lastFilesCopied': files_copied,
+                'lastSkippedProcessedPair': skipped_processed_pair,
                 'lastIngestTriggered': ingest_triggered,
                 'lastIngestSuccess': ingest_success,
             })

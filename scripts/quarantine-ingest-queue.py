@@ -9,8 +9,10 @@ script moves those CSVs to
 
 (same filesystem = rename, no extra disk). Watchdog treats anything already
 under quarantine/ or processed/ as seen and will not recopy it from pCloud.
-Restart burnin-watchdog after pulling a watchdog.py that knows about
-quarantine — an old process will recopy the pile.
+Watchdog also skips leftover pCloud results whose matching test is already
+in processed/ (those were never in to_process, so quarantine cannot see
+them). Restart burnin-watchdog after pulling a watchdog.py that knows
+about both — an old process will recopy the pile.
 
 Does not delete anything. Does not touch the database. Does not write into
 processed/ (that directory is successfully ingested files only).
