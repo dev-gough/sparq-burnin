@@ -46,6 +46,45 @@ STALE_LOCK_TIMEOUT = 7200  # 2 hours - consider lock stale if older than this
 # Ops status for Control Center (read by GET /api/health)
 OPS_DIR = os.path.join(main_dir, '.ops')
 WATCHDOG_STATUS_FILE = os.path.join(OPS_DIR, 'watchdog-status.json')
+QUARANTINE_DIR = os.path.join(main_dir, 'quarantine')
+
+
+def load_quarantine_names(kind):
+    """Basenames already parked under quarantine/{kind} or quarantine/*/kind."""
+    names = set()
+    if not os.path.isdir(QUARANTINE_DIR):
+        return names
+    flat = os.path.join(QUARANTINE_DIR, kind)
+    if os.path.isdir(flat):
+        names.update(os.listdir(flat))
+    try:
+        batches = os.listdir(QUARANTINE_DIR)
+    except OSError:
+        return names
+    for batch in batches:
+        batch_dir = os.path.join(QUARANTINE_DIR, batch, kind)
+        if os.path.isdir(batch_dir):
+            try:
+                names.update(os.listdir(batch_dir))
+            except OSError:
+                continue
+    return names
+
+
+def already_tracked(filename, kind, quarantine_names):
+    """Where we already have this basename, if anywhere.
+
+    to_process  — sitting in the live queue
+    processed   — successfully ingested
+    quarantine  — unmatched slush, do not recopy from pCloud
+    """
+    if os.path.exists(os.path.join(main_dir, 'to_process', kind, filename)):
+        return 'to_process'
+    if os.path.exists(os.path.join(main_dir, 'processed', kind, filename)):
+        return 'processed'
+    if filename in quarantine_names:
+        return 'quarantine'
+    return None
 
 
 def write_watchdog_status(payload: dict) -> None:
@@ -356,6 +395,8 @@ def main():
             total_results_files = 0
             ingest_triggered = False
             ingest_success = None
+            quarantined_results = load_quarantine_names('results')
+            quarantined_tests = load_quarantine_names('tests')
             
             for source_dir in source_directories:
                 results_dir = source_dir['results_dir']
@@ -377,56 +418,51 @@ def main():
 
                 for file in results_files:
                     results_path = os.path.join(results_dir, file)
-                    processed_results_path = os.path.join(processed_dir, 'results', file)  # Check in processed/results/
-                    to_process_results_path = os.path.join(to_process_results_dir, file)
-
-                    # Check if results file is already in the processed or to_process folder
-                    if os.path.exists(processed_results_path) or os.path.exists(to_process_results_path):
-                        # Skip logging - file already exists (reduces log spam)
+                    if already_tracked(file, 'results', quarantined_results):
                         continue
-                    else:
-                        results_info = parse_results_file(file)
-                        if results_info:
-                            sn, T = results_info
-                            # Calculate 3 days before the results file's timestamp
-                            three_days_before_T = T - datetime.timedelta(days=3)
+                    results_info = parse_results_file(file)
+                    if results_info:
+                        sn, T = results_info
+                        # Calculate 3 days before the results file's timestamp
+                        three_days_before_T = T - datetime.timedelta(days=3)
 
-                            # Find matching test files in data_dir
-                            test_candidates = []
-                            for test_file in os.listdir(data_dir):
-                                test_info = parse_test_file(test_file)
-                                if (not test_info):
-                                    if "conflicted" not in test_file and "Copy" not in test_file:
-                                        logger.info(f'parse_test_file failed for file: {test_file}')
+                        # Find matching test files in data_dir
+                        test_candidates = []
+                        for test_file in os.listdir(data_dir):
+                            test_info = parse_test_file(test_file)
+                            if (not test_info):
+                                if "conflicted" not in test_file and "Copy" not in test_file:
+                                    logger.info(f'parse_test_file failed for file: {test_file}')
+                                continue
+                            if test_info and test_info[0] == sn and test_info[1] <= T:
+                                test_candidates.append((test_file, test_info[1]))
+                        if test_candidates:
+                            # Select the latest test file before T
+                            test_file, S = max(test_candidates, key=lambda x: x[1])
+                            if S >= three_days_before_T:
+                                test_where = already_tracked(
+                                    test_file, 'tests', quarantined_tests
+                                )
+
+                                if test_where is None:
+                                    test_path = os.path.join(data_dir, test_file)
+                                    shutil.copy2(test_path, os.path.join(to_process_tests_dir, test_file))
+                                    shutil.copy2(results_path, os.path.join(to_process_results_dir, file))
+                                    logger.info(f"[{source_name}] Copied {test_file} to {to_process_tests_dir} and {file} to {to_process_results_dir}")
+                                    files_copied += 1
+                                elif test_where == 'quarantine':
+                                    # Test was parked as unmatched slush — do not
+                                    # drop an orphan results file back in the queue.
                                     continue
-                                if test_info and test_info[0] == sn and test_info[1] <= T:
-                                    test_candidates.append((test_file, test_info[1]))
-                            if test_candidates:
-                                # Select the latest test file before T
-                                test_file, S = max(test_candidates, key=lambda x: x[1])
-                                if S >= three_days_before_T:
-                                    # Check if test file already exists in to_process/tests or processed/tests
-                                    to_process_test_path = os.path.join(to_process_tests_dir, test_file)
-                                    processed_test_path = os.path.join(processed_dir, 'tests', test_file)
-
-                                    test_file_exists = os.path.exists(to_process_test_path) or os.path.exists(processed_test_path)
-
-                                    if not test_file_exists:
-                                        # Copy test file to to_process/tests and results file to to_process/results
-                                        test_path = os.path.join(data_dir, test_file)
-                                        shutil.copy2(test_path, to_process_test_path)
-                                        shutil.copy2(results_path, os.path.join(to_process_results_dir, file))
-                                        logger.info(f"[{source_name}] Copied {test_file} to {to_process_tests_dir} and {file} to {to_process_results_dir}")
-                                        files_copied += 1
-                                    else:
-                                        # Still copy the results file if test file already exists
-                                        shutil.copy2(results_path, os.path.join(to_process_results_dir, file))
-                                        logger.info(f"[{source_name}] Test file {test_file} already exists, copied only {file} to {to_process_results_dir}")
-                                        files_copied += 1
                                 else:
-                                    logger.warning(f"[{source_name}] Test file {test_file} is more than 3 days before results file {file}; skipping")
+                                    # Test already in to_process or processed
+                                    shutil.copy2(results_path, os.path.join(to_process_results_dir, file))
+                                    logger.info(f"[{source_name}] Test file {test_file} already exists ({test_where}), copied only {file} to {to_process_results_dir}")
+                                    files_copied += 1
                             else:
-                                logger.warning(f"[{source_name}] No matching test file found for {file}; skipping")
+                                logger.warning(f"[{source_name}] Test file {test_file} is more than 3 days before results file {file}; skipping")
+                        else:
+                            logger.warning(f"[{source_name}] No matching test file found for {file}; skipping")
             
             # Always log a summary (heartbeat every cycle, but less verbose when no files copied)
             if files_copied > 0:

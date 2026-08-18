@@ -2,27 +2,24 @@
 """
 Move leftover to_process/{results,tests} files out of the live ingest queue.
 
-Ingest leaves unmatched / already-in-DB pairs in to_process forever. Watchdog
-will recopy anything that is in neither to_process/ nor processed/, so this
-script:
+Ingest leaves unmatched / already-in-DB pairs in to_process forever. This
+script moves those CSVs to
 
-  1. Moves the real CSVs to
-     {main_dir}/quarantine/unmatched-YYYYMMDD-HHMMSS/{results,tests}/
-     (same filesystem = rename, no extra disk).
-  2. Hard-links the same basenames into processed/{results,tests}/ so
-     watchdog treats them as already seen and will not pull them from pCloud
-     again.
+    {main_dir}/quarantine/unmatched-YYYYMMDD-HHMMSS/{results,tests}/
 
-Does not delete anything. Does not touch the database.
+(same filesystem = rename, no extra disk). Watchdog treats anything already
+under quarantine/ or processed/ as seen and will not recopy it from pCloud.
+Restart burnin-watchdog after pulling a watchdog.py that knows about
+quarantine — an old process will recopy the pile.
+
+Does not delete anything. Does not touch the database. Does not write into
+processed/ (that directory is successfully ingested files only).
 
 Usage (from the repo root, on the prod box):
 
-  python3 scripts/quarantine-ingest-queue.py            # dry-run
-  python3 scripts/quarantine-ingest-queue.py --apply    # do it
-
-Stop the watchdog first so it cannot copy into a half-moved tree:
-
+  git pull
   sudo systemctl stop burnin-watchdog.service
+  python3 scripts/quarantine-ingest-queue.py            # dry-run
   python3 scripts/quarantine-ingest-queue.py --apply
   sudo systemctl start burnin-watchdog.service
 """
@@ -88,7 +85,6 @@ def main() -> int:
     config = load_config(args.repo)
     main_dir = Path(config["paths"]["local"]["main_dir"])
     to_process = main_dir / "to_process"
-    processed = main_dir / "processed"
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     quarantine = main_dir / "quarantine" / f"unmatched-{stamp}"
 
@@ -121,31 +117,18 @@ def main() -> int:
 
     for kind in ("results", "tests"):
         (quarantine / kind).mkdir(parents=True, exist_ok=True)
-        (processed / kind).mkdir(parents=True, exist_ok=True)
 
     moved = 0
-    linked = 0
-    already_processed = 0
     errors: list[str] = []
 
     for kind, files in (("results", results), ("tests", tests)):
         for src in files:
             dest = quarantine / kind / src.name
-            marker = processed / kind / src.name
             try:
                 os.rename(src, dest)
                 moved += 1
             except OSError as err:
                 errors.append(f"rename {src} → {dest}: {err}")
-                continue
-            if marker.exists():
-                already_processed += 1
-                continue
-            try:
-                os.link(dest, marker)
-                linked += 1
-            except OSError as err:
-                errors.append(f"hardlink {dest} → {marker}: {err}")
 
     manifest = quarantine / "MANIFEST.txt"
     manifest.write_text(
@@ -155,13 +138,11 @@ def main() -> int:
                 f"main_dir            {main_dir}",
                 f"results_moved       {len(results)}",
                 f"tests_moved         {len(tests)}",
-                f"hardlinks_created   {linked}",
-                f"already_in_processed {already_processed}",
                 f"errors              {len(errors)}",
                 "",
-                "Files were moved out of to_process/ so Control Center queue",
-                "goes empty. Hardlinks in processed/{results,tests}/ stop",
-                "watchdog from recopying the same names from pCloud.",
+                "Files were moved out of to_process/ so the Control Center",
+                "queue goes empty. Restarted watchdog will not recopy these",
+                "basenames from pCloud (it checks quarantine/ and processed/).",
                 "Nothing was deleted. Restore = rename back to to_process/.",
                 "",
             ]
@@ -170,7 +151,7 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    print(f"\nmoved {moved}  hardlinked {linked}  already-in-processed {already_processed}")
+    print(f"\nmoved {moved}")
     print(f"manifest {manifest}")
     if errors:
         print(f"{len(errors)} errors — see manifest")
