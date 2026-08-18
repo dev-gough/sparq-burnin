@@ -18,6 +18,9 @@ burnin-watchdog after pulling a watchdog.py that knows about all three
 Does not delete anything. Does not touch the database. Does not write into
 processed/ (that directory is successfully ingested files only).
 
+To split the queue from an unprocessed.csv report (quarantine slush,
+park recoverable pairs), use scripts/split-unprocessed-queue.py instead.
+
 Usage (from the repo root, on the prod box):
 
   git pull

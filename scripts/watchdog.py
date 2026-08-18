@@ -47,22 +47,26 @@ STALE_LOCK_TIMEOUT = 7200  # 2 hours - consider lock stale if older than this
 OPS_DIR = os.path.join(main_dir, '.ops')
 WATCHDOG_STATUS_FILE = os.path.join(OPS_DIR, 'watchdog-status.json')
 QUARANTINE_DIR = os.path.join(main_dir, 'quarantine')
+RECOVERY_DIR = os.path.join(main_dir, 'recovery')
 
 
-def load_quarantine_names(kind):
-    """Basenames already parked under quarantine/{kind} or quarantine/*/kind."""
+def load_tree_basenames(root, kind):
+    """Basenames under root/{kind} or root/*/kind."""
     names = set()
-    if not os.path.isdir(QUARANTINE_DIR):
+    if not os.path.isdir(root):
         return names
-    flat = os.path.join(QUARANTINE_DIR, kind)
+    flat = os.path.join(root, kind)
     if os.path.isdir(flat):
-        names.update(os.listdir(flat))
+        try:
+            names.update(os.listdir(flat))
+        except OSError:
+            pass
     try:
-        batches = os.listdir(QUARANTINE_DIR)
+        batches = os.listdir(root)
     except OSError:
         return names
     for batch in batches:
-        batch_dir = os.path.join(QUARANTINE_DIR, batch, kind)
+        batch_dir = os.path.join(root, batch, kind)
         if os.path.isdir(batch_dir):
             try:
                 names.update(os.listdir(batch_dir))
@@ -71,12 +75,24 @@ def load_quarantine_names(kind):
     return names
 
 
+def load_parked_names(kind):
+    """Basenames already parked under quarantine/ or recovery/."""
+    names = load_tree_basenames(QUARANTINE_DIR, kind)
+    names.update(load_tree_basenames(RECOVERY_DIR, kind))
+    return names
+
+
+def load_quarantine_names(kind):
+    """Back-compat alias — includes recovery/ so leftovers stay parked."""
+    return load_parked_names(kind)
+
+
 def already_tracked(filename, kind, quarantine_names, ingested_names=None):
     """Where we already have this basename, if anywhere.
 
     to_process  — sitting in the live queue
     processed   — successfully ingested (files on disk)
-    quarantine  — unmatched slush, do not recopy from pCloud
+    quarantine  — unmatched slush or recovery park, do not recopy from pCloud
     ingested    — Tests/TestData.source_file (survives a DB-only restore)
     """
     if os.path.exists(os.path.join(main_dir, 'to_process', kind, filename)):
