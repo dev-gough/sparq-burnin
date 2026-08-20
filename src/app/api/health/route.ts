@@ -570,6 +570,28 @@ function buildFreshnessOps(
     })
   }
 
+  if (snap.passed24h != null) {
+    metrics.push({
+      id: 'tests.passed_24h',
+      label: 'Passed (24h)',
+      value: snap.passed24h,
+      unit: 'count',
+      status: 'ok',
+      detail: 'of rows created in last 24h',
+    })
+  }
+
+  if (snap.ingested7d != null) {
+    metrics.push({
+      id: 'tests.ingested_7d',
+      label: 'Ingested (7d)',
+      value: snap.ingested7d,
+      unit: 'count',
+      status: 'ok',
+      detail: 'rows created in last 7 days',
+    })
+  }
+
   if (snap.totalTests != null) {
     // Prefer live total under freshness id if ingest total also present —
     // ingest.total_tests may still be emitted from last-run file.
@@ -786,6 +808,24 @@ export async function GET(request: Request) {
     return true
   })
 
+  const mem = process.memoryUsage()
+  const processMetrics: HealthMetric[] = [
+    {
+      id: 'process.rss_mb',
+      label: 'Process RSS',
+      value: Math.round(mem.rss / 1024 / 1024),
+      unit: 'count',
+      detail: 'MiB resident',
+    },
+    {
+      id: 'process.heap_mb',
+      label: 'Heap used',
+      value: Math.round(mem.heapUsed / 1024 / 1024),
+      unit: 'count',
+      detail: 'MiB',
+    },
+  ]
+
   const checks: HealthCheck[] = [
     { name: 'http', status: 'ok', latencyMs: 1, critical: true },
     database,
@@ -819,6 +859,7 @@ export async function GET(request: Request) {
       ...todoOps.metrics,
       ...capacityOps.metrics,
       ...ingestMetrics,
+      ...processMetrics,
     ],
     events: ingestOps.events,
     links: {

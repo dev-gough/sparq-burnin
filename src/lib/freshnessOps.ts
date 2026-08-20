@@ -17,6 +17,8 @@ export interface FreshnessSnapshot {
   lastIngestedAt: string | null
   ingested24h: number | null
   failed24h: number | null
+  passed24h: number | null
+  ingested7d: number | null
   /**
    * FAIL tests with no TestAnnotations row (same as /api/todo/count).
    * Bundle C — human annotation backlog.
@@ -78,6 +80,13 @@ export async function snapshotFreshness(): Promise<FreshnessSnapshot> {
               AND overall_status = 'FAIL'
           )::int AS failed_24h,
           COUNT(*) FILTER (
+            WHERE created_at >= NOW() - INTERVAL '24 hours'
+              AND upper(overall_status) = 'PASS'
+          )::int AS passed_24h,
+          COUNT(*) FILTER (
+            WHERE created_at >= NOW() - INTERVAL '7 days'
+          )::int AS ingested_7d,
+          COUNT(*) FILTER (
             WHERE overall_status = 'FAIL'
               AND NOT EXISTS (
                 SELECT 1
@@ -99,6 +108,8 @@ export async function snapshotFreshness(): Promise<FreshnessSnapshot> {
       ingested24h:
         typeof row.ingested_24h === 'number' ? row.ingested_24h : null,
       failed24h: typeof row.failed_24h === 'number' ? row.failed_24h : null,
+      passed24h: typeof row.passed_24h === 'number' ? row.passed_24h : null,
+      ingested7d: typeof row.ingested_7d === 'number' ? row.ingested_7d : null,
       todoUnannotated:
         typeof row.todo_unannotated === 'number' ? row.todo_unannotated : null,
       latencyMs: Date.now() - started,
@@ -112,6 +123,8 @@ export async function snapshotFreshness(): Promise<FreshnessSnapshot> {
       lastIngestedAt: null,
       ingested24h: null,
       failed24h: null,
+      passed24h: null,
+      ingested7d: null,
       todoUnannotated: null,
       latencyMs: Date.now() - started,
     }
