@@ -18,18 +18,23 @@ export async function GET() {
   try {
     const enrollments = await withClient(async (client) => {
       const r = await client.query(
-        `SELECT id, station_id, token_id, fingerprint, request_ip, status,
-                requested_at, decided_at, decided_by
-         FROM StationEnrollments
-         WHERE status = 'pending'
-            OR requested_at > NOW() - INTERVAL '7 days'
-         ORDER BY (status = 'pending') DESC, requested_at DESC
+        `SELECT e.id, e.station_id, e.candidate_station_id, e.enrollment_request_id,
+                e.token_id, t.label AS token_label, e.fingerprint, e.request_ip,
+                e.status, e.requested_at, e.decided_at, e.decided_by
+         FROM StationEnrollments e
+         LEFT JOIN EnrollmentTokens t ON t.token_id = e.token_id
+         WHERE e.status = 'pending'
+            OR e.requested_at > NOW() - INTERVAL '7 days'
+         ORDER BY (e.status = 'pending') DESC, e.requested_at DESC
          LIMIT 200`
       )
       return r.rows.map((row) => ({
         id: Number(row.id),
         stationId: row.station_id as string,
+        candidateStationId: (row.candidate_station_id as string) ?? null,
+        enrollmentRequestId: (row.enrollment_request_id as string) ?? null,
         tokenId: (row.token_id as string) ?? null,
+        tokenLabel: (row.token_label as string) ?? null,
         fingerprint: (row.fingerprint as Record<string, string>) ?? null,
         requestIp: (row.request_ip as string) ?? null,
         status: row.status as string,

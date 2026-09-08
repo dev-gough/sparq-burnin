@@ -33,13 +33,20 @@ interface EnrollmentRow {
   requested_at: string
   decided_at: string | null
   decided_by: string | null
+  candidate_station_id: string | null
+  enrollment_request_id: string | null
 }
 
 class FakeAdminDb {
   enrollments: EnrollmentRow[] = []
   credentials = new Map<
     string,
-    { secret: string; revoked_at: string | null }
+    {
+      secret: string
+      revoked_at: string | null
+      candidate_station_id: string | null
+      enrollment_request_id: string | null
+    }
   >()
   tokens = new Map<
     string,
@@ -56,18 +63,29 @@ class FakeAdminDb {
   >()
   nextEnrollmentId = 1
 
-  seedPending(stationId: string, secret: string): EnrollmentRow {
+  seedPending(
+    stationId: string,
+    secret: string,
+    extras: Partial<EnrollmentRow> = {}
+  ): EnrollmentRow {
     const row: EnrollmentRow = {
       id: this.nextEnrollmentId++,
       station_id: stationId,
       secret,
       token_id: 'tok111111111',
-      fingerprint: { hostname: 'LINE3PC' },
+      fingerprint: {
+        hostname: 'LINE3PC',
+        machineId: 'd4be1a7c9e02',
+        appVersion: '1.2.3',
+      },
       request_ip: '10.1.2.3',
       status: 'pending',
       requested_at: new Date().toISOString(),
       decided_at: null,
       decided_by: null,
+      candidate_station_id: extras.candidate_station_id ?? stationId,
+      enrollment_request_id: extras.enrollment_request_id ?? 'b'.repeat(32),
+      ...extras,
     }
     this.enrollments.push(row)
     return row
@@ -95,7 +113,12 @@ class FakeAdminDb {
         rows: this.enrollments.map((e) => ({
           id: e.id,
           station_id: e.station_id,
+          candidate_station_id: e.candidate_station_id,
+          enrollment_request_id: e.enrollment_request_id,
           token_id: e.token_id,
+          token_label: e.token_id
+            ? this.tokens.get(e.token_id)?.label ?? null
+            : null,
           fingerprint: e.fingerprint,
           request_ip: e.request_ip,
           status: e.status,
@@ -122,6 +145,8 @@ class FakeAdminDb {
       this.credentials.set(params[0] as string, {
         secret: params[1] as string,
         revoked_at: null,
+        candidate_station_id: (params[5] as string | null) ?? null,
+        enrollment_request_id: (params[6] as string | null) ?? null,
       })
       return { rows: [] }
     }
@@ -213,7 +238,10 @@ beforeEach(() => {
 
 describe('GET /api/stations/enrollments', () => {
   it('lists enrollment requests without candidate secrets', async () => {
-    db.seedPending('MFG-LINE3PC-a4f2', 'a'.repeat(64))
+    db.seedPending('MFG-LINE3PC-a4f2', 'a'.repeat(64), {
+      candidate_station_id: 'MFG-LINE3PC-a4f2',
+      enrollment_request_id: 'b'.repeat(32),
+    })
     const response = await listEnrollments()
     expect(response.status).toBe(200)
     const body = (await response.json()) as {
@@ -222,11 +250,14 @@ describe('GET /api/stations/enrollments', () => {
     expect(body.enrollments).toHaveLength(1)
     expect(body.enrollments[0]).toMatchObject({
       stationId: 'MFG-LINE3PC-a4f2',
+      candidateStationId: 'MFG-LINE3PC-a4f2',
+      enrollmentRequestId: 'b'.repeat(32),
       status: 'pending',
       requestIp: '10.1.2.3',
       fingerprint: { hostname: 'LINE3PC' },
     })
     expect(JSON.stringify(body)).not.toContain('a'.repeat(64))
+    expect(JSON.stringify(body)).not.toContain('token_secret')
   })
 
   it('propagates the admin auth gate', async () => {
@@ -238,20 +269,28 @@ describe('GET /api/stations/enrollments', () => {
 
 describe('POST /api/stations/enrollments/[id]', () => {
   it('approve upserts the credential and marks the row approved', async () => {
-    const row = db.seedPending('MFG-LINE3PC-a4f2', 'b'.repeat(64))
+    const assigned = 'MFG-2a444a63-f228-44a2-ae5c-cdf863c8f049'
+    const row = db.seedPending(assigned, 'b'.repeat(64), {
+      candidate_station_id: 'MFG-LINE3PC-a4f2',
+      enrollment_request_id: 'c'.repeat(32),
+    })
     const response = await decideEnrollment(
       jsonRequest({ action: 'approve' }),
       props(row.id)
     )
     expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({
+    const body = await response.json()
+    expect(body).toMatchObject({
       ok: true,
-      stationId: 'MFG-LINE3PC-a4f2',
+      stationId: assigned,
       status: 'approved',
     })
-    expect(db.credentials.get('MFG-LINE3PC-a4f2')).toEqual({
+    expect(JSON.stringify(body)).not.toContain('b'.repeat(64))
+    expect(db.credentials.get(assigned)).toEqual({
       secret: 'b'.repeat(64),
       revoked_at: null,
+      candidate_station_id: 'MFG-LINE3PC-a4f2',
+      enrollment_request_id: 'c'.repeat(32),
     })
     expect(db.enrollments[0]).toMatchObject({
       status: 'approved',
@@ -268,6 +307,7 @@ describe('POST /api/stations/enrollments/[id]', () => {
     expect(response.status).toBe(200)
     expect(db.credentials.size).toBe(0)
     expect(db.enrollments[0]).toMatchObject({ status: 'rejected' })
+    expect(JSON.stringify(await response.json())).not.toContain('b'.repeat(64))
   })
 
   it('already-decided or unknown id → 404', async () => {
@@ -363,6 +403,8 @@ describe('DELETE /api/stations/credentials/[id]', () => {
     db.credentials.set('MFG-LINE3PC-a4f2', {
       secret: 'c'.repeat(64),
       revoked_at: null,
+      candidate_station_id: 'MFG-LINE3PC-a4f2',
+      enrollment_request_id: null,
     })
     const response = await revokeCredential(
       bareRequest(),

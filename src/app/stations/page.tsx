@@ -53,7 +53,10 @@ interface StationRow {
 interface EnrollmentRow {
   id: number;
   stationId: string;
+  candidateStationId: string | null;
+  enrollmentRequestId: string | null;
   tokenId: string | null;
+  tokenLabel: string | null;
   fingerprint: Record<string, string> | null;
   requestIp: string | null;
   status: string;
@@ -482,9 +485,9 @@ export default function StationsPage() {
                 )}
               </CardTitle>
               <CardDescription className="text-xs">
-                Enrollment requests for station ids that already hold an active
-                credential. Approving replaces the stored credential with the
-                candidate secret; the station converges on its next retry.
+                Re-image or candidate-collision requests against an assigned
+                station ID. Approving rotates the secret on that ID; the
+                station converges on its next retry.
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-3 space-y-2 text-sm">
@@ -501,15 +504,42 @@ export default function StationsPage() {
                     <div className="min-w-0 flex-1">
                       <div className="font-mono text-sm">{e.stationId}</div>
                       <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                        {e.candidateStationId && (
+                          <span>
+                            Candidate:{" "}
+                            <span className="font-mono">
+                              {e.candidateStationId}
+                            </span>
+                          </span>
+                        )}
+                        {e.enrollmentRequestId && (
+                          <span>
+                            Request:{" "}
+                            <span className="font-mono">
+                              {e.enrollmentRequestId}
+                            </span>
+                          </span>
+                        )}
+                        {(e.tokenLabel || e.tokenId) && (
+                          <span>
+                            Token:{" "}
+                            {e.tokenLabel
+                              ? `${e.tokenLabel}${
+                                  e.tokenId ? ` (${e.tokenId})` : ""
+                                }`
+                              : e.tokenId}
+                          </span>
+                        )}
                         <span>IP: {e.requestIp ?? "—"}</span>
                         <span>Requested: {formatTime(e.requestedAt)}</span>
-                        {e.tokenId && <span>Token: {e.tokenId}</span>}
                         {e.fingerprint?.hostname && (
                           <span>Host: {e.fingerprint.hostname}</span>
                         )}
-                        {e.fingerprint?.os && <span>OS: {e.fingerprint.os}</span>}
                         {e.fingerprint?.machineId && (
                           <span>Machine: {e.fingerprint.machineId}</span>
+                        )}
+                        {e.fingerprint?.os && (
+                          <span>OS: {e.fingerprint.os}</span>
                         )}
                         {e.fingerprint?.appVersion && (
                           <span>App: {e.fingerprint.appVersion}</span>

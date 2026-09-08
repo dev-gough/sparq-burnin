@@ -13,6 +13,7 @@ Lab-only runbooks, handoffs, and data dumps live under [`archive/`](./archive/) 
 | [DATABASE.md](./DATABASE.md) | Schema and CSV ingestion |
 | [INGEST_API.md](./INGEST_API.md) | Station → dashboard HTTPS ingest API |
 | [INGEST_PRODUCTION.md](./INGEST_PRODUCTION.md) | Production ingest rollout |
+| [MANAGED_PROVISIONING_SERVER_PLAN.md](./MANAGED_PROVISIONING_SERVER_PLAN.md) | Server-assigned station identity implementation handoff |
 
 ## Product / engineering notes
 

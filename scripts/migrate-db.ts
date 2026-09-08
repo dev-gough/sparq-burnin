@@ -675,6 +675,72 @@ const migrations: Migration[] = [
       END
       $$;
     `
+  },
+  {
+    id: '018',
+    name: 'managed_station_provisioning',
+    sql: `
+      -- Managed provisioning (docs/MANAGED_PROVISIONING_SERVER_PLAN.md):
+      -- server-assigned opaque station IDs keyed by a client enrollment
+      -- request id. Additive only — do not rewrite existing station_id values.
+      -- New columns are nullable so legacy rows (no request id) stay valid.
+      ALTER TABLE StationEnrollments
+        ADD COLUMN IF NOT EXISTS enrollment_request_id TEXT,
+        ADD COLUMN IF NOT EXISTS candidate_station_id TEXT;
+
+      UPDATE StationEnrollments
+      SET candidate_station_id = station_id
+      WHERE candidate_station_id IS NULL;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_stationenrollments_token_request
+        ON StationEnrollments (token_id, enrollment_request_id)
+        WHERE enrollment_request_id IS NOT NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_stationenrollments_candidate
+        ON StationEnrollments (candidate_station_id, requested_at DESC);
+
+      ALTER TABLE StationCredentials
+        ADD COLUMN IF NOT EXISTS candidate_station_id TEXT,
+        ADD COLUMN IF NOT EXISTS enrollment_request_id TEXT;
+
+      UPDATE StationCredentials
+      SET candidate_station_id = station_id
+      WHERE candidate_station_id IS NULL;
+
+      -- At most one *active* credential per candidate. Re-image/collision
+      -- must take the pending-review path, not a second live identity.
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_stationcredentials_active_candidate
+        ON StationCredentials (candidate_station_id)
+        WHERE revoked_at IS NULL AND candidate_station_id IS NOT NULL;
+
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'chk_stationenrollments_request_id'
+        ) THEN
+          ALTER TABLE StationEnrollments
+            ADD CONSTRAINT chk_stationenrollments_request_id
+            CHECK (
+              enrollment_request_id IS NULL
+              OR enrollment_request_id ~ '^[0-9a-f]{32}$'
+            );
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'chk_stationcredentials_request_id'
+        ) THEN
+          ALTER TABLE StationCredentials
+            ADD CONSTRAINT chk_stationcredentials_request_id
+            CHECK (
+              enrollment_request_id IS NULL
+              OR enrollment_request_id ~ '^[0-9a-f]{32}$'
+            );
+        END IF;
+      END
+      $$;
+    `
   }
 ];
 
@@ -745,4 +811,4 @@ if (require.main === module) {
   });
 }
 
-export { runMigrations };
+export { runMigrations, migrations };
