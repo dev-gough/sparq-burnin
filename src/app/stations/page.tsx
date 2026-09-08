@@ -17,10 +17,12 @@ import {
   Inbox,
   KeyRound,
   Loader2,
+  Pencil,
   RefreshCw,
   Server,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useStationAliases } from "@/hooks/useStationAliases";
 
 interface StationTestStats {
   totalTests: number;
@@ -74,6 +76,80 @@ interface TokenRow {
   maxUses: number | null;
   uses: number;
   revokedAt: string | null;
+}
+
+function StationHeading({
+  stationId,
+  displayName,
+  onRename,
+}: {
+  stationId: string;
+  displayName: string;
+  onRename: (name: string) => void;
+}) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(displayName);
+  const aliased = displayName !== stationId;
+
+  const commit = () => {
+    onRename(draft);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="min-w-0 flex items-center gap-2">
+        <input
+          autoFocus
+          aria-label={`Rename station ${stationId}`}
+          className="min-w-0 w-56 max-w-full rounded-md border bg-background px-2 py-1 text-sm h-8"
+          value={draft}
+          maxLength={64}
+          placeholder="e.g. Line 3"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit();
+            }
+            if (e.key === "Escape") {
+              setDraft(displayName);
+              setEditing(false);
+            }
+          }}
+        />
+        <span className="text-[11px] text-muted-foreground font-mono truncate">
+          {stationId}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-w-0 flex items-baseline gap-2">
+      <CardTitle className={aliased ? "text-sm font-medium" : "text-sm font-mono"}>
+        {displayName}
+      </CardTitle>
+      <button
+        type="button"
+        className="text-muted-foreground hover:text-foreground shrink-0 rounded-sm p-0.5"
+        aria-label={`Rename ${displayName}`}
+        title="Rename this station (local label only)"
+        onClick={() => {
+          setDraft(aliased ? displayName : "");
+          setEditing(true);
+        }}
+      >
+        <Pencil className="size-3.5" />
+      </button>
+      {aliased && (
+        <span className="text-[11px] text-muted-foreground font-mono truncate">
+          {stationId}
+        </span>
+      )}
+    </div>
+  );
 }
 
 function formatTime(iso: string | null): string {
@@ -158,6 +234,7 @@ function StationsPageSkeleton() {
 
 export default function StationsPage() {
   const { status: sessionStatus } = useSession();
+  const { displayName, setAlias } = useStationAliases();
   const [isAdmin, setIsAdmin] = React.useState<boolean | null>(null);
   const [stations, setStations] = React.useState<StationRow[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -378,7 +455,7 @@ export default function StationsPage() {
   const revokeCredential = async (stationId: string) => {
     if (
       !window.confirm(
-        `Revoke the credential for ${stationId}? The station immediately loses ingest and policy access until it re-enrolls.`
+        `Revoke the credential for ${displayName(stationId)}? The station immediately loses ingest and policy access until it re-enrolls.`
       )
     ) {
       return;
@@ -502,7 +579,22 @@ export default function StationsPage() {
                     className="rounded-md border bg-muted/30 px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1.5"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="font-mono text-sm">{e.stationId}</div>
+                      <div className="text-sm flex items-baseline gap-2 min-w-0">
+                        <span
+                          className={
+                            displayName(e.stationId) === e.stationId
+                              ? "font-mono"
+                              : "font-medium"
+                          }
+                        >
+                          {displayName(e.stationId)}
+                        </span>
+                        {displayName(e.stationId) !== e.stationId && (
+                          <span className="font-mono text-[11px] text-muted-foreground truncate">
+                            {e.stationId}
+                          </span>
+                        )}
+                      </div>
                       <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
                         {e.candidateStationId && (
                           <span>
@@ -610,9 +702,11 @@ export default function StationsPage() {
                   <CardHeader className="py-2.5 px-4 pb-2">
                     <div className="flex items-center justify-between gap-3 min-w-0">
                       <div className="min-w-0 flex items-baseline gap-2 flex-wrap">
-                        <CardTitle className="text-sm font-mono">
-                          {s.stationId}
-                        </CardTitle>
+                        <StationHeading
+                          stationId={s.stationId}
+                          displayName={displayName(s.stationId)}
+                          onRename={(name) => setAlias(s.stationId, name)}
+                        />
                         {s.enabled ? (
                           <span className="text-xs font-medium text-green-600 dark:text-green-400">
                             Enabled

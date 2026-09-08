@@ -13,6 +13,7 @@ import {
   dashboardRangeLabel,
 } from "@/lib/dashboard-range";
 import { cn } from "@/lib/utils";
+import { useStationAliases } from "@/hooks/useStationAliases";
 
 interface InsightGroup {
   name: string;
@@ -128,6 +129,7 @@ export function AnnotationInsights({
   requestEpoch,
   enabled = true,
 }: AnnotationInsightsProps) {
+  const { displayName } = useStationAliases();
   const [data, setData] = React.useState<AnnotationSummary | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
@@ -232,7 +234,7 @@ export function AnnotationInsights({
         <span className="text-[11px] text-muted-foreground">
           {dashboardRangeLabel(dashboardRange)}
           {chartMode === "recent" ? " · latest" : ""}
-          {stationFilter !== "all" ? ` · ${stationFilter}` : ""}
+          {stationFilter !== "all" ? ` · ${displayName(stationFilter)}` : ""}
         </span>
       </CardHeader>
       <CardContent className="px-6 pb-3 pt-0">

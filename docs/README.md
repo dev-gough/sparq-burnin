@@ -20,6 +20,7 @@ Lab-only runbooks, handoffs, and data dumps live under [`archive/`](./archive/) 
 | Document | Description |
 |----------|-------------|
 | [CLAUDE.md](./CLAUDE.md) | Dev commands, auth, architecture notes for agents |
+| [TODO.md](./TODO.md) | Follow-ups not in an active plan (e.g. gradual station software-update policy) |
 | [UI_UX_OPTIMIZATION_PLAN.md](./UI_UX_OPTIMIZATION_PLAN.md) | UX optimization checklist (largely implemented) |
 
 ## Performance

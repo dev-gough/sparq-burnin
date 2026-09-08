@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { useStationAliases } from "@/hooks/useStationAliases";
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -480,6 +481,7 @@ export function DataTable({
   const router = useRouter();
   const { resolvedTheme } = useTheme();
   const { formatInTimezone, selectedTimezone } = useTimezone();
+  const { displayName } = useStationAliases();
   const { prefetchTests } = useTestDataCache();
   const { quickOptions: cachedQuickOptions, groups: cachedGroups } = useAnnotationCache();
   const [data, setData] = React.useState<z.infer<typeof testSchema>[]>([]);
@@ -885,7 +887,9 @@ export function DataTable({
                     onClick={() => onStationFilterChange("all")}
                     className="inline-flex h-7 max-w-[12rem] items-center gap-1 rounded-full border border-border bg-background px-2 text-xs font-medium hover:bg-muted"
                   >
-                    <span className="truncate">{stationFilter}</span>
+                    <span className="truncate" title={stationFilter}>
+                      {displayName(stationFilter)}
+                    </span>
                     <X className="size-3 shrink-0 opacity-60" />
                   </button>
                 )}
@@ -1083,8 +1087,8 @@ export function DataTable({
                   <SelectContent>
                     <SelectItem value="all">All stations</SelectItem>
                     {stationOptions.map((station) => (
-                      <SelectItem key={station} value={station}>
-                        {station}
+                      <SelectItem key={station} value={station} title={station}>
+                        {displayName(station)}
                       </SelectItem>
                     ))}
                   </SelectContent>
