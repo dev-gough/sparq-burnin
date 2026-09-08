@@ -54,12 +54,15 @@ export type EnrollDecision =
       outcome: string
     }
 
-interface PgQueryResult {
-  rows: Record<string, unknown>[]
+interface PgQueryResult<T = Record<string, unknown>> {
+  rows: T[]
 }
 
 interface PgClient {
-  query: (sql: string, params?: unknown[]) => Promise<PgQueryResult>
+  query: <T = Record<string, unknown>>(
+    sql: string,
+    params?: unknown[]
+  ) => Promise<PgQueryResult<T>>
 }
 
 interface EnrollParams {
@@ -418,13 +421,13 @@ async function decideManaged(
   params: EnrollParams,
   requestId: string
 ): Promise<EnrollDecision> {
-  const locked = await client.query(
+  const locked = await client.query<EnrollmentTokenRow>(
     `SELECT token_secret, expires_at, max_uses, uses, revoked_at
      FROM EnrollmentTokens WHERE token_id = $1
      FOR UPDATE`,
     [params.tokenId]
   )
-  const token = locked.rows[0] as EnrollmentTokenRow | undefined
+  const token = locked.rows[0]
   if (!token) return { kind: 'auth', outcome: 'auth_unknown_token' }
 
   const existing = await loadEnrollmentByRequest(
