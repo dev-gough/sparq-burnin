@@ -219,7 +219,7 @@ async function insertPendingRotation(
     ip: string | null
   }
 ): Promise<EnrollDecision> {
-  await client.query(
+  const inserted = await client.query(
     `INSERT INTO StationEnrollments
        (station_id, secret, token_id, fingerprint, request_ip, status,
         enrollment_request_id, candidate_station_id)
@@ -236,6 +236,33 @@ async function insertPendingRotation(
       params.candidateId,
     ]
   )
+
+  // A station may only have one pending rotation. If another request already
+  // owns that slot, this request was not persisted and therefore cannot be
+  // answered with 202: the client would adopt the authoritative station ID,
+  // retry an unknown request ID, and could be mistaken for a new candidate.
+  // Re-read the conflicting row as required by the managed-provisioning
+  // concurrency contract, then fail this distinct request permanently.
+  if (inserted.rows.length === 0) {
+    const pending = await client.query(
+      `SELECT station_id, candidate_station_id, enrollment_request_id,
+              secret, status, token_id
+       FROM StationEnrollments
+       WHERE station_id = $1 AND status = 'pending'
+       FOR UPDATE`,
+      [params.assignedId]
+    )
+    const row = pending.rows[0]
+    if (!row) {
+      throw new Error('pending enrollment conflict disappeared')
+    }
+    return {
+      kind: 'reject',
+      error: 'enrollment_conflict',
+      outcome: 'managed_pending_conflict',
+    }
+  }
+
   return {
     kind: 'ok',
     http: 202,
@@ -247,22 +274,38 @@ async function insertPendingRotation(
   }
 }
 
-async function loadActiveByCandidate(
+async function loadActiveByCandidateOrStation(
   client: PgClient,
-  candidateId: string
-): Promise<{ station_id: string; secret: string } | undefined> {
+  submittedId: string
+): Promise<
+  | { station_id: string; secret: string; candidate_station_id: string }
+  | undefined
+> {
   const r = await client.query(
-    `SELECT station_id, secret, revoked_at
+    `SELECT station_id, secret, revoked_at, candidate_station_id
      FROM StationCredentials
-     WHERE candidate_station_id = $1 AND revoked_at IS NULL
+     WHERE (candidate_station_id = $1 OR station_id = $1)
+       AND revoked_at IS NULL
      FOR UPDATE`,
-    [candidateId]
+    [submittedId]
   )
   const row = r.rows[0] as
-    | { station_id: string; secret: string; revoked_at: string | Date | null }
+    | {
+        station_id: string
+        secret: string
+        revoked_at: string | Date | null
+        candidate_station_id: string | null
+      }
     | undefined
   if (!row || row.revoked_at != null) return undefined
-  return { station_id: String(row.station_id), secret: String(row.secret) }
+  return {
+    station_id: String(row.station_id),
+    secret: String(row.secret),
+    candidate_station_id:
+      row.candidate_station_id == null
+        ? String(row.station_id)
+        : String(row.candidate_station_id),
+  }
 }
 
 async function incrementTokenUses(
@@ -347,11 +390,11 @@ async function createManaged(
 ): Promise<EnrollDecision> {
   const candidateId = params.body.stationId
   const fp = fingerprintJson(params.body)
-  const existing = await loadActiveByCandidate(client, candidateId)
+  const existing = await loadActiveByCandidateOrStation(client, candidateId)
   if (existing) {
     return insertPendingRotation(client, {
       assignedId: existing.station_id,
-      candidateId,
+      candidateId: existing.candidate_station_id,
       requestId,
       tokenId: params.tokenId,
       secret: params.body.secret,
@@ -374,11 +417,11 @@ async function createManaged(
       })
     } catch (err) {
       if (!isUniqueViolation(err)) throw err
-      const raced = await loadActiveByCandidate(client, candidateId)
+      const raced = await loadActiveByCandidateOrStation(client, candidateId)
       if (raced) {
         return insertPendingRotation(client, {
           assignedId: raced.station_id,
-          candidateId,
+          candidateId: raced.candidate_station_id,
           requestId,
           tokenId: params.tokenId,
           secret: params.body.secret,

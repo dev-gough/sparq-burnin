@@ -29,6 +29,8 @@ export interface StationControlRow {
   hasDbCredential: boolean
   /** When the DB credential was soft-revoked (null = active or no DB credential) */
   credentialRevokedAt: string | null
+  /** When the station was hidden from admin/dashboard lists (null = visible) */
+  hiddenAt: string | null
   lastIngestAt: string | null
   stats: StationTestStats
 }
@@ -226,14 +228,31 @@ export async function listStationControls(): Promise<StationControlRow[]> {
       })
     }
 
+    // UI-only hide list (migration 019). Independent of enablement/revoke.
+    const hiddenRows = await client.query(
+      `SELECT station_id, hidden_at FROM StationHidden`
+    )
+    const hiddenByStation = new Map<string, string>()
+    for (const row of hiddenRows.rows) {
+      const id = row.station_id as string
+      if (!id) continue
+      hiddenByStation.set(
+        id,
+        row.hidden_at
+          ? new Date(row.hidden_at as string).toISOString()
+          : new Date(0).toISOString()
+      )
+    }
+
     // Station universe = config.json stations ∪ stations seen in Tests
     // (via the cached stats) ∪ StationControls rows ∪ StationCredentials
-    // rows; blank ids excluded.
+    // rows ∪ StationHidden rows; blank ids excluded.
     const ids = new Set<string>()
     for (const id of configIds) if (id) ids.add(id)
     for (const id of statsByStation.keys()) ids.add(id)
     for (const id of controlByStation.keys()) if (id) ids.add(id)
     for (const id of credByStation.keys()) if (id) ids.add(id)
+    for (const id of hiddenByStation.keys()) ids.add(id)
 
     return [...ids].sort().map((stationId) => {
       const c = controlByStation.get(stationId)
@@ -253,6 +272,7 @@ export async function listStationControls(): Promise<StationControlRow[]> {
           Boolean(cred && cred.revokedAt === null),
         hasDbCredential: Boolean(cred),
         credentialRevokedAt: cred?.revokedAt ?? null,
+        hiddenAt: hiddenByStation.get(stationId) ?? null,
         lastIngestAt: stats.lastIngestAt,
         stats,
       }
@@ -301,6 +321,49 @@ export async function setStationEnabled(params: {
       updatedAt: new Date(row.updated_at as string).toISOString(),
       updatedBy: row.updated_by as string,
       revision: Number(row.revision) || 1,
+    }
+  })
+}
+
+/**
+ * Hide or unhide a station in admin/dashboard lists. Does not touch
+ * StationControls.enabled (policy) or StationCredentials (auth).
+ */
+export async function setStationHidden(params: {
+  stationId: string
+  hidden: boolean
+  hiddenBy: string
+}): Promise<{
+  stationId: string
+  hiddenAt: string | null
+  hiddenBy: string | null
+}> {
+  return withClient(async (client) => {
+    if (params.hidden) {
+      const r = await client.query(
+        `INSERT INTO StationHidden (station_id, hidden_at, hidden_by)
+         VALUES ($1, NOW(), $2)
+         ON CONFLICT (station_id) DO UPDATE SET
+           hidden_at = NOW(),
+           hidden_by = EXCLUDED.hidden_by
+         RETURNING station_id, hidden_at, hidden_by`,
+        [params.stationId, params.hiddenBy]
+      )
+      const row = r.rows[0]
+      return {
+        stationId: row.station_id as string,
+        hiddenAt: new Date(row.hidden_at as string).toISOString(),
+        hiddenBy: (row.hidden_by as string) ?? null,
+      }
+    }
+
+    await client.query(`DELETE FROM StationHidden WHERE station_id = $1`, [
+      params.stationId,
+    ])
+    return {
+      stationId: params.stationId,
+      hiddenAt: null,
+      hiddenBy: null,
     }
   })
 }

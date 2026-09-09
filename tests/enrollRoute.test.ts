@@ -178,18 +178,34 @@ class FakeEnrollDb {
     }
 
     if (
+      s.includes('FROM StationEnrollments') &&
+      s.includes("status = 'pending'") &&
+      s.includes('station_id = $1')
+    ) {
+      const stationId = params[0] as string
+      const row = this.enrollments.find(
+        (e) => e.station_id === stationId && e.status === 'pending'
+      )
+      return { rows: row ? [{ ...row }] : [] }
+    }
+
+    if (
       s.includes('FROM StationCredentials') &&
       s.includes('candidate_station_id')
     ) {
       const candidate = params[0] as string
       for (const [stationId, c] of this.credentials) {
-        if (c.revoked_at == null && c.candidate_station_id === candidate) {
+        if (
+          c.revoked_at == null &&
+          (c.candidate_station_id === candidate || stationId === candidate)
+        ) {
           return {
             rows: [
               {
                 station_id: stationId,
                 secret: c.secret,
                 revoked_at: c.revoked_at,
+                candidate_station_id: c.candidate_station_id,
               },
             ],
           }
@@ -853,6 +869,58 @@ describe('POST /api/stations/v1/enroll (managed enrollmentRequestId)', () => {
       }),
     ])
     expect(db.credentials.get(ALLOCATED_ID)?.secret).toBe(OTHER_SECRET_HEX)
+    expect(db.tokens.get(TOKEN_ID)?.uses).toBe(0)
+  })
+
+  it('a second re-image while approval is pending cannot create a duplicate identity', async () => {
+    db.credentials.set(ALLOCATED_ID, {
+      secret: OTHER_SECRET_HEX,
+      revoked_at: null,
+      candidate_station_id: STATION,
+      enrollment_request_id: 'd'.repeat(32),
+    })
+
+    const first = await POST(signedRequest(managedBody()))
+    expect(first.status).toBe(202)
+
+    const restoredSecret = 'd'.repeat(64)
+    const second = await POST(
+      signedRequest(
+        managedBody({
+          enrollmentRequestId: OTHER_REQUEST_ID,
+          secret: restoredSecret,
+        })
+      )
+    )
+    expect(second.status).toBe(400)
+    expect(await json(second)).toEqual({ error: 'enrollment_conflict' })
+
+    // Even if a client retries using the authoritative ID returned by an old
+    // server's incorrect 202, it must still correlate to the original station
+    // and remain blocked by the existing pending request.
+    const adoptedIdRetry = await POST(
+      signedRequest(
+        managedBody({
+          stationId: ALLOCATED_ID,
+          enrollmentRequestId: OTHER_REQUEST_ID,
+          secret: restoredSecret,
+        })
+      )
+    )
+    expect(adoptedIdRetry.status).toBe(400)
+    expect(await json(adoptedIdRetry)).toEqual({
+      error: 'enrollment_conflict',
+    })
+
+    expect(db.credentials.size).toBe(1)
+    expect(db.enrollments).toEqual([
+      expect.objectContaining({
+        station_id: ALLOCATED_ID,
+        candidate_station_id: STATION,
+        enrollment_request_id: REQUEST_ID,
+        status: 'pending',
+      }),
+    ])
     expect(db.tokens.get(TOKEN_ID)?.uses).toBe(0)
   })
 

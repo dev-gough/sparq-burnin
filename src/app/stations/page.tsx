@@ -14,6 +14,8 @@ import {
 import {
   Check,
   Copy,
+  Eye,
+  EyeOff,
   Inbox,
   KeyRound,
   Loader2,
@@ -48,6 +50,7 @@ interface StationRow {
   hasSecret: boolean;
   hasDbCredential: boolean;
   credentialRevokedAt: string | null;
+  hiddenAt: string | null;
   lastIngestAt: string | null;
   stats: StationTestStats;
 }
@@ -253,6 +256,8 @@ export default function StationsPage() {
   const [enrollBusyId, setEnrollBusyId] = React.useState<number | null>(null);
   const [tokenBusyId, setTokenBusyId] = React.useState<string | null>(null);
   const [credBusyId, setCredBusyId] = React.useState<string | null>(null);
+  const [hideBusyId, setHideBusyId] = React.useState<string | null>(null);
+  const [showHidden, setShowHidden] = React.useState(false);
   const [mintLabel, setMintLabel] = React.useState("");
   const [mintDays, setMintDays] = React.useState("30");
   const [minting, setMinting] = React.useState(false);
@@ -480,6 +485,41 @@ export default function StationsPage() {
     }
   };
 
+  const setHidden = async (stationId: string, hidden: boolean) => {
+    if (hidden) {
+      if (
+        !window.confirm(
+          `Hide ${displayName(stationId)} from this list? Credentials, tests, and history stay. Use "Show hidden" to bring it back.`
+        )
+      ) {
+        return;
+      }
+    }
+    setHideBusyId(stationId);
+    try {
+      const res = await fetch(
+        `/api/stations/${encodeURIComponent(stationId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hidden }),
+        }
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.error || `Hide failed (${res.status})`);
+        return;
+      }
+      await load({ silent: true });
+      if (hidden) setShowHidden(false);
+    } catch (e) {
+      console.error(e);
+      alert("Hide failed");
+    } finally {
+      setHideBusyId(null);
+    }
+  };
+
   if (sessionStatus === "loading" || (loading && isAdmin !== false)) {
     return <StationsPageSkeleton />;
   }
@@ -506,6 +546,11 @@ export default function StationsPage() {
   }
 
   const pendingEnrollments = enrollments.filter((e) => e.status === "pending");
+  const hiddenCount = stations.filter((s) => s.hiddenAt).length;
+  const revealingHidden = showHidden && hiddenCount > 0;
+  const visibleStations = revealingHidden
+    ? stations
+    : stations.filter((s) => !s.hiddenAt);
 
   return (
     <div className="ml-10">
@@ -524,6 +569,24 @@ export default function StationsPage() {
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {hiddenCount > 0 && (
+                <Button
+                  variant={revealingHidden ? "secondary" : "outline"}
+                  size="sm"
+                  className="h-8 px-3"
+                  onClick={() => setShowHidden((v) => !v)}
+                  aria-pressed={revealingHidden}
+                >
+                  {revealingHidden ? (
+                    <Eye className="size-3.5" />
+                  ) : (
+                    <EyeOff className="size-3.5" />
+                  )}
+                  {revealingHidden
+                    ? "Showing hidden"
+                    : `Show ${hiddenCount} hidden`}
+                </Button>
+              )}
               <span className="text-xs text-muted-foreground tabular-nums">
                 Last updated:{" "}
                 {lastFetchedAt ? lastFetchedAt.toLocaleTimeString() : "—"}
@@ -667,18 +730,30 @@ export default function StationsPage() {
             </CardContent>
           </Card>
 
-          {!loading && stations.length === 0 && !error && (
+          {!loading && visibleStations.length === 0 && !error && (
             <Card>
               <CardContent className="py-4 text-sm text-muted-foreground">
-                No stations yet. They appear after HTTPS ingest or when listed
-                in{" "}
-                <code className="text-xs">config.json → ingest.stations</code>.
+                {hiddenCount > 0 ? (
+                  <>
+                    {hiddenCount} station{hiddenCount === 1 ? "" : "s"} hidden
+                    from this list.
+                  </>
+                ) : (
+                  <>
+                    No stations yet. They appear after HTTPS ingest or when
+                    listed in{" "}
+                    <code className="text-xs">
+                      config.json → ingest.stations
+                    </code>
+                    .
+                  </>
+                )}
               </CardContent>
             </Card>
           )}
 
           <div className="grid gap-2.5">
-            {stations.map((s) => {
+            {visibleStations.map((s) => {
               const st = s.stats ?? {
                 totalTests: 0,
                 passCount: 0,
@@ -698,7 +773,10 @@ export default function StationsPage() {
                   : "—";
 
               return (
-                <Card key={s.stationId} className="py-0 gap-0 shadow-sm">
+                <Card
+                  key={s.stationId}
+                  className={`py-0 gap-0 shadow-sm${s.hiddenAt ? " opacity-70" : ""}`}
+                >
                   <CardHeader className="py-2.5 px-4 pb-2">
                     <div className="flex items-center justify-between gap-3 min-w-0">
                       <div className="min-w-0 flex items-baseline gap-2 flex-wrap">
@@ -726,12 +804,32 @@ export default function StationsPage() {
                             · credential revoked
                           </span>
                         )}
+                        {s.hiddenAt && (
+                          <span className="text-xs text-muted-foreground">
+                            · hidden
+                          </span>
+                        )}
                         {s.reason && !s.enabled && (
                           <span className="text-xs text-muted-foreground truncate max-w-sm">
                             · {s.reason}
                           </span>
                         )}
                       </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 h-8 px-3"
+                        disabled={hideBusyId === s.stationId}
+                        onClick={() => setHidden(s.stationId, !s.hiddenAt)}
+                      >
+                        {hideBusyId === s.stationId ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : s.hiddenAt ? (
+                          "Unhide"
+                        ) : (
+                          "Hide"
+                        )}
+                      </Button>
                     </div>
                   </CardHeader>
                   <CardContent className="px-4 pb-3 space-y-2.5 text-sm">

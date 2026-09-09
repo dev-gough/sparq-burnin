@@ -3,6 +3,7 @@ import { requireStationAdminAuth } from '@/lib/auth-check'
 import {
   getStationControl,
   setStationEnabled,
+  setStationHidden,
 } from '@/lib/stationControls'
 
 type RouteProps = { params: Promise<{ id: string }> }
@@ -28,7 +29,9 @@ export async function GET(_request: NextRequest, props: RouteProps) {
 
 /**
  * PATCH /api/stations/[id]
- * Body: { enabled: boolean, reason?: string | null }
+ * Body: { enabled?: boolean, reason?: string | null, hidden?: boolean }
+ * At least one of enabled or hidden is required. Hidden is UI-only and
+ * does not change policy enablement or credentials.
  */
 export async function PATCH(request: NextRequest, props: RouteProps) {
   const { error, session } = await requireStationAdminAuth()
@@ -40,16 +43,18 @@ export async function PATCH(request: NextRequest, props: RouteProps) {
     return NextResponse.json({ error: 'Missing station id' }, { status: 400 })
   }
 
-  let body: { enabled?: unknown; reason?: unknown }
+  let body: { enabled?: unknown; reason?: unknown; hidden?: unknown }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  if (typeof body.enabled !== 'boolean') {
+  const hasEnabled = typeof body.enabled === 'boolean'
+  const hasHidden = typeof body.hidden === 'boolean'
+  if (!hasEnabled && !hasHidden) {
     return NextResponse.json(
-      { error: 'enabled must be a boolean' },
+      { error: 'enabled or hidden must be a boolean' },
       { status: 400 }
     )
   }
@@ -64,13 +69,30 @@ export async function PATCH(request: NextRequest, props: RouteProps) {
     (process.env.SKIP_AUTH === 'true' ? 'local-dev' : 'unknown')
 
   try {
+    let hidden:
+      | { stationId: string; hiddenAt: string | null; hiddenBy: string | null }
+      | undefined
+    if (hasHidden) {
+      hidden = await setStationHidden({
+        stationId,
+        hidden: body.hidden as boolean,
+        hiddenBy: email,
+      })
+      console.log(
+        `[station-admin] ${body.hidden ? 'hid' : 'unhid'} station_id=${stationId} by=${email}`
+      )
+      if (!hasEnabled) {
+        return NextResponse.json({ ok: true, ...hidden })
+      }
+    }
+
     const station = await setStationEnabled({
       stationId,
-      enabled: body.enabled,
+      enabled: body.enabled as boolean,
       reason,
       updatedBy: email,
     })
-    return NextResponse.json({ station })
+    return NextResponse.json({ station, hidden: hidden ?? null })
   } catch (err) {
     console.error('set station failed:', err)
     return NextResponse.json(

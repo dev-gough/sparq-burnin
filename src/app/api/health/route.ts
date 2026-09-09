@@ -33,6 +33,10 @@ import {
   snapshotCapacity,
   type CapacitySnapshot,
 } from '@/lib/capacityOps'
+import {
+  snapshotStationFleet,
+  type StationFleetSnapshot,
+} from '@/lib/stationFleetOps'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -618,7 +622,147 @@ function buildFreshnessOps(
 }
 
 /**
- * Bundle C — unannotated FAIL backlog (matches /api/todo/count).
+ * Bundle C — enrolled station fleet and station-attributed test activity.
+ * A failed snapshot is critical because it also detects missing station
+ * migrations that a plain database SELECT 1 cannot see.
+ */
+function buildStationFleetOps(snap: StationFleetSnapshot): {
+  check: HealthCheck
+  metrics: HealthMetric[]
+} {
+  if (!snap.ok) {
+    return {
+      check: {
+        name: 'station_fleet',
+        status: 'down',
+        latencyMs: snap.latencyMs,
+        detail: snap.error || 'station fleet query failed',
+        critical: true,
+      },
+      metrics: [],
+    }
+  }
+
+  const metrics: HealthMetric[] = []
+  const nowIso = new Date().toISOString()
+  const addCount = (
+    id: string,
+    label: string,
+    value: number | null,
+    detail?: string,
+    status: HealthStatus = 'ok'
+  ) => {
+    if (value == null) return
+    metrics.push({
+      id,
+      label,
+      value,
+      unit: 'count',
+      status,
+      updatedAt: nowIso,
+      detail,
+    })
+  }
+
+  addCount(
+    'stations.total',
+    'Enrolled stations',
+    snap.totalStations,
+    'all station credentials'
+  )
+  addCount(
+    'stations.active',
+    'Active stations',
+    snap.activeStations,
+    snap.revokedStations != null ? `${snap.revokedStations} revoked` : undefined
+  )
+  addCount(
+    'stations.reporting',
+    'Stations with tests',
+    snap.reportingStations,
+    snap.totalStations != null
+      ? `of ${snap.totalStations} enrolled`
+      : undefined
+  )
+  addCount(
+    'stations.active_without_tests',
+    'Active without tests',
+    snap.activeWithoutTests,
+    'enrolled but never submitted a test',
+    (snap.activeWithoutTests ?? 0) > 0 ? 'degraded' : 'ok'
+  )
+  addCount(
+    'stations.tests_total',
+    'Station-submitted tests',
+    snap.totalStationTests,
+    'tests attributed to enrolled stations'
+  )
+  addCount(
+    'stations.pending_enrollments',
+    'Pending enrollments',
+    snap.pendingEnrollments,
+    'awaiting admin decision',
+    (snap.pendingEnrollments ?? 0) > 0 ? 'degraded' : 'ok'
+  )
+  addCount(
+    'stations.hidden',
+    'Hidden stations',
+    snap.hiddenStations,
+    'hidden from dashboard station lists'
+  )
+
+  if (snap.lastAddedAt) {
+    const displayId = snap.lastAddedCandidateId || snap.lastAddedStationId
+    const assignedDetail =
+      displayId && snap.lastAddedStationId && displayId !== snap.lastAddedStationId
+        ? `${displayId} · assigned ${snap.lastAddedStationId}`
+        : displayId || undefined
+    metrics.push({
+      id: 'stations.last_added_at',
+      label: 'Last station added',
+      value: snap.lastAddedAt,
+      unit: 'iso',
+      status: 'ok',
+      updatedAt: snap.lastAddedAt,
+      detail: assignedDetail,
+    })
+  }
+
+  for (const station of snap.reporting) {
+    const displayId = station.candidateStationId || station.stationId
+    const details = [
+      displayId !== station.stationId ? `assigned ${station.stationId}` : null,
+      station.revoked ? 'credential revoked' : 'active credential',
+    ].filter(Boolean)
+    metrics.push({
+      id: `stations.tests.${station.stationId}`,
+      label: `Tests · ${displayId}`,
+      value: station.testCount,
+      unit: 'count',
+      status: 'ok',
+      updatedAt: station.lastTestAt || undefined,
+      detail: details.join(' · '),
+    })
+  }
+
+  const total = snap.totalStations ?? 0
+  const active = snap.activeStations ?? 0
+  const reporting = snap.reportingStations ?? 0
+  const pending = snap.pendingEnrollments ?? 0
+  return {
+    check: {
+      name: 'station_fleet',
+      status: 'ok',
+      latencyMs: snap.latencyMs,
+      detail: `${active}/${total} active · ${reporting} reporting · ${pending} pending`,
+      critical: true,
+    },
+    metrics,
+  }
+}
+
+/**
+ * Bundle D — unannotated FAIL backlog (matches /api/todo/count).
  */
 function buildTodoOps(snap: FreshnessSnapshot): {
   check: HealthCheck
@@ -651,7 +795,7 @@ function buildTodoOps(snap: FreshnessSnapshot): {
 }
 
 /**
- * Bundle D — free disk, data/log dir sizes, Postgres size.
+ * Bundle E — free disk, data/log dir sizes, Postgres size.
  */
 function buildCapacityOps(snap: CapacitySnapshot): {
   check: HealthCheck
@@ -781,12 +925,20 @@ export async function GET(request: Request) {
 
   // Freshness first so ingest ops can reuse totalTests without a second query.
   // Capacity runs in parallel (dir sizes cached ~5 min).
-  const [database, dataDirs, pipelineOps, freshnessSnap, capacitySnap] =
+  const [
+    database,
+    dataDirs,
+    pipelineOps,
+    freshnessSnap,
+    stationFleetSnap,
+    capacitySnap,
+  ] =
     await Promise.all([
       checkDatabase(),
       checkDataDirs(),
       buildPipelineOps(checkIntervalSec),
       snapshotFreshness(),
+      snapshotStationFleet(),
       snapshotCapacity(),
     ])
 
@@ -796,6 +948,7 @@ export async function GET(request: Request) {
     (sourcesCheck.detail?.startsWith('0/') ?? false)
 
   const freshnessOps = buildFreshnessOps(freshnessSnap, { sourcesAllDown })
+  const stationFleetOps = buildStationFleetOps(stationFleetSnap)
   const todoOps = buildTodoOps(freshnessSnap)
   const capacityOps = buildCapacityOps(capacitySnap)
   const ingestOps = await buildIngestOps(freshnessSnap)
@@ -834,6 +987,7 @@ export async function GET(request: Request) {
     ingestOps.check,
     ...pipelineOps.checks,
     freshnessOps.check,
+    stationFleetOps.check,
     todoOps.check,
     capacityOps.check,
   ]
@@ -856,6 +1010,7 @@ export async function GET(request: Request) {
     metrics: [
       ...pipelineOps.metrics,
       ...freshnessOps.metrics,
+      ...stationFleetOps.metrics,
       ...todoOps.metrics,
       ...capacityOps.metrics,
       ...ingestMetrics,

@@ -741,6 +741,32 @@ const migrations: Migration[] = [
       END
       $$;
     `
+  },
+  {
+    id: '019',
+    name: 'station_hidden',
+    sql: `
+      -- UI-only hide list for /stations (and dashboard station options).
+      -- Does not revoke credentials, disable policy, or delete tests.
+      -- Presence of a row means the station is hidden; unhide DELETEs it.
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_name = 'stationhidden'
+        ) THEN
+          CREATE TABLE StationHidden (
+            station_id TEXT PRIMARY KEY,
+            hidden_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            hidden_by  TEXT
+          );
+          RAISE NOTICE 'Created StationHidden table';
+        ELSE
+          RAISE NOTICE 'StationHidden already exists, skipping';
+        END IF;
+      END
+      $$;
+    `
   }
 ];
 
