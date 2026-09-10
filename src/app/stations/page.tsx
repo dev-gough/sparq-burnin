@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useStationAliases } from "@/hooks/useStationAliases";
+import { copyText } from "@/lib/clipboard";
 
 interface StationTestStats {
   totalTests: number;
@@ -419,14 +420,13 @@ export default function StationsPage() {
 
   const copyMintedToken = async () => {
     if (!mintedToken) return;
-    try {
-      await navigator.clipboard.writeText(mintedToken);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch (e) {
-      console.error(e);
+    const ok = await copyText(mintedToken);
+    if (!ok) {
       alert("Copy failed — select and copy the token manually.");
+      return;
     }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
   };
 
   const revokeToken = async (tokenId: string) => {
