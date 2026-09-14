@@ -1,6 +1,5 @@
 import type { Client, PoolClient } from 'pg'
 import { getPool } from '@/lib/db'
-import { loadConfig } from '@/lib/config'
 import { writeIngestStatus } from '@/lib/opsStatus'
 import type { IngestPayload } from './schema'
 import { applyResultValidation } from './validate'
@@ -89,9 +88,7 @@ export async function processIngestPayload(
       return duplicateResult(payload, existing)
     }
 
-    const debugFw =
-      loadConfig().settings.debug_firmware_version || '1.11.11'
-    const validated = applyResultValidation(payload.result, debugFw)
+    const validated = applyResultValidation(payload.result)
     const sourceFile = `https:${payload.idempotencyKey}`
 
     await client.query('BEGIN')

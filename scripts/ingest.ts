@@ -285,7 +285,8 @@ class CSVIngester {
           try {
             // Process all rows and categorize them with priority levels using
             // the shared rule core (src/lib/ingest/validate.ts) — the same
-            // INVALID/priority rules the HTTPS transport applies.
+            // parse/priority rules the HTTPS transport applies. Verdicts are
+            // not rewritten.
             const allTests: ProcessedTestResult[] = [];
 
             for (const test of tests) {

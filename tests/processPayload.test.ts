@@ -287,17 +287,34 @@ describe('processIngestPayload', () => {
     )
   })
 
-  it('INVALID-but-stored: short-duration test is stored with INVALID status', async () => {
+  it('short-duration PASS is stored as PASS (verdict is not rewritten)', async () => {
     const p = payload({
-      result: { ...payload().result, endTime: '2025-06-15T10:00:00' },
+      result: { ...payload().result, endTime: '2025-06-15T10:59:00' },
     })
     const result = await processIngestPayload(p, BODY_HASH)
     expect(result).toMatchObject({
       ok: true,
       duplicate: false,
-      overallStatus: 'INVALID',
+      overallStatus: 'PASS',
     })
-    expect(db.tests[0].overall_status).toBe('INVALID')
+    expect(db.tests[0].overall_status).toBe('PASS')
+  })
+
+  it('short-duration FAIL is stored as FAIL (verdict is not rewritten)', async () => {
+    const p = payload({
+      result: {
+        ...payload().result,
+        endTime: '2025-06-15T10:59:00',
+        overallStatus: 'FAIL',
+      },
+    })
+    const result = await processIngestPayload(p, BODY_HASH)
+    expect(result).toMatchObject({
+      ok: true,
+      duplicate: false,
+      overallStatus: 'FAIL',
+    })
+    expect(db.tests[0].overall_status).toBe('FAIL')
   })
 
   it('idempotent retry via receipt: returns duplicate, inserts nothing', async () => {

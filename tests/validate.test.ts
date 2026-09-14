@@ -38,11 +38,11 @@ describe('evaluateResultRow priorities', () => {
     expect(e.invalidReason).toBe('')
   })
 
-  it('debug firmware → INVALID, priority 3 (server-side-only demotion)', () => {
+  it('debug firmware does not rewrite the source verdict', () => {
     const e = evaluateResultRow(row({ firmwareVersion: DEBUG_FW }), DEBUG_FW)
-    expect(e.priority).toBe(3)
-    expect(e.overallStatus).toBe('INVALID')
-    expect(e.invalidReason).toBe('Debug firmware version')
+    expect(e.priority).toBe(4)
+    expect(e.overallStatus).toBe('PASS')
+    expect(e.invalidReason).toBe('')
   })
 
   it('source-data INVALID with no rule fired → priority 3', () => {
@@ -51,24 +51,34 @@ describe('evaluateResultRow priorities', () => {
     expect(e.overallStatus).toBe('INVALID')
   })
 
-  it('duration < 2 h → INVALID, priority 2', () => {
+  it('duration < 2 h keeps the source PASS (2 h factory runs are valid)', () => {
     const e = evaluateResultRow(
-      row({ endTime: '2025-06-15T10:00:00' }),
+      row({ endTime: '2025-06-15T10:59:00' }),
       DEBUG_FW
     )
-    expect(e.priority).toBe(2)
-    expect(e.overallStatus).toBe('INVALID')
-    expect(e.invalidReason).toBe('Duration less than 2 hours')
+    expect(e.priority).toBe(4)
+    expect(e.overallStatus).toBe('PASS')
+    expect(e.invalidReason).toBe('')
   })
 
-  it('start > end → INVALID, priority 1 (beats the short-duration rule)', () => {
+  it('duration < 2 h keeps a source FAIL', () => {
+    const e = evaluateResultRow(
+      row({ overallStatus: 'FAIL', endTime: '2025-06-15T10:59:00' }),
+      DEBUG_FW
+    )
+    expect(e.priority).toBe(4)
+    expect(e.overallStatus).toBe('FAIL')
+    expect(e.invalidReason).toBe('')
+  })
+
+  it('start > end keeps the source verdict but drops to priority 1', () => {
     const e = evaluateResultRow(
       row({ startTime: '2025-06-16T09:00:00', endTime: '2025-06-15T09:00:00' }),
       DEBUG_FW
     )
     expect(e.priority).toBe(1)
-    expect(e.overallStatus).toBe('INVALID')
-    expect(e.invalidReason).toBe('Invalid date range')
+    expect(e.overallStatus).toBe('PASS')
+    expect(e.invalidReason).toBe('')
   })
 })
 

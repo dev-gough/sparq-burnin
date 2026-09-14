@@ -64,15 +64,17 @@ export interface ResultRowEvaluation {
 /**
  * MULTI-ROW PRIORITY-SELECTION RULE — single source of truth.
  *
+ * Ingest trusts the station/CSV verdict. Do not rewrite PASS/FAIL/INVALID/
+ * RETEST for duration, debug firmware, or similar policy checks. The only
+ * status rewrite left is unparseable timestamps (the row cannot be stored).
+ *
  * A results file may contain multiple rows for one physical test (e.g. after a
  * RETEST). Each row gets a priority here, and selectBestResult() picks exactly
  * one row per file:
  *
- *   priority 4 — valid row
- *   priority 3 — INVALID (debug firmware version, or already INVALID in the
- *                source data with no more specific reason)
- *   priority 2 — duration < 2 hours
- *   priority 1 — start > end (invalid date range; lowest priority)
+ *   priority 4 — source verdict other than INVALID (PASS/FAIL/RETEST/…)
+ *   priority 3 — already INVALID in the source data
+ *   priority 1 — start > end (selection only; verdict is still not rewritten)
  *
  * Selection semantics (selectBestResult):
  *   - Single-row files are processed regardless of validity (even priority 1).
@@ -82,10 +84,7 @@ export interface ResultRowEvaluation {
  *
  * The station client (Zigbee_UART_Interface repo,
  * burnin/dashboard_ingest.py `_row_priority`) MIRRORS this rule client-side so
- * it uploads the same row the server would pick. One deliberate exception: the
- * debug-firmware demotion (priority 4 → 3 via
- * config.settings.debug_firmware_version) is applied SERVER-SIDE ONLY — the
- * station cannot see that config value, so the server stays the backstop.
+ * it uploads the same row the server would pick.
  *
  * If you change these rules in ANY way, the station's `_row_priority()` must
  * change too — flag it in the cross-repo coordination sections of BOTH repos'
@@ -93,28 +92,20 @@ export interface ResultRowEvaluation {
  *
  * The optional `log` callback receives the same operator-facing messages the
  * legacy CSV ingester has always printed (the HTTPS path passes none).
+ *
+ * `debugFirmwareVersion` is ignored (kept so CSV/HTTPS call sites stay stable).
  */
 export function evaluateResultRow(
   row: ResultRowInput,
-  debugFirmwareVersion: string,
+  _debugFirmwareVersion?: string,
   log?: (message: string) => void
 ): ResultRowEvaluation {
   let overallStatus = row.overallStatus
   let invalidReason = ''
-  let priority = 4 // Start with highest priority (valid)
+  let priority = overallStatus === 'INVALID' ? 3 : 4
   let startTimeUtc: string | null = null
   let endTimeUtc: string | null = null
   let timestampParseError: Error | null = null
-
-  // Mark debug firmware version as INVALID (server-side only; see doc above).
-  if (row.firmwareVersion === debugFirmwareVersion) {
-    log?.(
-      `Marking test with debug firmware version ${debugFirmwareVersion} as INVALID for inverter ${row.serialNumber}`
-    )
-    overallStatus = 'INVALID'
-    invalidReason = 'Debug firmware version'
-    priority = 3 // Medium priority - can be processed if no better options
-  }
 
   if (row.startTime && row.endTime) {
     try {
@@ -123,33 +114,12 @@ export function evaluateResultRow(
       startTimeUtc = start.toISOString()
       endTimeUtc = end.toISOString()
 
-      // Check if start time is after end time
+      // Inverted range: keep the source verdict, but prefer any other row.
       if (start > end) {
         log?.(
-          `Marking test as INVALID due to start time (${row.startTime}) being after end time (${row.endTime}) for inverter ${row.serialNumber}`
+          `Start time (${row.startTime}) is after end time (${row.endTime}) for inverter ${row.serialNumber}; keeping source status ${overallStatus}`
         )
-        overallStatus = 'INVALID'
-        invalidReason = invalidReason
-          ? `${invalidReason}, Invalid date range`
-          : 'Invalid date range'
-        priority = 1 // Lowest priority - only process if no other options
-      } else {
-        // Check if test duration is less than 2 hours
-        const durationHours =
-          (end.getTime() - start.getTime()) / (1000 * 60 * 60)
-        if (durationHours < 2) {
-          log?.(
-            `Marking test as INVALID due to duration less than 2 hours (${durationHours.toFixed(2)} hours) for inverter ${row.serialNumber}`
-          )
-          overallStatus = 'INVALID'
-          invalidReason = invalidReason
-            ? `${invalidReason}, Duration less than 2 hours`
-            : 'Duration less than 2 hours'
-          // Only lower priority if not already lowered by date range issue
-          if (priority > 2) {
-            priority = 2 // Medium-low priority - acceptable if no date range issues
-          }
-        }
+        priority = 1
       }
     } catch (err) {
       timestampParseError = err instanceof Error ? err : new Error(String(err))
@@ -158,11 +128,6 @@ export function evaluateResultRow(
         ? `${invalidReason}, Unparseable timestamps`
         : 'Unparseable timestamps'
     }
-  }
-
-  // Row already INVALID in the source data with no specific rule fired
-  if (overallStatus === 'INVALID' && priority === 4) {
-    priority = 3
   }
 
   return {
@@ -226,7 +191,7 @@ export function selectBestResult<T extends SelectableResultRow>(
   }
 
   log?.(
-    `Multiple rows found - priority breakdown: P4(valid)=${priorityGroups[4]}, P3(debug/invalid)=${priorityGroups[3]}, P2(short)=${priorityGroups[2]}, P1(date-range)=${priorityGroups[1]}`
+    `Multiple rows found - priority breakdown: P4(verdict)=${priorityGroups[4]}, P3(source-invalid)=${priorityGroups[3]}, P2=${priorityGroups[2]}, P1(date-range)=${priorityGroups[1]}`
   )
   log?.(
     `Selected: ${selected.serialNumber} (${selected.startTime}) with priority ${selected.priority}`
@@ -250,7 +215,7 @@ export function selectBestResult<T extends SelectableResultRow>(
  */
 export function applyResultValidation(
   result: IngestResult,
-  debugFirmwareVersion: string
+  debugFirmwareVersion?: string
 ): ValidatedResult {
   const evaluation = evaluateResultRow(
     {
