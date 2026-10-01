@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 const number = (value: number) => value.toLocaleString();
 const percentage = (value: number) => `${value.toFixed(2)}%`;
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]!));
-type TooltipPoint = { axisValue?: string; value: number | null; marker: string; seriesName: string };
+type TooltipPoint = { axisValue?: string; value: number | string | null; marker: string; seriesName: string };
 
 function SectionLabel({ number: index, title, description, children }: {
   number: string; title: string; description: string; children?: ReactNode;
@@ -140,7 +140,8 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
     ...axes(ratePoints.map(point => point.date), "Failure rate", true),
     tooltip: { ...tooltip, formatter: (points: TooltipPoint[]) => {
       const lines = [`<strong>${escapeHtml(points[0]?.axisValue ?? "")}</strong>`];
-      points.forEach(point => { if (point.value !== null) lines.push(`${point.marker} ${escapeHtml(point.seriesName)}: <strong>${percentage(point.value)}</strong>`); });
+      // ECharts exposes missing line values as "-", including the average's warm-up period.
+      points.forEach(point => { if (typeof point.value === "number" && Number.isFinite(point.value)) lines.push(`${point.marker} ${escapeHtml(point.seriesName)}: <strong>${percentage(point.value)}</strong>`); });
       return lines.join("<br/>");
     } },
     legend: { top: 4, right: 16, textStyle: { color: muted, fontSize: 10 } },
@@ -155,8 +156,10 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
     animationDurationUpdate: 0,
     grid: { left: 16, right: 20, top: 32, bottom: 28, containLabel: true },
     tooltip: {
-      ...tooltip, trigger: "item",
-      formatter: (point: { value: [number, number] }) => {
+      ...tooltip, trigger: "axis", axisPointer: { type: "line", snap: true },
+      formatter: (points: { value: [number, number] }[]) => {
+        const point = points[0];
+        if (!point) return "";
         const [index, rate] = point.value;
         return `<strong>Test ${number(index)}</strong><br/>Tests ${number(index - testWindow + 1)}–${number(index)}<br/>${number(Math.round(rate * testWindow / 100))} failed of ${number(testWindow)}<br/>Failure rate: <strong>${percentage(rate)}</strong>`;
       },
