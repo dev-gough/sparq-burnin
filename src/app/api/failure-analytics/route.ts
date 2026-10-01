@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Client } from "pg";
 import { getDatabaseConfig } from "@/lib/config";
 import { requireAuth } from "@/lib/auth-check";
-import { validateTimeRange, getTimeRangeDays } from "@/lib/validation";
+import { validateTimeRange, getTimeRangeDays, validateDateRange } from "@/lib/validation";
 import { outcomeStatusSql } from "@/lib/overall-status";
 
 export async function GET(request: NextRequest) {
@@ -23,9 +23,24 @@ export async function GET(request: NextRequest) {
     // Validate time range
     const validatedTimeRange = validateTimeRange(timeRangeParam);
 
-    // Build time filter
+    const { dateFrom, dateTo, error: dateError } = validateDateRange(
+      searchParams.get("dateFrom"), searchParams.get("dateTo"),
+    );
+    if (dateError) return NextResponse.json({ error: dateError }, { status: 400 });
+
+    // Custom bounds are inclusive UTC calendar days and override a preset.
+    const timeParams: string[] = [];
     let timeFilter = "";
-    if (validatedTimeRange && validatedTimeRange !== "all") {
+    if (dateFrom || dateTo) {
+      if (dateFrom) {
+        timeParams.push(dateFrom);
+        timeFilter += ` AND t.start_time_utc >= $${timeParams.length}::date`;
+      }
+      if (dateTo) {
+        timeParams.push(dateTo);
+        timeFilter += ` AND t.start_time_utc < $${timeParams.length}::date + INTERVAL '1 day'`;
+      }
+    } else if (validatedTimeRange && validatedTimeRange !== "all") {
       const days = getTimeRangeDays(validatedTimeRange);
       if (days !== null) {
         timeFilter = `AND t.start_time_utc >= CURRENT_DATE - INTERVAL '${days} days'`;
@@ -66,7 +81,7 @@ export async function GET(request: NextRequest) {
         COUNT(*) as total_tests,
         COUNT(*) FILTER (WHERE overall_status = 'FAIL') as total_failed_tests
       FROM base_tests
-    `);
+    `, timeParams);
 
     const totalTests = parseInt(countsResult.rows[0].total_tests);
     const totalFailedTests = parseInt(countsResult.rows[0].total_failed_tests);
@@ -85,7 +100,7 @@ export async function GET(request: NextRequest) {
         AND ta.current_test_id IS NOT NULL
       GROUP BY aqo.option_text, aqo.group_name
       ORDER BY count DESC
-    `);
+    `, timeParams);
 
     const categories = categoriesResult.rows.map(row => ({
       name: row.name,
@@ -108,7 +123,7 @@ export async function GET(request: NextRequest) {
         AND ta.current_test_id IS NOT NULL
       GROUP BY aqo.group_name
       ORDER BY count DESC
-    `);
+    `, timeParams);
 
     // Get group colors separately and merge with aggregated counts
     const groupColorsResult = await client.query(`
@@ -140,7 +155,7 @@ export async function GET(request: NextRequest) {
         AND ta.current_test_id IS NOT NULL
       GROUP BY DATE(t.start_time_utc), aqo.option_text
       ORDER BY date
-    `);
+    `, timeParams);
 
     // Transform category timeline into chart-friendly format
     const categoryTimelineMap = new Map<string, Record<string, number>>();
@@ -174,7 +189,7 @@ export async function GET(request: NextRequest) {
         AND ta.current_test_id IS NOT NULL
       GROUP BY DATE(t.start_time_utc), aqo.group_name
       ORDER BY date
-    `);
+    `, timeParams);
 
     // Transform group timeline into chart-friendly format
     const groupTimelineMap = new Map<string, Record<string, number>>();
@@ -205,7 +220,7 @@ export async function GET(request: NextRequest) {
       FROM base_tests
       GROUP BY DATE(start_time_utc)
       ORDER BY date
-    `);
+    `, timeParams);
 
     const failureRateTimeline = failureRateTimelineResult.rows.map(row => ({
       date: row.date,

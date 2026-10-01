@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
+import { DateRangePicker } from "@/components/date-range-picker";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -43,6 +43,7 @@ import {
   type DashboardRange,
   dashboardRangeContextLabel,
   exportTimeRange,
+  tableDatesForPill,
 } from "@/lib/dashboard-range";
 import { cn } from "@/lib/utils";
 
@@ -99,9 +100,9 @@ interface DashboardHeaderProps {
    * 30d before localStorage prefs apply).
    */
   prefsReady?: boolean;
-  /** Controlled More sheet (e.g. empty-state “Custom range”). */
-  moreOpen?: boolean;
-  onMoreOpenChange?: (open: boolean) => void;
+  /** Controlled custom date picker (e.g. empty-state “Custom range”). */
+  customOpen?: boolean;
+  onCustomOpenChange?: (open: boolean) => void;
   /** O31: last successful dashboard data paint (client clock). */
   dataAsOf?: Date | null;
 }
@@ -116,13 +117,13 @@ export function DashboardHeader({
   filterLinked,
   onFilterLinkedChange,
   prefsReady = true,
-  moreOpen: moreOpenProp,
-  onMoreOpenChange,
+  customOpen: customOpenProp,
+  onCustomOpenChange,
   dataAsOf = null,
 }: DashboardHeaderProps) {
-  const [moreOpenInternal, setMoreOpenInternal] = React.useState(false);
-  const moreOpen = moreOpenProp ?? moreOpenInternal;
-  const setMoreOpen = onMoreOpenChange ?? setMoreOpenInternal;
+  const [customOpenInternal, setCustomOpenInternal] = React.useState(false);
+  const customOpen = customOpenProp ?? customOpenInternal;
+  const setCustomOpen = onCustomOpenChange ?? setCustomOpenInternal;
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [themeMounted, setThemeMounted] = React.useState(false);
   React.useEffect(() => setThemeMounted(true), []);
@@ -141,22 +142,12 @@ export function DashboardHeader({
       return null;
     }
   }, [dataAsOf]);
-  const [customFrom, setCustomFrom] = React.useState(
-    dashboardRange.kind === "custom" ? dashboardRange.from : "",
-  );
-  const [customTo, setCustomTo] = React.useState(
-    dashboardRange.kind === "custom" ? dashboardRange.to : "",
-  );
+  const customDates = dashboardRange.kind === "custom"
+    ? dashboardRange
+    : tableDatesForPill(dashboardRange.kind);
   const [isGeneratingReport, setIsGeneratingReport] = React.useState(false);
   const [isGeneratingFailedData, setIsGeneratingFailedData] =
     React.useState(false);
-
-  React.useEffect(() => {
-    if (dashboardRange.kind === "custom") {
-      setCustomFrom(dashboardRange.from);
-      setCustomTo(dashboardRange.to);
-    }
-  }, [dashboardRange]);
 
   const activePill =
     !prefsReady || dashboardRange.kind === "custom"
@@ -166,13 +157,6 @@ export function DashboardHeader({
   const exportRange = exportTimeRange(dashboardRange);
   // Always show export limitation note (APIs are timeRange-only; ignore annotation)
   const showExportLimitation = true;
-
-  const applyCustom = () => {
-    if (!customFrom || !customTo) return;
-    if (customFrom > customTo) return;
-    onCustomRange(customFrom, customTo);
-    setMoreOpen(false);
-  };
 
   const generateReport = async () => {
     if (!exportRange) return;
@@ -265,13 +249,13 @@ export function DashboardHeader({
       <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:justify-center sm:gap-3">
         <ToggleGroup
           type="single"
-          value={activePill ?? ""}
+          value={isCustom ? "custom" : (activePill ?? "")}
           onValueChange={(value) => {
-            if (value) onPeriodPill(value as DashboardPill);
+            if (value && value !== "custom") onPeriodPill(value as DashboardPill);
           }}
           variant="outline"
           className={cn(
-            "hidden sm:flex",
+            "flex",
             // O39: mute while prefs load (no pulse — pulse looked like motion)
             !prefsReady && "pointer-events-none opacity-50",
           )}
@@ -289,41 +273,29 @@ export function DashboardHeader({
               {p.short}
             </ToggleGroupItem>
           ))}
-        </ToggleGroup>
-
-        {/* Mobile: select instead of pills — min 40px touch */}
-        <Select
-          value={
-            !prefsReady
-              ? undefined
-              : isCustom
-                ? "custom"
-                : (activePill ?? undefined)
-          }
-          onValueChange={(value) => {
-            if (value === "custom") {
-              setMoreOpen(true);
-              return;
+          <DateRangePicker
+            from={customDates.from}
+            to={customDates.to}
+            trigger={
+              <ToggleGroupItem
+                value="custom"
+                disabled={!prefsReady}
+                className="h-10 min-h-10 min-w-11 px-3 text-sm focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                aria-label="Custom date range"
+              >
+                Custom
+              </ToggleGroupItem>
             }
-            onPeriodPill(value as DashboardPill);
-          }}
-          disabled={!prefsReady}
-        >
-          <SelectTrigger
-            className="h-10 min-h-10 w-[8.5rem] sm:hidden"
-            aria-label="Select period"
-          >
-            <SelectValue placeholder="Period…" />
-          </SelectTrigger>
-          <SelectContent>
-            {PERIOD_PILLS.map((p) => (
-              <SelectItem key={p.value} value={p.value}>
-                {p.label}
-              </SelectItem>
-            ))}
-            <SelectItem value="custom">Custom…</SelectItem>
-          </SelectContent>
-        </Select>
+            active={isCustom}
+            disabled={!prefsReady}
+            open={customOpen}
+            onOpenChange={setCustomOpen}
+            onRangeChange={(from, to) => {
+              if (!from && !to) onPeriodPill("all");
+              else onCustomRange(from, to);
+            }}
+          />
+        </ToggleGroup>
 
         {/* O6: Result mode always visible (desktop); compact on mobile */}
         <ToggleGroup
@@ -404,7 +376,7 @@ export function DashboardHeader({
 
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
         {/* More sheet */}
-        <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+        <Sheet>
           <SheetTrigger asChild>
             <Button
               variant="outline"
@@ -451,53 +423,6 @@ export function DashboardHeader({
                   Same control as the header. Latest = one result per inverter;
                   All tests = every run.
                 </p>
-              </div>
-
-              {/* Custom dates — UTC calendar days (O14) */}
-              <div className="space-y-2">
-                <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Custom date range
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground/80">
-                    UTC calendar days
-                  </span>{" "}
-                  — same clock as charts, hero metrics, and table date filters.
-                  Row timestamps in the table still follow your display timezone.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <div className="space-y-1">
-                    <Label htmlFor="dash-from" className="text-xs">
-                      From (UTC)
-                    </Label>
-                    <Input
-                      id="dash-from"
-                      type="date"
-                      value={customFrom}
-                      onChange={(e) => setCustomFrom(e.target.value)}
-                      className="h-10 min-h-10 w-40"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="dash-to" className="text-xs">
-                      To (UTC)
-                    </Label>
-                    <Input
-                      id="dash-to"
-                      type="date"
-                      value={customTo}
-                      onChange={(e) => setCustomTo(e.target.value)}
-                      className="h-10 min-h-10 w-40"
-                    />
-                  </div>
-                </div>
-                <Button
-                  className="h-10 min-h-10"
-                  onClick={applyCustom}
-                  disabled={!customFrom || !customTo || customFrom > customTo}
-                >
-                  Apply custom range
-                </Button>
               </div>
 
               {/* O23: Theme — also in sidebar; surfaced here for discoverability */}

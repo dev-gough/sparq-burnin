@@ -106,8 +106,8 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
    * immediately. Otherwise wait for the localStorage reconcile below.
    */
   const [filtersReady, setFiltersReady] = React.useState(bootReady);
-  /** Controlled More sheet (empty-state Custom range, etc.). */
-  const [moreOpen, setMoreOpen] = React.useState(false);
+  /** Controlled custom date picker (including the empty-state action). */
+  const [customOpen, setCustomOpen] = React.useState(false);
   /** O31: last time volume/strip data finished loading for the current view. */
   const [dataAsOf, setDataAsOf] = React.useState<Date | null>(null);
 
@@ -493,8 +493,8 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
         filterLinked={filterLinked}
         onFilterLinkedChange={setFilterLinked}
         prefsReady={filtersReady}
-        moreOpen={moreOpen}
-        onMoreOpenChange={setMoreOpen}
+        customOpen={customOpen}
+        onCustomOpenChange={setCustomOpen}
         dataAsOf={dataAsOf}
       />
       {/* Screen-reader announcement when Failures CTA filters the table (O13) */}
@@ -513,7 +513,7 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
                   ? () => handlePeriodPill("all")
                   : undefined
               }
-              onWidenRange={() => setMoreOpen(true)}
+              onWidenRange={() => setCustomOpen(true)}
             />
           )}
 
@@ -609,6 +609,7 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
 
               {loadDashboardData ? (
                 <DataTable
+                  showDateRangeFilter={false}
                   onClearDateFilter={handleClearDateFilter}
                   annotationFilter={annotationFilter}
                   onAnnotationFilterChange={setAnnotationFilter}

@@ -10,6 +10,9 @@ import ReactECharts from "echarts-for-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { IconAlertTriangle, IconCircleX, IconClipboardList } from "@tabler/icons-react";
+import { DateRangePicker } from "@/components/date-range-picker";
+import { type DashboardRange, tableDatesForPill, utcDaysAgoYmd, utcTodayYmd, dashboardRangeContextLabel } from "@/lib/dashboard-range";
+import { loadDashboardPrefs, patchDashboardPrefs, resolveDashboardInitState } from "@/lib/dashboard-prefs";
 import { burninChartColors, burninSeriesPalette } from "@/lib/chart-theme";
 
 interface FailureData {
@@ -57,11 +60,43 @@ export default function FailureAnalyticsPage() {
   const [refetching, setRefetching] = useState(false);
   const [percentageMode, setPercentageMode] = useState<PercentageMode>("failed");
   const [chartMode, setChartMode] = useState("recent"); // 'recent' or 'all'
-  const [timeRange, setTimeRange] = useState("all");
+  const [range, setRange] = useState<DashboardRange | { kind: "180d" } | { kind: "365d" }>({ kind: "all" });
+  const [rangeReady, setRangeReady] = useState(false);
+  const timeRange = range.kind;
+  const customDates = range.kind === "custom"
+    ? range
+    : range.kind === "180d" || range.kind === "365d"
+      ? { from: utcDaysAgoYmd(range.kind === "180d" ? 180 : 365), to: utcTodayYmd() }
+      : tableDatesForPill(range.kind);
+
+  useEffect(() => {
+    const saved = loadDashboardPrefs();
+    if (Object.keys(saved).length) setRange(resolveDashboardInitState(saved).dashboardRange);
+    setRangeReady(true);
+  }, []);
+
+  const changeRange = (next: typeof range) => {
+    setRange(next);
+    // The dashboard shares these preferences and mirrors them to its boot cookie.
+    const shared: DashboardRange = next.kind === "180d" || next.kind === "365d"
+      ? { kind: "custom", from: utcDaysAgoYmd(next.kind === "180d" ? 180 : 365), to: utcTodayYmd() }
+      : next;
+    const dates = shared.kind === "custom" ? shared : tableDatesForPill(shared.kind);
+    patchDashboardPrefs({
+      period: shared.kind,
+      customFrom: shared.kind === "custom" ? shared.from : "",
+      customTo: shared.kind === "custom" ? shared.to : "",
+      ...(shared.kind !== "custom" ? { lastPill: shared.kind } : {}),
+      dateFromFilter: dates.from,
+      dateToFilter: dates.to,
+    });
+  };
   const [timeGrouping, setTimeGrouping] = useState<TimeGrouping>("daily");
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!rangeReady) return;
+    const abort = new AbortController();
     const fetchData = async () => {
       // Only show full loading skeleton on initial load
       if (data === null) {
@@ -73,22 +108,30 @@ export default function FailureAnalyticsPage() {
       try {
         const params = new URLSearchParams({
           chartMode,
-          timeRange,
+          timeRange: range.kind === "custom" ? "all" : range.kind,
         });
-        const response = await fetch(`/api/failure-analytics?${params}`);
+        if (range.kind === "custom") {
+          params.set("dateFrom", range.from);
+          params.set("dateTo", range.to);
+        }
+        const response = await fetch(`/api/failure-analytics?${params}`, { signal: abort.signal });
+        if (!response.ok) throw new Error("Failed to load failure analytics");
         const result = await response.json();
-        setData(result);
+        if (!abort.signal.aborted) setData(result);
       } catch (error) {
-        console.error("Error fetching failure analytics:", error);
+        if (!abort.signal.aborted) console.error("Error fetching failure analytics:", error);
       } finally {
-        setInitialLoading(false);
-        setRefetching(false);
+        if (!abort.signal.aborted) {
+          setInitialLoading(false);
+          setRefetching(false);
+        }
       }
     };
 
     fetchData();
+    return () => abort.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chartMode, timeRange]);
+  }, [chartMode, range, rangeReady]);
 
   // Determine available grouping options based on time range
   const getAvailableGroupings = (): TimeGrouping[] => {
@@ -99,6 +142,7 @@ export default function FailureAnalyticsPage() {
         return ["daily", "weekly", "biweekly", "monthly", "quarterly"];
       case "365d": // Last year
         return ["daily", "weekly", "biweekly", "monthly", "quarterly"];
+      case "custom":
       case "all": // All time
         return ["daily", "weekly", "biweekly", "monthly", "quarterly"];
       default:
@@ -705,20 +749,19 @@ export default function FailureAnalyticsPage() {
           </div>
 
           {/* Time Range Toggle */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="text-sm font-medium text-muted-foreground min-w-[50px]">Period</span>
             <ToggleGroup
               type="single"
               value={timeRange}
-              onValueChange={(value) => value && setTimeRange(value)}
-              className="gap-1 bg-muted/50 p-1 rounded-lg"
+              onValueChange={(value) => { if (value && value !== "custom") changeRange({ kind: value as Exclude<typeof range["kind"], "custom"> }); }}
+              className="flex-wrap gap-1 bg-muted/50 p-1 rounded-lg"
             >
-              <ToggleGroupItem
-                value="all"
-                className="data-[state=on]:bg-background data-[state=on]:shadow-sm hover:bg-muted transition-all px-3 py-2"
-              >
-                All time
-              </ToggleGroupItem>
+              {[{ value: "7d", label: "7d" }, { value: "30d", label: "30d" }].map((period) => (
+                <ToggleGroupItem key={period.value} value={period.value} className="data-[state=on]:bg-background data-[state=on]:shadow-sm hover:bg-muted px-3 py-2">
+                  {period.label}
+                </ToggleGroupItem>
+              ))}
               <ToggleGroupItem
                 value="90d"
                 className="data-[state=on]:bg-background data-[state=on]:shadow-sm hover:bg-muted transition-all px-3 py-2"
@@ -737,7 +780,32 @@ export default function FailureAnalyticsPage() {
               >
                 Last year
               </ToggleGroupItem>
+              <ToggleGroupItem
+                value="all"
+                className="data-[state=on]:bg-background data-[state=on]:shadow-sm hover:bg-muted transition-all px-3 py-2"
+              >
+                All
+              </ToggleGroupItem>
+              <DateRangePicker
+                from={customDates.from}
+                to={customDates.to}
+                trigger={
+                  <ToggleGroupItem
+                    value="custom"
+                    className="data-[state=on]:bg-background data-[state=on]:shadow-sm hover:bg-muted transition-all px-3 py-2"
+                    aria-label="Custom date range"
+                  >
+                    Custom
+                  </ToggleGroupItem>
+                }
+                active={range.kind === "custom"}
+                onRangeChange={(from, to) => changeRange(!from && !to ? { kind: "all" } : { kind: "custom", from, to })}
+              />
             </ToggleGroup>
+
+            {range.kind === "custom" && (
+              <span className="text-xs text-muted-foreground">{dashboardRangeContextLabel(range)} · UTC</span>
+            )}
           </div>
 
           {/* Percentage Mode Toggle */}

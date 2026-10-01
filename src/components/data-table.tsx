@@ -304,6 +304,7 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
 ];
 
 interface DataTableProps {
+  showDateRangeFilter?: boolean;
   onClearDateFilter?: () => void;
   annotationFilter: string;
   onAnnotationFilterChange: (filter: string) => void;
@@ -460,6 +461,7 @@ export function DataTableSkeleton({
 }
 
 export function DataTable({
+  showDateRangeFilter = true,
   onClearDateFilter,
   annotationFilter,
   onAnnotationFilterChange,
@@ -1095,7 +1097,7 @@ export function DataTable({
                 </Select>
               )}
 
-              <div className="sm:col-span-2">
+              {showDateRangeFilter && <div className="sm:col-span-2">
                 <DateRangePicker
                   from={dateFromFilter}
                   to={dateToFilter}
@@ -1108,7 +1110,7 @@ export function DataTable({
                     onDateToFilterChange(to);
                   }}
                 />
-              </div>
+              </div>}
             </div>
 
             {/* Mode switches — single-line chips */}

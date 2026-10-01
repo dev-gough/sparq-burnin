@@ -121,6 +121,14 @@ export type DateRangePickerProps = {
   className?: string;
   /** Optional class for the trigger button. */
   triggerClassName?: string;
+  /** Compact header control; the panel still shows the selected dates. */
+  triggerLabel?: string;
+  /** Use a period toggle as the popover trigger within an existing group. */
+  trigger?: React.ReactElement;
+  active?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  disabled?: boolean;
 };
 
 export function DateRangePicker({
@@ -129,8 +137,19 @@ export function DateRangePicker({
   onRangeChange,
   className,
   triggerClassName,
+  triggerLabel: label,
+  trigger,
+  active = false,
+  open: controlledOpen,
+  onOpenChange: onControlledOpenChange,
+  disabled = false,
 }: DateRangePickerProps) {
-  const [open, setOpen] = React.useState(false);
+  const [internalOpen, setInternalOpen] = React.useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = React.useCallback((next: boolean) => {
+    setInternalOpen(next);
+    onControlledOpenChange?.(next);
+  }, [onControlledOpenChange]);
 
   const today = utcTodayYmd();
   // Prefer showing the range start month so dual-month view can include both ends.
@@ -292,7 +311,7 @@ export function DateRangePicker({
         }, 420),
       );
     },
-    [settling, clearSettleTimers, onRangeChange],
+    [settling, clearSettleTimers, onRangeChange, setOpen],
   );
 
   const updateHoverFromPoint = React.useCallback(
@@ -451,8 +470,10 @@ export function DateRangePicker({
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <button
+        {trigger ?? <button
           type="button"
+          disabled={disabled}
+          aria-pressed={label ? active : undefined}
           className={cn(
             // h-9 matches SelectTrigger default so the filter row aligns
             "group relative flex h-9 min-h-9 w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-input bg-background px-3 text-left text-sm shadow-xs transition-[border-color,box-shadow,background-color,transform] duration-300 outline-none",
@@ -460,12 +481,15 @@ export function DateRangePicker({
             open && "border-ring ring-[3px] ring-ring/40",
             (hasRange || pendingRange) && "border-primary/30 bg-primary/5",
             settling && "border-primary/50 bg-primary/10",
+            label && "w-auto h-10 min-h-10 gap-0 px-3 shadow-none disabled:opacity-50 disabled:pointer-events-none",
+            label && !active && "border-input bg-background",
+            label && active && "border-primary bg-primary text-primary-foreground",
             triggerClassName,
             className,
           )}
-          aria-label={`Date range: ${triggerLabel} (UTC)`}
+          aria-label={`${label ? "Custom date range" : "Date range"}: ${triggerLabel} (UTC)`}
         >
-          <span
+          {!label && <span
             className={cn(
               "flex size-6 shrink-0 items-center justify-center rounded-md transition-all duration-300",
               hasRange || pendingRange
@@ -479,14 +503,14 @@ export function DateRangePicker({
             ) : (
               <CalendarRange className="size-3.5" />
             )}
-          </span>
+          </span>}
           <span className="min-w-0 flex-1 truncate font-medium tabular-nums tracking-tight transition-opacity duration-300">
-            {triggerLabel}
+            {label ?? triggerLabel}
           </span>
-          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+          {!label && <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
             UTC
-          </span>
-        </button>
+          </span>}
+        </button>}
       </PopoverTrigger>
 
       <PopoverContent
@@ -496,12 +520,6 @@ export function DateRangePicker({
           settling && "ring-2 ring-primary/30",
         )}
         onOpenAutoFocus={(e) => e.preventDefault()}
-        onInteractOutside={(e) => {
-          if (settling) e.preventDefault();
-        }}
-        onEscapeKeyDown={(e) => {
-          if (settling) e.preventDefault();
-        }}
       >
         {/* Ambient header */}
         <div className="relative border-b bg-gradient-to-br from-primary/10 via-muted/40 to-transparent px-4 pt-3.5 pb-3">
