@@ -52,7 +52,7 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
   const [lastPill, setLastPill] = React.useState<DashboardPill>(
     initial.lastPill,
   );
-  const [selectedDate, setSelectedDate] = React.useState<string>("");
+  const [selectedDate, setSelectedDate] = React.useState<string>(initial.selectedDate);
   const [chartMode, setChartMode] = React.useState<"all" | "recent">(
     initial.chartMode,
   );
@@ -122,6 +122,7 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
       setFilterLinked(next.filterLinked);
       setTableDateFrom(next.tableDateFrom);
       setTableDateTo(next.tableDateTo);
+      setSelectedDate(next.selectedDate);
       setBucket(next.bucket);
       setChartMode(next.chartMode);
       setAnnotationFilter(next.annotationFilter);
@@ -150,6 +151,7 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
         statusFilter,
         tableDateFrom,
         tableDateTo,
+        selectedDate,
       }),
     );
   }, [
@@ -163,6 +165,7 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
     statusFilter,
     tableDateFrom,
     tableDateTo,
+    selectedDate,
   ]);
 
   /**

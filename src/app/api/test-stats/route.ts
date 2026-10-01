@@ -52,6 +52,8 @@ interface TestRecord {
   test_id: number;
   inv_id: number;
   serial_number: string;
+  test_count: number;
+  test_number: number;
   firmware_version: string;
   duration: number;
   non_zero_status_flags: number;
@@ -574,6 +576,10 @@ export async function GET(request: NextRequest) {
             p.test_id,
             p.inv_id,
             i.serial_number,
+            (SELECT COUNT(*) FROM Tests history WHERE history.inv_id = p.inv_id) AS test_count,
+            (SELECT COUNT(*) FROM Tests history
+             WHERE history.inv_id = p.inv_id
+               AND (history.start_time_utc, history.test_id) <= (p.start_time, p.test_id)) AS test_number,
             p.firmware_version,
             p.duration,
             p.non_zero_status_flags,
@@ -619,6 +625,10 @@ export async function GET(request: NextRequest) {
             p.test_id,
             p.inv_id,
             i.serial_number,
+            (SELECT COUNT(*) FROM Tests history WHERE history.inv_id = p.inv_id) AS test_count,
+            (SELECT COUNT(*) FROM Tests history
+             WHERE history.inv_id = p.inv_id
+               AND (history.start_time_utc, history.test_id) <= (p.start_time, p.test_id)) AS test_number,
             p.firmware_version,
             p.duration,
             p.non_zero_status_flags,
@@ -643,6 +653,8 @@ export async function GET(request: NextRequest) {
         test_id: row.test_id,
         inv_id: row.inv_id,
         serial_number: row.serial_number || "Unknown",
+        test_count: Number(row.test_count),
+        test_number: Number(row.test_number),
         firmware_version: row.firmware_version || "Unknown",
         duration: Math.round(row.duration) || 0,
         non_zero_status_flags: row.non_zero_status_flags || 0,

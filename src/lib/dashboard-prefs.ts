@@ -41,6 +41,8 @@ export type DashboardPrefs = {
   annotationFilter?: string;
   dateFromFilter?: string;
   dateToFilter?: string;
+  /** Chart day drill, independent of the header range. */
+  selectedDate?: string;
   latestOnly?: boolean;
   // Dashboard command-center
   /** Pill period or "custom". */
@@ -139,6 +141,7 @@ export function pickBootPrefs(prefs: Partial<DashboardPrefs>): Partial<Dashboard
   if (prefs.statusFilter !== undefined) boot.statusFilter = prefs.statusFilter;
   if (prefs.dateFromFilter !== undefined) boot.dateFromFilter = prefs.dateFromFilter;
   if (prefs.dateToFilter !== undefined) boot.dateToFilter = prefs.dateToFilter;
+  if (prefs.selectedDate !== undefined) boot.selectedDate = prefs.selectedDate;
   return boot;
 }
 
@@ -201,6 +204,7 @@ export function resolveDashboardInitState(
   statusFilter: string;
   tableDateFrom: string;
   tableDateTo: string;
+  selectedDate: string;
 } {
   const linked = saved.filterLinked !== false; // default true
   let nextRange: DashboardRange;
@@ -248,6 +252,19 @@ export function resolveDashboardInitState(
     tableDateTo = saved.dateToFilter || "";
   }
 
+  // A chart day drill filters the table without changing the header range.
+  const selectedDate =
+    typeof saved.selectedDate === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(saved.selectedDate) &&
+    saved.dateFromFilter === saved.selectedDate &&
+    saved.dateToFilter === saved.selectedDate
+      ? saved.selectedDate
+      : "";
+  if (selectedDate) {
+    tableDateFrom = selectedDate;
+    tableDateTo = selectedDate;
+  }
+
   const bucket: ChartBucket = isChartBucket(saved.bucket)
     ? saved.bucket
     : defaultBucketForDashboardRange(nextRange);
@@ -267,6 +284,7 @@ export function resolveDashboardInitState(
     statusFilter: saved.statusFilter || "valid",
     tableDateFrom,
     tableDateTo,
+    selectedDate,
   };
 }
 
@@ -311,6 +329,7 @@ export function prefsFromDashboardState(state: {
   statusFilter: string;
   tableDateFrom: string;
   tableDateTo: string;
+  selectedDate?: string;
 }): Partial<DashboardPrefs> {
   const { dashboardRange } = state;
   // Table Latest only is the same switch as header Result mode.
@@ -329,6 +348,7 @@ export function prefsFromDashboardState(state: {
       statusFilter: state.statusFilter,
       dateFromFilter: state.tableDateFrom,
       dateToFilter: state.tableDateTo,
+      selectedDate: state.selectedDate || undefined,
     };
   }
   return {
@@ -344,5 +364,6 @@ export function prefsFromDashboardState(state: {
     statusFilter: state.statusFilter,
     dateFromFilter: state.tableDateFrom,
     dateToFilter: state.tableDateTo,
+    selectedDate: state.selectedDate || undefined,
   };
 }

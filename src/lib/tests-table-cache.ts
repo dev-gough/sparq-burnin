@@ -9,6 +9,8 @@ export type TestsTableRow = {
   test_id: number;
   inv_id: number;
   serial_number: string;
+  test_count?: number;
+  test_number?: number;
   firmware_version: string;
   duration: number;
   non_zero_status_flags: number;

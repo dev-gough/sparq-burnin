@@ -4,9 +4,42 @@ import {
   parseDashboardBootCookie,
   pickBootPrefs,
   resolveDashboardInitState,
+  prefsFromDashboardState,
 } from "@/lib/dashboard-prefs";
 
 describe("resolveDashboardInitState", () => {
+  it.each([true, false])("restores a chart day drill with filters linked=%s", (filterLinked) => {
+    const snapshot = prefsFromDashboardState({
+      dashboardRange: { kind: "90d" }, lastPill: "90d", chartMode: "recent",
+      bucket: "day", filterLinked, annotationFilter: "all", statusFilter: "valid",
+      tableDateFrom: "2026-09-24", tableDateTo: "2026-09-24", selectedDate: "2026-09-24",
+    });
+    // Both client navigation (localStorage) and a fresh page (boot cookie).
+    for (const saved of [snapshot, parseDashboardBootCookie(encodeURIComponent(JSON.stringify(pickBootPrefs(snapshot))))]) {
+      const restored = resolveDashboardInitState(saved);
+      expect(restored.dashboardRange).toEqual({ kind: "90d" });
+      expect(restored.selectedDate).toBe("2026-09-24");
+      expect(restored.tableDateFrom).toBe("2026-09-24");
+      expect(restored.tableDateTo).toBe("2026-09-24");
+    }
+  });
+
+  it("clears the saved day when returning to a period filter", () => {
+    const snapshot = prefsFromDashboardState({
+      dashboardRange: { kind: "all" }, lastPill: "all", chartMode: "recent",
+      bucket: "day", filterLinked: true, annotationFilter: "all", statusFilter: "valid",
+      tableDateFrom: "", tableDateTo: "", selectedDate: "",
+    });
+    expect(snapshot.selectedDate).toBeUndefined();
+    expect(resolveDashboardInitState(snapshot).selectedDate).toBe("");
+  });
+
+  it("ignores a stale day marker when the date range has changed", () => {
+    const restored = resolveDashboardInitState({period: "all", selectedDate: "2026-09-24", dateFromFilter: "", dateToFilter: ""});
+    expect(restored.selectedDate).toBe("");
+    expect(restored.tableDateFrom).toBe("");
+  });
+
   it("defaults to 30d + recent when empty", () => {
     const s = resolveDashboardInitState({});
     expect(s.dashboardRange).toEqual({ kind: "30d" });

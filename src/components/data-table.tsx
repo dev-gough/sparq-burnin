@@ -121,6 +121,8 @@ export const testSchema = z.object({
   test_id: z.number(),
   inv_id: z.number(),
   serial_number: z.string(),
+  test_count: z.number().optional(),
+  test_number: z.number().optional(),
   firmware_version: z.string(),
   duration: z.number(),
   non_zero_status_flags: z.number(),
@@ -161,6 +163,21 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
         .replace(/\*/g, '.*'); // Replace * with .*
       const regex = new RegExp(pattern);
       return regex.test((row.getValue(id) as string).toLowerCase());
+    },
+  },
+  {
+    accessorKey: "test_count",
+    header: () => (
+      <span title="Test number of total for this serial number across all dates and results">Tests</span>
+    ),
+    cell: ({ row }) => {
+      const count = row.original.test_count;
+      const number = row.original.test_number;
+      return (
+        <div className="whitespace-nowrap tabular-nums" title={count && count > 1 && number ? `Test ${number} of ${count}` : undefined}>
+          {count && count > 1 && number ? `${number.toLocaleString()} of ${count.toLocaleString()}` : ""}
+        </div>
+      );
     },
   },
   {

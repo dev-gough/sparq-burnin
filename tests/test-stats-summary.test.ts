@@ -311,3 +311,23 @@ describe("buildSummaryDelta", () => {
     expect(delta.failureRatePp).toBe(-10);
   });
 });
+
+
+describe("table test counts", () => {
+  it.each(["true", "false"])("returns lifetime counts in latestOnly=%s mode", async (latestOnly) => {
+    queryMock.mockImplementation(async (sql: string) => {
+      if (sql.includes("AS test_count")) return { rows: [{
+        test_id: 11, inv_id: 2, serial_number: "SN-2", test_count: "7", test_number: "2",
+        start_time: new Date("2026-09-24T12:00:00Z"), status: "PASS",
+      }] };
+      return { rows: [] };
+    });
+    const response = await GET(req(`view=tests&latestOnly=${latestOnly}&dateFrom=2026-09-24&dateTo=2026-09-24`));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([expect.objectContaining({ serial_number: "SN-2", test_count: 7, test_number: 2 })]);
+    const sql = queryMock.mock.calls.find(([sql]) => typeof sql === "string" && sql.includes("AS test_count"))?.[0];
+    // Lifetime count must not inherit date/status/annotation filtering from the table.
+    expect(sql).toContain("(SELECT COUNT(*) FROM Tests history WHERE history.inv_id = p.inv_id) AS test_count");
+    expect(sql).toContain("(history.start_time_utc, history.test_id) <= (p.start_time, p.test_id)");
+  });
+});
