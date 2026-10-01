@@ -3,6 +3,7 @@
 import * as React from "react";
 import ReactECharts from "echarts-for-react";
 import type {
+  EChartsType,
   EChartsOption,
   TooltipComponentFormatterCallbackParams,
 } from "echarts";
@@ -40,6 +41,7 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSettings } from "@/contexts/settings-context";
 import { cn } from "@/lib/utils";
+import { bindCategoryPlotClick } from "@/lib/chart-plot-click";
 
 /** Bucket total below this is treated as thin sample (opacity + tooltip cue). */
 const LOW_SAMPLE_N = 10;
@@ -111,6 +113,11 @@ export function ChartAreaInteractive({
       document.documentElement.classList.contains("dark"),
   );
   const chartRef = React.useRef<ReactECharts>(null);
+  const [chartInstance, setChartInstance] = React.useState<EChartsType | null>(null);
+  React.useEffect(() => {
+    if (!chartInstance || chartInstance.isDisposed() || !onDateClick) return;
+    return bindCategoryPlotClick(chartInstance, onDateClick);
+  }, [chartInstance, onDateClick]);
   const isMobile = useIsMobile();
   const chartHeightPx = isMobile ? 360 : 320;
   const { settings } = useSettings();
@@ -557,8 +564,7 @@ export function ChartAreaInteractive({
     () => ({
       click: (params: { componentType?: string; name?: string }) => {
         if (
-          (params.componentType === "series" ||
-            params.componentType === "xAxis") &&
+          params.componentType === "xAxis" &&
           params.name &&
           onDateClick
         ) {
@@ -637,7 +643,7 @@ export function ChartAreaInteractive({
             {/* Mobile: wrap instead of mid-word truncate (O12) */}
             <CardDescription className="text-pretty sm:truncate">
               {subtitle}
-              {onDateClick ? " · click a bar to filter the table" : ""}
+              {onDateClick ? " · click anywhere in the plot to filter the table" : ""}
             </CardDescription>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -726,6 +732,7 @@ export function ChartAreaInteractive({
                 cursor: onDateClick ? "pointer" : "default",
               }}
               opts={{ renderer: "canvas" }}
+              onChartReady={setChartInstance}
               onEvents={onEvents}
               // Replace series only when displayOption commits a new paintKey
               notMerge={true}
