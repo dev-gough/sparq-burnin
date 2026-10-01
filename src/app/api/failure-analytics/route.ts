@@ -79,12 +79,23 @@ export async function GET(request: NextRequest) {
       WITH base_tests AS (${baseTestsQuery})
       SELECT
         COUNT(*) as total_tests,
-        COUNT(*) FILTER (WHERE overall_status = 'FAIL') as total_failed_tests
+        COUNT(*) FILTER (WHERE overall_status = 'FAIL') as total_failed_tests,
+        COUNT(*) FILTER (
+          WHERE overall_status = 'FAIL' AND NOT EXISTS (
+            SELECT 1 FROM TestAnnotations ta WHERE ta.current_test_id = base_tests.test_id
+          )
+        ) as untagged_failed,
+        STRING_AGG(
+          CASE WHEN overall_status = 'FAIL' THEN 'F' ELSE 'P' END,
+          '' ORDER BY start_time_utc, test_id
+        ) as test_outcomes
       FROM base_tests
     `, timeParams);
 
     const totalTests = parseInt(countsResult.rows[0].total_tests);
     const totalFailedTests = parseInt(countsResult.rows[0].total_failed_tests);
+    const untaggedFailed = parseInt(countsResult.rows[0].untagged_failed ?? "0");
+    const testOutcomes: string = countsResult.rows[0].test_outcomes ?? "";
 
     // Get failures by category (option_text)
     const categoriesResult = await client.query(`
@@ -121,7 +132,7 @@ export async function GET(request: NextRequest) {
       JOIN base_tests t ON ta.current_test_id = t.test_id
       WHERE t.overall_status = 'FAIL'
         AND ta.current_test_id IS NOT NULL
-      GROUP BY aqo.group_name
+      GROUP BY COALESCE(aqo.group_name, 'Other')
       ORDER BY count DESC
     `, timeParams);
 
@@ -187,7 +198,7 @@ export async function GET(request: NextRequest) {
       JOIN base_tests t ON ta.current_test_id = t.test_id
       WHERE t.overall_status = 'FAIL'
         AND ta.current_test_id IS NOT NULL
-      GROUP BY DATE(t.start_time_utc), aqo.group_name
+      GROUP BY DATE(t.start_time_utc), COALESCE(aqo.group_name, 'Other')
       ORDER BY date
     `, timeParams);
 
@@ -233,6 +244,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       totalTests,
       totalFailedTests,
+      untaggedFailed,
+      testOutcomes,
       categories,
       groups,
       categoryTimeline,

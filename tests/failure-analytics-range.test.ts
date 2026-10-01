@@ -17,7 +17,7 @@ beforeEach(() => {
   query.mockReset();
   query.mockImplementation(async (sql: string) => ({
     rows: sql.includes("as total_tests") && !sql.includes("GROUP BY")
-      ? [{ total_tests: "0", total_failed_tests: "0" }]
+      ? [{ total_tests: "0", total_failed_tests: "0", untagged_failed: "0", test_outcomes: "" }]
       : [],
   }));
 });
@@ -36,6 +36,21 @@ describe("failure analytics date filtering", () => {
       expect(sql).not.toContain("CURRENT_DATE");
       expect(params).toEqual(["2026-09-01", "2026-09-30"]);
     }
+  });
+
+  it("returns untagged failures from the same scoped test population", async () => {
+    query.mockImplementation(async (sql: string) => ({
+      rows: sql.includes("as total_tests") && !sql.includes("GROUP BY")
+        ? [{ total_tests: "100", total_failed_tests: "10", untagged_failed: "3", test_outcomes: "F".repeat(10) + "P".repeat(90) }]
+        : [],
+    }));
+    const response = await GET(request("timeRange=30d"));
+    const body = await response.json();
+    expect(body).toMatchObject({ totalTests: 100, totalFailedTests: 10, untaggedFailed: 3, testOutcomes: "F".repeat(10) + "P".repeat(90) });
+    const sql = scopedQueries()[0][0];
+    expect(sql).toContain("NOT EXISTS");
+    expect(sql).toContain("ta.current_test_id = base_tests.test_id");
+    expect(sql).toContain("ORDER BY start_time_utc, test_id");
   });
 
   it("rejects a reversed range before querying metrics", async () => {
