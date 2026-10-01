@@ -244,11 +244,20 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
               </div>
             )}
             <p className="px-4 text-[11px] text-muted-foreground sm:px-5">Selected period: {dateLabel}</p>
-            {rateView === "date" ? <>{chart("Failure rate over time", rateOption, "rate", ratePoints.length > 0, 280)}<p className="px-4 pb-4 text-[11px] leading-relaxed text-muted-foreground sm:px-5"><strong className="font-medium">What is a {averageWindow}-period moving average?</strong> Each point combines failed tests and total tests from the current {periodUnit} and the previous {averageWindow - 1} {periodUnit}s with tests, then divides failures by total tests. Busier periods carry more weight; periods without tests are skipped. The line starts after {averageWindow} periods with data. The window adjusts from 3 to 7 periods based on the available history.</p></> : (
+            {rateView === "date" ? <>{chart("Failure rate over time", rateOption, "rate", ratePoints.length > 0, 280)}<div className="flex items-center gap-1.5 px-4 pb-4 text-[11px] leading-relaxed text-muted-foreground sm:px-5"><p><strong className="font-medium">{averageWindow}-period average:</strong> failed ÷ total tests across {averageWindow} {periodUnit}s with data.</p><InfoTooltip content={`Each point combines failed tests and total tests from the current ${periodUnit} and the previous ${averageWindow - 1} ${periodUnit}s with tests, then divides failures by total tests. Busier periods carry more weight; periods without tests are skipped. The line starts after ${averageWindow} periods with data. The window adjusts from 3 to 7 periods based on the available history.`} /></div></> : (
               <><FailureChartPanel title="Failure rate by test count" emptyState={rollingEmpty} height={254} showTitle={false}><ReactECharts option={rollingOption} replaceMerge={["series", "xAxis", "yAxis", "legend"]} style={{ height: 254 }} /></FailureChartPanel><p className="px-5 pb-3 text-[11px] text-muted-foreground">Tests are numbered within the selected period. {chartMode === "recent" ? "Latest counts one outcome per inverter; All tests includes every run." : "Each PASS / FAIL run counts once."}</p></>
             )}
           </Card>
-          <Card className="min-w-0 gap-3 overflow-hidden py-0 shadow-none">{cardHeading("Test volume", chartMode === "recent" ? "Latest outcomes by test date" : "Pass and fail counts by test date")}{chart("Test volume", volumeOption, "rate", ratePoints.length > 0, 280)}</Card>
+          <Card className="min-w-0 gap-3 overflow-hidden py-0 shadow-none">
+            {cardHeading("Test volume", chartMode === "recent" ? "Latest outcomes by test date" : "Pass and fail counts by test date")}
+            <div className="relative min-h-[280px] flex-1">
+              <div className="absolute inset-0">
+                <FailureChartPanel title="Test volume" emptyState={empty("rate", ratePoints.length > 0)} height={280} showTitle={false}>
+                  <ReactECharts option={volumeOption} replaceMerge={["series"]} style={{ height: "100%" }} />
+                </FailureChartPanel>
+              </div>
+            </div>
+          </Card>
         </div>
       </section>
 
