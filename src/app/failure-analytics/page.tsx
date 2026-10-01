@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { IconAlertTriangle, IconCircleX, IconClipboardList } from "@tabler/icons-react";
 import { FailureAnalyticsHeader, type AnalyticsRange } from "@/components/dashboard/failure-analytics-header";
-import { type DashboardRange, tableDatesForPill, utcDaysAgoYmd, utcTodayYmd } from "@/lib/dashboard-range";
+import { tableDatesForPill } from "@/lib/dashboard-range";
 import { loadDashboardPrefs, patchDashboardPrefs, resolveDashboardInitState } from "@/lib/dashboard-prefs";
 import { burninChartColors, burninSeriesPalette } from "@/lib/chart-theme";
 
@@ -72,9 +72,7 @@ export default function FailureAnalyticsPage() {
   const changeRange = (next: typeof range) => {
     setRange(next);
     // The dashboard shares these preferences and mirrors them to its boot cookie.
-    const shared: DashboardRange = next.kind === "180d" || next.kind === "365d"
-      ? { kind: "custom", from: utcDaysAgoYmd(next.kind === "180d" ? 180 : 365), to: utcTodayYmd() }
-      : next;
+    const shared = next;
     const dates = shared.kind === "custom" ? shared : tableDatesForPill(shared.kind);
     patchDashboardPrefs({
       period: shared.kind,
@@ -135,10 +133,6 @@ export default function FailureAnalyticsPage() {
     switch (timeRange) {
       case "90d": // Last 3mo
         return ["daily", "weekly", "biweekly", "monthly"];
-      case "180d": // Last 6mo
-        return ["daily", "weekly", "biweekly", "monthly", "quarterly"];
-      case "365d": // Last year
-        return ["daily", "weekly", "biweekly", "monthly", "quarterly"];
       case "custom":
       case "all": // All time
         return ["daily", "weekly", "biweekly", "monthly", "quarterly"];

@@ -108,6 +108,8 @@ const PRESETS = [
   { id: "7d", label: "7 days", get: () => ({ from: utcDaysAgoYmd(7), to: utcTodayYmd() }) },
   { id: "30d", label: "30 days", get: () => ({ from: utcDaysAgoYmd(30), to: utcTodayYmd() }) },
   { id: "90d", label: "90 days", get: () => ({ from: utcDaysAgoYmd(90), to: utcTodayYmd() }) },
+  { id: "180d", label: "6 months", get: () => ({ from: utcDaysAgoYmd(180), to: utcTodayYmd() }) },
+  { id: "365d", label: "1 year", get: () => ({ from: utcDaysAgoYmd(365), to: utcTodayYmd() }) },
   { id: "all", label: "All time", get: () => ({ from: "", to: "" }) },
 ] as const;
 
