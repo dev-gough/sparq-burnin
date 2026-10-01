@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FailureChartPanel } from "@/components/dashboard/failure-chart-panel";
+import { failureChartEmptyState } from "@/lib/failure-chart-state";
 import ReactECharts from "echarts-for-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
@@ -71,6 +73,7 @@ export default function FailureAnalyticsPage() {
 
   const changeRange = (next: typeof range) => {
     setRange(next);
+    setExpandedGroup(null);
     // The dashboard shares these preferences and mirrors them to its boot cookie.
     const shared = next;
     const dates = shared.kind === "custom" ? shared : tableDatesForPill(shared.kind);
@@ -155,7 +158,10 @@ export default function FailureAnalyticsPage() {
       range={range}
       onRangeChange={changeRange}
       chartMode={chartMode}
-      onChartModeChange={setChartMode}
+      onChartModeChange={(mode) => {
+        setChartMode(mode);
+        setExpandedGroup(null);
+      }}
       percentageMode={percentageMode}
       onPercentageModeChange={setPercentageMode}
       ready={rangeReady}
@@ -197,15 +203,6 @@ export default function FailureAnalyticsPage() {
   const textColor = isDark ? burninChartColors.text.dark : burninChartColors.text.light;
   const mutedColor = isDark ? burninChartColors.muted.dark : burninChartColors.muted.light;
   const gridColor = isDark ? burninChartColors.grid.dark : burninChartColors.grid.light;
-  const emptyChartGraphic = (message: string) => [
-    {
-      type: "text" as const,
-      left: "center" as const,
-      top: "middle" as const,
-      style: { text: message, fontSize: 14, fill: mutedColor },
-    },
-  ];
-
   // Helper function to group data by time period
   const groupDataByTime = (timeline: TimelineData[], grouping: TimeGrouping): TimelineData[] => {
     if (grouping === "daily") return timeline;
@@ -300,11 +297,18 @@ export default function FailureAnalyticsPage() {
     }));
   };
 
+  const chartEmptyState = (breakdown: "category" | "group" | "rate", hasData: boolean) =>
+    failureChartEmptyState({
+      breakdown,
+      hasData,
+      totalTests: data.totalTests,
+      totalFailedTests: data.totalFailedTests,
+    });
+
   // Prepare timeline chart data
   const getCategoryTimelineOption = () => {
     const categories = Array.from(new Set(data.categories.map(c => c.name)));
     const groupedData = groupDataByTime(data.categoryTimeline, timeGrouping);
-    const isEmpty = categories.length === 0 || groupedData.length === 0;
 
     return {
       color: [...burninSeriesPalette],
@@ -342,7 +346,6 @@ export default function FailureAnalyticsPage() {
         type: "scroll",
         textStyle: { color: textColor },
       },
-      graphic: isEmpty ? emptyChartGraphic("No failures in this range") : [],
       grid: { left: "3%", right: "4%", bottom: "3%", top: 80, containLabel: true },
       xAxis: {
         type: "category",
@@ -373,7 +376,6 @@ export default function FailureAnalyticsPage() {
   const getGroupTimelineOption = () => {
     const groups = Array.from(new Set(data.groups.map(g => g.name)));
     const groupedData = groupDataByTime(data.groupTimeline, timeGrouping);
-    const isEmpty = groups.length === 0 || groupedData.length === 0;
 
     // Create a color map from group names to colors
     const groupColorMap: Record<string, string> = {};
@@ -418,7 +420,6 @@ export default function FailureAnalyticsPage() {
         top: 30,
         textStyle: { color: textColor },
       },
-      graphic: isEmpty ? emptyChartGraphic("No failures in this range") : [],
       grid: { left: "3%", right: "4%", bottom: "3%", top: 80, containLabel: true },
       xAxis: {
         type: "category",
@@ -491,7 +492,6 @@ export default function FailureAnalyticsPage() {
     // Calculate 7-period moving average (or fewer if less data available)
     const windowSize = Math.min(7, Math.max(3, Math.floor(failureRates.length / 4)));
     const movingAvg = calculateMovingAverageFromCounts(totals, failures, windowSize);
-    const isEmpty = groupedData.length === 0;
 
     return {
       title: {
@@ -526,7 +526,6 @@ export default function FailureAnalyticsPage() {
         top: 30,
         textStyle: { color: textColor },
       },
-      graphic: isEmpty ? emptyChartGraphic("No failures in this range") : [],
       grid: { left: "3%", right: "4%", bottom: "3%", top: 80, containLabel: true },
       xAxis: {
         type: "category",
@@ -606,7 +605,6 @@ export default function FailureAnalyticsPage() {
       type: "scroll",
       textStyle: { color: textColor },
     },
-    graphic: categoryPieData.length === 0 ? emptyChartGraphic("No failures in this range") : [],
     series: [
       {
         name: percentageMode === "all" ? "% of All Tests" : "% of Failed Tests",
@@ -675,7 +673,6 @@ export default function FailureAnalyticsPage() {
       top: 30,
       textStyle: { color: textColor },
     },
-    graphic: groupPieData.length === 0 ? emptyChartGraphic("No failures in this range") : [],
     series: [
       {
         name: percentageMode === "all" ? "% of All Tests" : "% of Failed Tests",
@@ -762,7 +759,9 @@ export default function FailureAnalyticsPage() {
         {/* Pie Charts */}
         <div className="grid gap-6 md:grid-cols-2 mb-6">
           <Card className="p-6">
-            <ReactECharts option={categoryPieOption} style={{ height: "400px" }} />
+            <FailureChartPanel title="Failures by Category" emptyState={chartEmptyState("category", categoryPieData.some(slice => slice.value > 0))}>
+              <ReactECharts option={categoryPieOption} replaceMerge={["series"]} style={{ height: "400px" }} />
+            </FailureChartPanel>
           </Card>
           <Card className="p-6 relative">
             {expandedGroup && (
@@ -773,14 +772,15 @@ export default function FailureAnalyticsPage() {
                 ← Back to Groups
               </button>
             )}
-            <ReactECharts
-              option={groupPieOption}
-              style={{ height: "400px" }}
-              onEvents={{
-                click: handleGroupChartClick,
-              }}
-            />
-            {!expandedGroup && (
+            <FailureChartPanel title={expandedGroup || "Failures by Group"} emptyState={chartEmptyState("group", groupPieData.some(slice => slice.value > 0))}>
+              <ReactECharts
+                option={groupPieOption}
+                replaceMerge={["series"]}
+                style={{ height: "400px" }}
+                onEvents={{ click: handleGroupChartClick }}
+              />
+            </FailureChartPanel>
+            {!expandedGroup && groupPieData.some(slice => slice.value > 0) && (
               <p className="text-xs text-muted-foreground text-center mt-2">
                 Click a slice to view categories
               </p>
@@ -814,13 +814,19 @@ export default function FailureAnalyticsPage() {
 
           <div className="grid gap-6 md:grid-cols-1">
             <Card className="p-6">
-              <ReactECharts option={getCategoryTimelineOption()} style={{ height: "400px" }} />
+              <FailureChartPanel title="Failures by Category Over Time" emptyState={chartEmptyState("category", data.categories.length > 0 && data.categoryTimeline.length > 0)}>
+                <ReactECharts option={getCategoryTimelineOption()} replaceMerge={["series"]} style={{ height: "400px" }} />
+              </FailureChartPanel>
             </Card>
             <Card className="p-6">
-              <ReactECharts option={getGroupTimelineOption()} style={{ height: "400px" }} />
+              <FailureChartPanel title="Failures by Group Over Time" emptyState={chartEmptyState("group", data.groups.length > 0 && data.groupTimeline.length > 0)}>
+                <ReactECharts option={getGroupTimelineOption()} replaceMerge={["series"]} style={{ height: "400px" }} />
+              </FailureChartPanel>
             </Card>
             <Card className="p-6">
-              <ReactECharts option={getFailureRateTimelineOption()} style={{ height: "400px" }} />
+              <FailureChartPanel title="Failure Rate Over Time" emptyState={chartEmptyState("rate", data.failureRateTimeline.length > 0)}>
+                <ReactECharts option={getFailureRateTimelineOption()} replaceMerge={["series"]} style={{ height: "400px" }} />
+              </FailureChartPanel>
             </Card>
           </div>
         </div>
