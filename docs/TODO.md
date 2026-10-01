@@ -2,6 +2,21 @@
 
 Product / engineering follow-ups that are not in an active implementation plan.
 
+## Annotation category icons in the dashboard table
+
+**Status:** planned; implement only when requested.
+
+**Goal:** Replace annotation category text in the main dashboard table with an icon unique to each category, retaining the existing category colours. Hovering an annotation should show a custom tooltip with its full name. Preserve all annotation information, including multiple annotations on a test.
+
+**Simple plan:**
+
+1. Inventory categories and colours; define stable category-to-icon mappings and a fallback for new or unknown categories.
+2. Use Grok Imagine or another suitable image generator with one standardized prompt: consistent style, dimensions, transparent background, padding, and readability at table-icon size. Vary only the category subject and its existing colour. Review a small sample before generating the complete set.
+3. Render the mapped icons in the annotation cells. Add custom full-name tooltips, accessible labels, keyboard focus, and a way to reveal names on touch devices.
+4. Check icon distinguishability, existing colour coding, multiple annotations, unknown categories, and light/dark and desktop/mobile layouts.
+
+**Done when:** Every category has a distinct, consistently styled icon; existing colours and annotation information are preserved; full names remain available through custom tooltips and assistive technology.
+
 ## Gradual station software-update policy
 
 **Status:** not started  
