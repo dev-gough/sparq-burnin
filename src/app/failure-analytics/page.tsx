@@ -792,7 +792,8 @@ export default function FailureAnalyticsPage() {
                 trigger={
                   <ToggleGroupItem
                     value="custom"
-                    className="data-[state=on]:bg-background data-[state=on]:shadow-sm hover:bg-muted transition-all px-3 py-2"
+                    data-selected={range.kind === "custom"}
+                    className="data-[selected=true]:bg-background data-[selected=true]:shadow-sm hover:bg-muted transition-all px-3 py-2"
                     aria-label="Custom date range"
                   >
                     Custom

@@ -279,8 +279,9 @@ export function DashboardHeader({
             trigger={
               <ToggleGroupItem
                 value="custom"
+                data-selected={isCustom}
                 disabled={!prefsReady}
-                className="h-10 min-h-10 min-w-11 px-3 text-sm focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                className="h-10 min-h-10 min-w-11 px-3 text-sm focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring data-[selected=true]:bg-primary data-[selected=true]:text-primary-foreground"
                 aria-label="Custom date range"
               >
                 Custom
