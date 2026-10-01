@@ -61,6 +61,7 @@ interface TestRecord {
   failure_reason: string | null;
   start_time: string;
   annotations: string | null;
+  annotation_items: { name: string; group_name: string | null; group_color: string | null }[];
 }
 
 /**
@@ -535,6 +536,16 @@ export async function GET(request: NextRequest) {
             END
         )`;
 
+      // Keep names and category colours intact, including free text containing
+      // semicolons. The legacy string remains available to table filters.
+      const annotationItemsAgg = `COALESCE(
+        JSONB_AGG(DISTINCT JSONB_BUILD_OBJECT(
+          'name', ta.annotation_text,
+          'group_name', aqo.group_name,
+          'group_color', ag.group_color
+        )) FILTER (WHERE ta.annotation_text IS NOT NULL), '[]'::jsonb
+      )`;
+
       let testsQuery: string;
       if (latestOnly) {
         // Latest-per-inverter in the window (DISTINCT ON inv_id — no serial join
@@ -586,11 +597,13 @@ export async function GET(request: NextRequest) {
             p.status,
             p.failure_reason,
             p.start_time,
-            ${annotationAgg} AS annotations
+            ${annotationAgg} AS annotations,
+            ${annotationItemsAgg} AS annotation_items
           FROM page p
           JOIN Inverters i ON p.inv_id = i.inv_id
           LEFT JOIN TestAnnotations ta ON p.test_id = ta.current_test_id
           LEFT JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
+          LEFT JOIN AnnotationGroups ag ON aqo.group_name = ag.group_name
           GROUP BY
             p.test_id, p.inv_id, i.serial_number, p.firmware_version,
             p.duration, p.non_zero_status_flags, p.status, p.failure_reason, p.start_time
@@ -635,11 +648,13 @@ export async function GET(request: NextRequest) {
             p.status,
             p.failure_reason,
             p.start_time,
-            ${annotationAgg} AS annotations
+            ${annotationAgg} AS annotations,
+            ${annotationItemsAgg} AS annotation_items
           FROM page p
           JOIN Inverters i ON p.inv_id = i.inv_id
           LEFT JOIN TestAnnotations ta ON p.test_id = ta.current_test_id
           LEFT JOIN AnnotationQuickOptions aqo ON ta.annotation_text = aqo.option_text
+          LEFT JOIN AnnotationGroups ag ON aqo.group_name = ag.group_name
           GROUP BY
             p.test_id, p.inv_id, i.serial_number, p.firmware_version,
             p.duration, p.non_zero_status_flags, p.status, p.failure_reason, p.start_time
@@ -662,6 +677,7 @@ export async function GET(request: NextRequest) {
         failure_reason: row.failure_reason || null,
         start_time: row.start_time ? row.start_time.toISOString() : "",
         annotations: row.annotations || null,
+        annotation_items: row.annotation_items || [],
       }));
 
       return NextResponse.json(tests);

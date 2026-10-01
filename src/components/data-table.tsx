@@ -22,6 +22,7 @@ import {
   Unlink,
   X,
 } from "lucide-react";
+import { AnnotationIcons } from "@/components/dashboard/annotation-icons";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { useStationAliases } from "@/hooks/useStationAliases";
 import {
@@ -130,6 +131,9 @@ export const testSchema = z.object({
   failure_reason: z.string().nullable(),
   start_time: z.string(),
   annotations: z.string().nullable(),
+  annotation_items: z.array(z.object({
+    name: z.string(), group_name: z.string().nullable(), group_color: z.string().nullable(),
+  })).optional(),
 });
 
 type TestRow = z.infer<typeof testSchema>;
@@ -302,21 +306,9 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
     header: "Annotations",
     // O26: keep column narrow when empty; expand only with content
     size: 120,
-    cell: ({ row }) => {
-      const annotations = row.original.annotations;
-      if (!annotations || annotations === "-") {
-        return (
-          <div className="w-8 text-muted-foreground/50 text-sm" aria-hidden>
-            —
-          </div>
-        );
-      }
-      return (
-        <div className="max-w-[10rem] truncate text-sm" title={annotations}>
-          {annotations}
-        </div>
-      );
-    },
+    cell: ({ row }) => (
+      <AnnotationIcons items={row.original.annotation_items} text={row.original.annotations} />
+    ),
   },
 ];
 

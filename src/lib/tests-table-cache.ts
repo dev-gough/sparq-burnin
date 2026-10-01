@@ -18,6 +18,7 @@ export type TestsTableRow = {
   failure_reason: string | null;
   start_time: string;
   annotations: string | null;
+  annotation_items?: { name: string; group_name: string | null; group_color: string | null }[];
 };
 
 export type TestsTableFetchKey = {

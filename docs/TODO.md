@@ -4,18 +4,13 @@ Product / engineering follow-ups that are not in an active implementation plan.
 
 ## Annotation category icons in the dashboard table
 
-**Status:** planned; implement only when requested.
+**Status:** implemented.
 
-**Goal:** Replace annotation category text in the main dashboard table with an icon unique to each category, retaining the existing category colours. Hovering an annotation should show a custom tooltip with its full name. Preserve all annotation information, including multiple annotations on a test.
+The annotation column uses distinct Lucide vector symbols for the 15 active categories, with historical-name aliases and a generic symbol for custom/new annotations. The user chose consistent vector icons instead of generated raster images. Colours follow category metadata; custom and ungrouped annotations use grey.
 
-**Simple plan:**
+Custom tooltips show the full annotation name and group on hover, keyboard focus, or tap. Clicking an icon reveals its name without opening the test row. Multiple annotations remain visible, and structured API metadata preserves free-text names containing semicolons.
 
-1. Inventory categories and colours; define stable category-to-icon mappings and a fallback for new or unknown categories.
-2. Use Grok Imagine or another suitable image generator with one standardized prompt: consistent style, dimensions, transparent background, padding, and readability at table-icon size. Vary only the category subject and its existing colour. Review a small sample before generating the complete set.
-3. Render the mapped icons in the annotation cells. Add custom full-name tooltips, accessible labels, keyboard focus, and a way to reveal names on touch devices.
-4. Check icon distinguishability, existing colour coding, multiple annotations, unknown categories, and light/dark and desktop/mobile layouts.
-
-**Done when:** Every category has a distinct, consistently styled icon; existing colours and annotation information are preserved; full names remain available through custom tooltips and assistive technology.
+**Maintaining the symbols:** Update the category mapping in `src/lib/annotation-icons.ts` when adding a category that should have its own icon.
 
 ## Gradual station software-update policy
 
