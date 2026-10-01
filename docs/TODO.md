@@ -6,7 +6,7 @@ Product / engineering follow-ups that are not in an active implementation plan.
 
 **Status:** implemented; replaces the category icons following review.
 
-The annotation column shows readable shorthand text in category-coloured badges. Full names and groups remain available through custom tooltips on hover, keyboard focus, or tap. Metadata columns have modest padding and explicit widths, leaving the remaining table width for annotations. Multiple annotations wrap, and structured API metadata preserves free-text names containing semicolons.
+The annotation column shows readable shorthand text in category-coloured badges. Full names and groups remain available through custom tooltips on hover, keyboard focus, or tap. Metadata columns keep their original padding and content widths; the shorthand is what leaves room for the badges. Multiple annotations wrap, and structured API metadata preserves free-text names containing semicolons.
 
 **Maintaining the labels:** Update `src/lib/annotation-labels.ts` to add shorthand for new categories. Unrecognized names retain their original text.
 
