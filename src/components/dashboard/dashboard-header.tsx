@@ -19,15 +19,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { DateRangePicker } from "@/components/date-range-picker";
-import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  HeaderPeriodControls, HeaderResultModeControls, HeaderRangeMeta,
+  HEADER_BAR_CLASS, HEADER_TITLE_CLASS, HEADER_CONTROLS_CLASS,
+} from "@/components/dashboard/header-controls";
+import { Label } from "@/components/ui/label";
 import {
   Sheet,
   SheetContent,
@@ -41,7 +37,6 @@ import { InfoTooltip } from "@/components/ui/info-tooltip";
 import {
   type DashboardPill,
   type DashboardRange,
-  dashboardRangeContextLabel,
   exportTimeRange,
   tableDatesForPill,
 } from "@/lib/dashboard-range";
@@ -76,14 +71,6 @@ const METRICS_HELP = (
     </p>
   </div>
 );
-
-/** O15: short + full labels use the same tokens (90d not “3 months”). */
-const PERIOD_PILLS: { value: DashboardPill; label: string; short: string }[] = [
-  { value: "7d", label: "7 days", short: "7d" },
-  { value: "30d", label: "30 days", short: "30d" },
-  { value: "90d", label: "90 days", short: "90d" },
-  { value: "all", label: "All time", short: "All" },
-];
 
 interface DashboardHeaderProps {
   dashboardRange: DashboardRange;
@@ -127,21 +114,6 @@ export function DashboardHeader({
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [themeMounted, setThemeMounted] = React.useState(false);
   React.useEffect(() => setThemeMounted(true), []);
-  const contextDates = dashboardRangeContextLabel(dashboardRange);
-  // Fixed-width clock (2-digit hour + always-shown dayPeriod) so the
-  // "Updated …" slot never changes width when dataAsOf stamps or reloads.
-  const dataAsOfLabel = React.useMemo(() => {
-    if (!dataAsOf) return null;
-    try {
-      return dataAsOf.toLocaleTimeString(undefined, {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      });
-    } catch {
-      return null;
-    }
-  }, [dataAsOf]);
   const customDates = dashboardRange.kind === "custom"
     ? dashboardRange
     : tableDatesForPill(dashboardRange.kind);
@@ -149,11 +121,6 @@ export function DashboardHeader({
   const [isGeneratingFailedData, setIsGeneratingFailedData] =
     React.useState(false);
 
-  const activePill =
-    !prefsReady || dashboardRange.kind === "custom"
-      ? null
-      : dashboardRange.kind;
-  const isCustom = prefsReady && dashboardRange.kind === "custom";
   const exportRange = exportTimeRange(dashboardRange);
   // Always show export limitation note (APIs are timeRange-only; ignore annotation)
   const showExportLimitation = true;
@@ -228,16 +195,10 @@ export function DashboardHeader({
     }
   };
 
-  // Meta lives in a fixed-width slot outside the centered controls so
-  // date/Updated content can never re-center the period + mode toggles.
-  // Widths sized for longest common labels: "Sep 30 – Oct 30" + "Updated 12:59 PM".
-  const metaDatesText = contextDates ?? "—";
-  const metaClockText = dataAsOfLabel ?? "––:–– ––";
-
   return (
-    <header className="z-20 flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background px-3 py-2 sm:px-4 lg:px-6">
+    <header className={HEADER_BAR_CLASS}>
       <div className="flex min-w-0 items-center gap-1.5">
-        <h1 className="truncate text-sm font-semibold tracking-tight sm:text-base lg:text-lg">
+        <h1 className={HEADER_TITLE_CLASS}>
           BurnIn Dashboard
         </h1>
         <InfoTooltip content={METRICS_HELP} side="bottom" />
@@ -246,134 +207,22 @@ export function DashboardHeader({
       {/* Period + result mode only — large touch targets (O12).
           Meta (dates / Updated) is intentionally NOT in this flex so
           justify-center cannot reflow when those strings mount. */}
-      <div className="flex flex-1 flex-wrap items-center justify-end gap-2 sm:justify-center sm:gap-3">
-        <ToggleGroup
-          type="single"
-          value={isCustom ? "custom" : (activePill ?? "")}
-          onValueChange={(value) => {
-            if (value && value !== "custom") onPeriodPill(value as DashboardPill);
-          }}
-          variant="outline"
-          className={cn(
-            "flex",
-            // O39: mute while prefs load (no pulse — pulse looked like motion)
-            !prefsReady && "pointer-events-none opacity-50",
-          )}
-          aria-busy={!prefsReady}
-        >
-          {PERIOD_PILLS.map((p) => (
-            <ToggleGroupItem
-              key={p.value}
-              value={p.value}
-              className="h-10 min-h-10 min-w-11 px-3 text-sm focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-              aria-label={p.label}
-              onPointerEnter={() => onPeriodPillPrefetch?.(p.value)}
-              onFocus={() => onPeriodPillPrefetch?.(p.value)}
-            >
-              {p.short}
-            </ToggleGroupItem>
-          ))}
-          <DateRangePicker
-            from={customDates.from}
-            to={customDates.to}
-            trigger={
-              <ToggleGroupItem
-                value="custom"
-                data-selected={isCustom}
-                disabled={!prefsReady}
-                className="h-10 min-h-10 min-w-11 px-3 text-sm focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring data-[selected=true]:bg-primary data-[selected=true]:text-primary-foreground"
-                aria-label="Custom date range"
-              >
-                Custom
-              </ToggleGroupItem>
-            }
-            active={isCustom}
-            disabled={!prefsReady}
-            open={customOpen}
-            onOpenChange={setCustomOpen}
-            onRangeChange={(from, to) => {
-              if (!from && !to) onPeriodPill("all");
-              else onCustomRange(from, to);
-            }}
-          />
-        </ToggleGroup>
-
-        {/* O6: Result mode always visible (desktop); compact on mobile */}
-        <ToggleGroup
-          type="single"
-          value={chartMode}
-          onValueChange={(value) => {
-            if (value) onChartModeChange(value);
-          }}
-          variant="outline"
-          className={cn(
-            "hidden md:flex",
-            !prefsReady && "pointer-events-none opacity-50",
-          )}
-          aria-label="Result mode"
-        >
-          <ToggleGroupItem
-            value="recent"
-            className="h-10 min-h-10 px-3 text-sm focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-            title="One result per inverter in the window"
-          >
-            Latest
-          </ToggleGroupItem>
-          <ToggleGroupItem
-            value="all"
-            className="h-10 min-h-10 px-3 text-sm focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-            title="Every test run counts"
-          >
-            All tests
-          </ToggleGroupItem>
-        </ToggleGroup>
-
-        {/* Mobile mode: short select */}
-        <Select
-          value={prefsReady ? chartMode : undefined}
-          onValueChange={onChartModeChange}
-          disabled={!prefsReady}
-        >
-          <SelectTrigger
-            className="h-10 min-h-10 w-[6.75rem] md:hidden"
-            aria-label="Result mode"
-          >
-            <SelectValue placeholder="Mode…" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="recent">Latest</SelectItem>
-            <SelectItem value="all">All tests</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className={HEADER_CONTROLS_CLASS}>
+        <HeaderPeriodControls
+          period={dashboardRange.kind}
+          from={customDates.from}
+          to={customDates.to}
+          onPeriodChange={(period) => onPeriodPill(period as DashboardPill)}
+          onCustomRange={onCustomRange}
+          onPeriodPrefetch={(period) => onPeriodPillPrefetch?.(period as DashboardPill)}
+          ready={prefsReady}
+          open={customOpen}
+          onOpenChange={setCustomOpen}
+        />
+        <HeaderResultModeControls mode={chartMode} onModeChange={onChartModeChange} ready={prefsReady} />
       </div>
 
-      {/* Meta slot (lg+): fixed width for pill periods so center toggles
-          don’t reflow; custom ranges grow to fit the full date badge. */}
-      <div
-        className={cn(
-          "hidden shrink-0 items-center justify-end gap-2 text-xs tabular-nums text-muted-foreground lg:flex",
-          isCustom ? "w-auto min-w-[15.5rem]" : "w-[15.5rem]",
-        )}
-        aria-live="polite"
-      >
-        <span
-          className={cn(
-            "whitespace-nowrap text-right",
-            isCustom
-              ? "rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 font-medium text-primary"
-              : "min-w-0 max-w-[7.25rem] truncate",
-          )}
-          title="UTC calendar days"
-        >
-          {isCustom ? `${metaDatesText} · UTC` : metaDatesText}
-        </span>
-        <span
-          className="w-[8.25rem] shrink-0 whitespace-nowrap text-right text-muted-foreground/80"
-          title="Client time of last dashboard data update"
-        >
-          Updated {metaClockText}
-        </span>
-      </div>
+      <HeaderRangeMeta range={dashboardRange} updatedAt={dataAsOf} ready={prefsReady} />
 
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
         {/* More sheet */}

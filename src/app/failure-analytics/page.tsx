@@ -3,15 +3,13 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ReactECharts from "echarts-for-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { IconAlertTriangle, IconCircleX, IconClipboardList } from "@tabler/icons-react";
-import { DateRangePicker } from "@/components/date-range-picker";
-import { type DashboardRange, tableDatesForPill, utcDaysAgoYmd, utcTodayYmd, dashboardRangeContextLabel } from "@/lib/dashboard-range";
+import { FailureAnalyticsHeader, type AnalyticsRange } from "@/components/dashboard/failure-analytics-header";
+import { type DashboardRange, tableDatesForPill, utcDaysAgoYmd, utcTodayYmd } from "@/lib/dashboard-range";
 import { loadDashboardPrefs, patchDashboardPrefs, resolveDashboardInitState } from "@/lib/dashboard-prefs";
 import { burninChartColors, burninSeriesPalette } from "@/lib/chart-theme";
 
@@ -58,16 +56,12 @@ export default function FailureAnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [refetching, setRefetching] = useState(false);
+  const [dataAsOf, setDataAsOf] = useState<Date | null>(null);
   const [percentageMode, setPercentageMode] = useState<PercentageMode>("failed");
   const [chartMode, setChartMode] = useState("recent"); // 'recent' or 'all'
-  const [range, setRange] = useState<DashboardRange | { kind: "180d" } | { kind: "365d" }>({ kind: "all" });
+  const [range, setRange] = useState<AnalyticsRange>({ kind: "all" });
   const [rangeReady, setRangeReady] = useState(false);
   const timeRange = range.kind;
-  const customDates = range.kind === "custom"
-    ? range
-    : range.kind === "180d" || range.kind === "365d"
-      ? { from: utcDaysAgoYmd(range.kind === "180d" ? 180 : 365), to: utcTodayYmd() }
-      : tableDatesForPill(range.kind);
 
   useEffect(() => {
     const saved = loadDashboardPrefs();
@@ -117,7 +111,10 @@ export default function FailureAnalyticsPage() {
         const response = await fetch(`/api/failure-analytics?${params}`, { signal: abort.signal });
         if (!response.ok) throw new Error("Failed to load failure analytics");
         const result = await response.json();
-        if (!abort.signal.aborted) setData(result);
+        if (!abort.signal.aborted) {
+          setData(result);
+          setDataAsOf(new Date());
+        }
       } catch (error) {
         if (!abort.signal.aborted) console.error("Error fetching failure analytics:", error);
       } finally {
@@ -159,20 +156,33 @@ export default function FailureAnalyticsPage() {
     }
   }, [timeRange, availableGroupings, timeGrouping]);
 
+  const header = (
+    <FailureAnalyticsHeader
+      range={range}
+      onRangeChange={changeRange}
+      chartMode={chartMode}
+      onChartModeChange={setChartMode}
+      percentageMode={percentageMode}
+      onPercentageModeChange={setPercentageMode}
+      ready={rangeReady}
+      updatedAt={dataAsOf}
+    />
+  );
+
   if (initialLoading) {
     return (
-      <div className="ml-10 px-6 py-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Failure Analytics</h1>
-        </div>
-        <div className="grid gap-6 md:grid-cols-3">
-          <Skeleton className="h-32" />
-          <Skeleton className="h-32" />
-          <Skeleton className="h-32" />
-        </div>
-        <div className="grid gap-6 md:grid-cols-2">
-          <Skeleton className="h-96" />
-          <Skeleton className="h-96" />
+      <div className="ml-10 flex h-dvh flex-col overflow-hidden">
+        {header}
+        <div className="flex-1 space-y-6 overflow-y-auto px-4 py-4 md:py-6 lg:px-6">
+          <div className="grid gap-6 md:grid-cols-3">
+            <Skeleton className="h-32" />
+            <Skeleton className="h-32" />
+            <Skeleton className="h-32" />
+          </div>
+          <div className="grid gap-6 md:grid-cols-2">
+            <Skeleton className="h-96" />
+            <Skeleton className="h-96" />
+          </div>
         </div>
       </div>
     );
@@ -180,8 +190,11 @@ export default function FailureAnalyticsPage() {
 
   if (!data) {
     return (
-      <div className="ml-10 px-6 py-6">
-        <p>Failed to load failure analytics data.</p>
+      <div className="ml-10 flex h-dvh flex-col overflow-hidden">
+        {header}
+        <div className="flex-1 overflow-y-auto px-4 py-4 lg:px-6">
+          <p>Failed to load failure analytics data.</p>
+        </div>
       </div>
     );
   }
@@ -710,145 +723,11 @@ export default function FailureAnalyticsPage() {
   };
 
   return (
-    <div className="ml-10 px-6 py-6 space-y-6">
-      {/* Header - Never re-renders */}
-      <div className="sticky top-0 z-10 bg-background pb-4 -mx-6 px-6 pt-6 -mt-6 flex items-center justify-between flex-wrap gap-6 shadow-sm">
-        <h1 className="text-3xl font-bold">Failure Analytics</h1>
-        <div className="flex gap-6 items-center flex-wrap">
-          {/* Chart Mode Toggle */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm font-medium text-muted-foreground min-w-[50px]">Mode</span>
-              <InfoTooltip content={
-                <>
-                  <strong>Latest per S/N:</strong> Analyzes only the most recent test for each serial number.
-                  <br />
-                  <strong>All Tests:</strong> Includes every test run in the analysis.
-                </>
-              } side="bottom" />
-            </div>
-            <ToggleGroup
-              type="single"
-              value={chartMode}
-              onValueChange={(value) => value && setChartMode(value)}
-              className="gap-1 bg-muted/50 p-1 rounded-lg"
-            >
-              <ToggleGroupItem
-                value="recent"
-                className="data-[state=on]:bg-background data-[state=on]:shadow-sm hover:bg-muted transition-all px-4 py-2"
-              >
-                Latest per S/N
-              </ToggleGroupItem>
-              <ToggleGroupItem
-                value="all"
-                className="data-[state=on]:bg-background data-[state=on]:shadow-sm hover:bg-muted transition-all px-4 py-2"
-              >
-                All Tests
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-
-          {/* Time Range Toggle */}
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-sm font-medium text-muted-foreground min-w-[50px]">Period</span>
-            <ToggleGroup
-              type="single"
-              value={timeRange}
-              onValueChange={(value) => { if (value && value !== "custom") changeRange({ kind: value as Exclude<typeof range["kind"], "custom"> }); }}
-              className="flex-wrap gap-1 bg-muted/50 p-1 rounded-lg"
-            >
-              {[{ value: "7d", label: "7d" }, { value: "30d", label: "30d" }].map((period) => (
-                <ToggleGroupItem key={period.value} value={period.value} className="data-[state=on]:bg-background data-[state=on]:shadow-sm hover:bg-muted px-3 py-2">
-                  {period.label}
-                </ToggleGroupItem>
-              ))}
-              <ToggleGroupItem
-                value="90d"
-                className="data-[state=on]:bg-background data-[state=on]:shadow-sm hover:bg-muted transition-all px-3 py-2"
-              >
-                Last 3mo
-              </ToggleGroupItem>
-              <ToggleGroupItem
-                value="180d"
-                className="data-[state=on]:bg-background data-[state=on]:shadow-sm hover:bg-muted transition-all px-3 py-2"
-              >
-                Last 6mo
-              </ToggleGroupItem>
-              <ToggleGroupItem
-                value="365d"
-                className="data-[state=on]:bg-background data-[state=on]:shadow-sm hover:bg-muted transition-all px-3 py-2"
-              >
-                Last year
-              </ToggleGroupItem>
-              <ToggleGroupItem
-                value="all"
-                className="data-[state=on]:bg-background data-[state=on]:shadow-sm hover:bg-muted transition-all px-3 py-2"
-              >
-                All
-              </ToggleGroupItem>
-              <DateRangePicker
-                from={customDates.from}
-                to={customDates.to}
-                trigger={
-                  <ToggleGroupItem
-                    value="custom"
-                    data-selected={range.kind === "custom"}
-                    className="data-[selected=true]:bg-background data-[selected=true]:shadow-sm hover:bg-muted transition-all px-3 py-2"
-                    aria-label="Custom date range"
-                  >
-                    Custom
-                  </ToggleGroupItem>
-                }
-                active={range.kind === "custom"}
-                onRangeChange={(from, to) => changeRange(!from && !to ? { kind: "all" } : { kind: "custom", from, to })}
-              />
-            </ToggleGroup>
-
-            {range.kind === "custom" && (
-              <span className="text-xs text-muted-foreground">{dashboardRangeContextLabel(range)} · UTC</span>
-            )}
-          </div>
-
-          {/* Percentage Mode Toggle */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm font-medium text-muted-foreground min-w-[80px]">Percentage</span>
-              <InfoTooltip content={
-                <>
-                  <strong>Affects pie chart labels/tooltips only.</strong>
-                  <br /><br />
-                  Changes the percentage values shown, but not the visual slice sizes (relative proportions remain the same).
-                  <br /><br />
-                  <strong>% of Failed:</strong> Shows each category as a percentage of all failed tests.
-                  <br />
-                  <strong>% of All:</strong> Shows each category as a percentage of all tests (passed + failed).
-                </>
-              } side="bottom" />
-            </div>
-            <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
-              <Button
-                variant={percentageMode === "failed" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setPercentageMode("failed")}
-                className={percentageMode === "failed" ? "shadow-sm" : "hover:bg-muted"}
-              >
-                % of Failed
-              </Button>
-              <Button
-                variant={percentageMode === "all" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setPercentageMode("all")}
-                className={percentageMode === "all" ? "shadow-sm" : "hover:bg-muted"}
-              >
-                % of All
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="ml-10 flex h-dvh flex-col overflow-hidden">
+      {header}
 
       {/* Content area with transition */}
-      <div className={`transition-opacity duration-300 ${refetching ? "opacity-50" : "opacity-100"}`}>
+      <div className={`flex-1 overflow-y-auto px-4 py-4 md:py-6 lg:px-6 transition-opacity duration-300 ${refetching ? "opacity-50" : "opacity-100"}`}>
         {/* Stats Cards */}
         <div className="grid gap-6 md:grid-cols-3 mb-6">
         <Card className="p-6">
