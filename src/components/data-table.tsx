@@ -22,7 +22,7 @@ import {
   Unlink,
   X,
 } from "lucide-react";
-import { AnnotationIcons } from "@/components/dashboard/annotation-icons";
+import { AnnotationLabels } from "@/components/dashboard/annotation-labels";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { useStationAliases } from "@/hooks/useStationAliases";
 import {
@@ -154,7 +154,8 @@ function dedupeTestsById(rows: TestRow[]): TestRow[] {
 const createColumns = (formatInTimezone: (dateString: string) => string, selectedTimezone: string): ColumnDef<z.infer<typeof testSchema>>[] => [
   {
     accessorKey: "serial_number",
-    header: "Inverter Serial Number",
+    header: "Serial number",
+    size: 144,
     cell: ({ row }) => (
       <div className="font-medium">{row.original.serial_number}</div>
     ),
@@ -171,6 +172,7 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
   },
   {
     accessorKey: "test_count",
+    size: 72,
     header: () => (
       <span title="Test number of total for this serial number across all dates and results">Tests</span>
     ),
@@ -186,10 +188,11 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
   },
   {
     accessorKey: "firmware_version",
+    size: 96,
     // O36: dense header; full name on hover
     header: () => <span title="Firmware Version">FW</span>,
     cell: ({ row }) => (
-      <div className="w-20 truncate font-mono text-xs sm:w-28 sm:text-sm" title={row.original.firmware_version}>
+      <div className="truncate font-mono text-xs sm:text-sm" title={row.original.firmware_version}>
         {row.original.firmware_version}
       </div>
     ),
@@ -199,6 +202,7 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
   },
   {
     accessorKey: "start_time",
+    size: 220,
     header: () => (
       <span
         title={`Shown in ${selectedTimezone === "utc" ? "UTC" : selectedTimezone === "delhi" ? "Delhi (IST)" : "local"} time · filters use UTC calendar days`}
@@ -208,7 +212,7 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
     ),
     cell: ({ row }) => {
       return (
-        <div className="w-36 text-sm">
+        <div className="whitespace-nowrap text-sm">
           {formatInTimezone(row.original.start_time)}
         </div>
       );
@@ -232,6 +236,7 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
   },
   {
     accessorKey: "duration",
+    size: 104,
     header: "Duration",
     cell: ({ row }) => {
       const durationMs = row.original.duration;
@@ -245,8 +250,8 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
         <div
           className={
             nearComplete
-              ? "w-24 text-right tabular-nums text-emerald-700 dark:text-emerald-400"
-              : "w-24 text-right tabular-nums"
+              ? "text-right tabular-nums text-emerald-700 dark:text-emerald-400"
+              : "text-right tabular-nums"
           }
           title={
             nearComplete
@@ -263,6 +268,7 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
   },
   {
     accessorKey: "status",
+    size: 96,
     header: "Result",
     cell: ({ row }) => {
       const status = row.original.status;
@@ -304,10 +310,9 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
   {
     accessorKey: "annotations",
     header: "Annotations",
-    // O26: keep column narrow when empty; expand only with content
-    size: 120,
+    // Receives the remaining table width after the compact metadata columns.
     cell: ({ row }) => (
-      <AnnotationIcons items={row.original.annotation_items} text={row.original.annotations} />
+      <AnnotationLabels items={row.original.annotation_items} text={row.original.annotations} />
     ),
   },
 ];
@@ -1205,7 +1210,12 @@ export function DataTable({
             loading && data.length > 0 && "opacity-55",
           )}
         >
-          <Table>
+          <Table className="min-w-[960px] table-fixed [&_td]:px-1.5 [&_th]:px-1.5">
+            <colgroup>
+              {table.getVisibleLeafColumns().map(column => (
+                <col key={column.id} style={{ width: column.id === "annotations" ? undefined : column.columnDef.size }} />
+              ))}
+            </colgroup>
             <TableHeader className="bg-muted sticky top-0 z-10">
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id}>

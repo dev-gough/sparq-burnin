@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { annotationColour, annotationIcon, tableAnnotationItems } from "@/lib/annotation-icons";
+import { annotationColour, annotationShortLabel, tableAnnotationItems } from "@/lib/annotation-labels";
 
 describe("table annotation metadata", () => {
   it("retains full free-text names containing semicolons", () => {
@@ -20,10 +20,11 @@ describe("table annotation metadata", () => {
     expect(tableAnnotationItems(undefined, "-", [])).toEqual([]);
     expect(annotationColour(item)).toBe("#f59e0b");
   });
-  it("gives all 15 active categories a distinct symbol and supports historical names", () => {
-    const names = ["Unknown", "Channel Short Before Aging", "Internal DC Connection Loose", "Relay Issue", "Zigbee/NIOS UART", "Channel Short During Aging", "Inverter Failure - Other", "DC", "AC", "Mixed Connectors", "Unstable Grid", "Anti-Islanding", "GFDI Fault", "Device Timeout", "inverter over temperature"];
-    expect(new Set(names.map(annotationIcon)).size).toBe(names.length);
-    expect(annotationIcon("Channel Short BA")).toBe(annotationIcon("Channel Short Before Aging"));
-    expect(annotationIcon("Custom cause")).toBeDefined();
+  it("uses readable short names and retains custom text verbatim", () => {
+    expect(annotationShortLabel("Channel Short Before Aging")).toBe("Short (before aging)");
+    expect(annotationShortLabel("Channel Short BA")).toBe("Short (before aging)");
+    expect(annotationShortLabel("Channel Short During Aging")).toBe("Short (during aging)");
+    expect(annotationShortLabel("Internal DC Connection Loose")).toBe("Loose DC connection");
+    expect(annotationShortLabel("Custom cause; check cable")).toBe("Custom cause; check cable");
   });
 });

@@ -2,15 +2,13 @@
 
 Product / engineering follow-ups that are not in an active implementation plan.
 
-## Annotation category icons in the dashboard table
+## Compact annotation text in the dashboard table
 
-**Status:** implemented.
+**Status:** implemented; replaces the category icons following review.
 
-The annotation column uses distinct Lucide vector symbols for the 15 active categories, with historical-name aliases and a generic symbol for custom/new annotations. The user chose consistent vector icons instead of generated raster images. Colours follow category metadata; custom and ungrouped annotations use grey.
+The annotation column shows readable shorthand text in category-coloured badges. Full names and groups remain available through custom tooltips on hover, keyboard focus, or tap. Metadata columns have modest padding and explicit widths, leaving the remaining table width for annotations. Multiple annotations wrap, and structured API metadata preserves free-text names containing semicolons.
 
-Custom tooltips show the full annotation name and group on hover, keyboard focus, or tap. Clicking an icon reveals its name without opening the test row. Multiple annotations remain visible, and structured API metadata preserves free-text names containing semicolons.
-
-**Maintaining the symbols:** Update the category mapping in `src/lib/annotation-icons.ts` when adding a category that should have its own icon.
+**Maintaining the labels:** Update `src/lib/annotation-labels.ts` to add shorthand for new categories. Unrecognized names retain their original text.
 
 ## Gradual station software-update policy
 

@@ -1,39 +1,31 @@
-import {
-  Activity, AlarmClockOff, ArrowDownToLine, BatteryLow, Cable, CircleHelp, CircuitBoard,
-  ClockAlert, Cpu, MessageSquare, Network, PlugZap, PowerOff, Radio,
-  ShieldAlert, ThermometerSun, Unplug, Waves, Zap, ZapOff,
-  type LucideIcon,
-} from "lucide-react";
-
 export type AnnotationItem = { name: string; group_name: string | null; group_color: string | null };
 
-/** Stable symbols for current categories and their historical names. */
-const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  "unknown": CircleHelp,
-  "channel short before aging": ZapOff,
-  "channel short ba": ZapOff,
-  "channel short during aging": ClockAlert,
-  "channel short aa": ClockAlert,
-  "internal dc connection loose": Unplug,
-  "relay issue": CircuitBoard,
-  "zigbee/nios uart": Network,
-  "inverter failure - other": Cpu,
-  "zigbee failure - other": Radio,
-  "dc": Zap,
-  "ac": Waves,
-  "grid": PlugZap,
-  "mixed connectors": Cable,
-  "unstable grid": Activity,
-  "anti-islanding": PowerOff,
-  "gfdi fault": ShieldAlert,
-  "device timeout": AlarmClockOff,
-  "inverter over temperature": ThermometerSun,
-  "channel undervoltage ba": ArrowDownToLine,
-  "channel undervoltage aa": BatteryLow,
+/** Short labels keep the cause recognizable; tooltips retain the original name. */
+const SHORT_LABELS: Record<string, string> = {
+  "channel short before aging": "Short (before aging)",
+  "channel short ba": "Short (before aging)",
+  "channel short during aging": "Short (during aging)",
+  "channel short aa": "Short (during aging)",
+  "internal dc connection loose": "Loose DC connection",
+  "relay issue": "Relay issue",
+  "zigbee/nios uart": "Zigbee / UART",
+  "inverter failure - other": "Inverter failure (other)",
+  "zigbee failure - other": "Zigbee failure (other)",
+  "dc": "DC setup",
+  "ac": "AC setup",
+  "grid": "Grid setup",
+  "mixed connectors": "Mixed connectors",
+  "unstable grid": "Unstable grid",
+  "anti-islanding": "Anti-islanding",
+  "gfdi fault": "GFDI fault",
+  "device timeout": "Timeout",
+  "inverter over temperature": "Overtemperature",
+  "channel undervoltage ba": "Undervoltage (before aging)",
+  "channel undervoltage aa": "Undervoltage (during aging)",
 };
 
-export function annotationIcon(name: string): LucideIcon {
-  return CATEGORY_ICONS[name.trim().toLowerCase()] ?? MessageSquare;
+export function annotationShortLabel(name: string): string {
+  return SHORT_LABELS[name.trim().toLowerCase()] ?? name;
 }
 
 export function annotationColour(item: AnnotationItem): string {

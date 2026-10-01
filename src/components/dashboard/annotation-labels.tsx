@@ -1,11 +1,11 @@
 "use client";
 
-import { createElement, useState } from "react";
+import { useState } from "react";
 import { useAnnotationCache } from "@/contexts/AnnotationCacheContext";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { annotationColour, annotationIcon, tableAnnotationItems, type AnnotationItem } from "@/lib/annotation-icons";
+import { annotationColour, annotationShortLabel, tableAnnotationItems, type AnnotationItem } from "@/lib/annotation-labels";
 
-function AnnotationSymbol({ item }: { item: AnnotationItem }) {
+function AnnotationLabel({ item }: { item: AnnotationItem }) {
   const [open, setOpen] = useState(false);
   const colour = annotationColour(item);
   return (
@@ -14,16 +14,16 @@ function AnnotationSymbol({ item }: { item: AnnotationItem }) {
         <button
           type="button"
           aria-label={item.group_name ? `${item.name} (${item.group_name})` : item.name}
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border transition-shadow hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          style={{ color: colour, backgroundColor: `${colour}14`, borderColor: `${colour}40` }}
+          className="inline-flex min-h-7 min-w-0 max-w-full items-center rounded-md border px-2 py-1 text-xs font-medium leading-tight transition-shadow hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          style={{ color: `color-mix(in srgb, ${colour} 80%, var(--foreground) 20%)`, backgroundColor: `${colour}14`, borderColor: `${colour}40` }}
           onClick={event => {
-            // Tap/Enter reveals the name without opening the test row.
+            // Tap/Enter reveals the full name without opening the test row.
             event.preventDefault();
             event.stopPropagation();
             setOpen(previous => !previous);
           }}
         >
-          {createElement(annotationIcon(item.name), { className: "size-[18px]", strokeWidth: 1.8, "aria-hidden": true })}
+          <span className="truncate">{annotationShortLabel(item.name)}</span>
         </button>
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={6} className="max-w-72 px-3 py-2 text-left">
@@ -34,15 +34,15 @@ function AnnotationSymbol({ item }: { item: AnnotationItem }) {
   );
 }
 
-export function AnnotationIcons({ items, text }: { items?: AnnotationItem[]; text: string | null }) {
+export function AnnotationLabels({ items, text }: { items?: AnnotationItem[]; text: string | null }) {
   const { quickOptions } = useAnnotationCache();
   const annotations = tableAnnotationItems(items, text, quickOptions.map(option => ({
     name: option.option_text, group_name: option.group_name, group_color: option.group_color,
   })));
   if (!annotations.length) return <span className="text-sm text-muted-foreground/50" aria-hidden>—</span>;
   return (
-    <div className="flex max-w-60 flex-wrap gap-1.5 py-0.5">
-      {annotations.map(item => <AnnotationSymbol key={JSON.stringify([item.name, item.group_name])} item={item} />)}
+    <div className="flex min-w-0 flex-wrap gap-1.5 py-0.5">
+      {annotations.map(item => <AnnotationLabel key={JSON.stringify([item.name, item.group_name])} item={item} />)}
     </div>
   );
 }
