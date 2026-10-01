@@ -16,7 +16,7 @@ import {
   type FailureAnalyticsData, type FailureCause, type TimeGrouping,
   TIME_GROUPINGS, groupFailureTimeline, weightedFailureAverage, formatFailureBucket, rollingTestFailureRates,
 } from "@/lib/failure-analytics";
-import { type DashboardRange, dashboardRangeContextLabel, todoHrefFromDashboardRange } from "@/lib/dashboard-range";
+import { type DashboardRange, dashboardRangeContextLabel, tableDatesForPill, todoHrefFromDashboardRange } from "@/lib/dashboard-range";
 import { burninChartColors, burninSeriesPalette } from "@/lib/chart-theme";
 import { cn } from "@/lib/utils";
 
@@ -114,6 +114,8 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
   const failureRate = data.totalTests > 0 ? data.totalFailedTests / data.totalTests * 100 : 0;
   const tagged = data.totalFailedTests - data.untaggedFailed;
   const coverage = data.totalFailedTests > 0 ? tagged / data.totalFailedTests * 100 : null;
+  const selectedDates = range.kind === "custom" ? range : tableDatesForPill(range.kind);
+  const dateLabel = range.kind === "all" ? "All time · UTC" : `${selectedDates.from} – ${selectedDates.to} · UTC`;
   const groupColors = new Map(data.groups.map((group, index) => [group.name, group.group_color || burninSeriesPalette[index % burninSeriesPalette.length]]));
   const categoryColors = new Map(data.categories.map((category, index) => [category.name, burninSeriesPalette[index % burninSeriesPalette.length]]));
   const categories = data.categories.filter(category => !expandedGroup || category.group_name === expandedGroup).sort((a, b) => b.count - a.count);
@@ -123,6 +125,7 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
   const failed = ratePoints.map(point => Number(point.failed));
   const rates = totals.map((total, index) => total > 0 ? failed[index] / total * 100 : 0);
   const averageWindow = Math.min(7, Math.max(3, Math.floor(rates.length / 4)));
+  const periodUnit = { daily: "day", weekly: "week", biweekly: "fortnight", monthly: "month", quarterly: "quarter" }[grouping];
   const empty = (breakdown: "category" | "group" | "rate", hasData: boolean) => failureChartEmptyState({ hasData, breakdown, totalTests: data.totalTests, totalFailedTests: data.totalFailedTests });
   const tooltip = {
     trigger: "axis", confine: true,
@@ -217,10 +220,10 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
         <span className="rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground">{dashboardRangeContextLabel(range)} · UTC</span>
       </div>
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Metric label="Failure rate" value={data.totalTests ? percentage(failureRate) : "—"} detail={`${number(data.totalFailedTests)} failed of ${number(data.totalTests)} tested`} icon={<BarChart3 className="size-4" />} tone={!data.totalTests ? "text-muted-foreground" : data.totalFailedTests ? "text-rose-500" : "text-emerald-500"} />
+        <Metric label="Failure rate" value={data.totalTests ? percentage(failureRate) : "—"} detail={<><span className="block">{number(data.totalFailedTests)} failed of {number(data.totalTests)} tested</span><span className="mt-1 block text-[11px]">{dateLabel}</span></>} icon={<BarChart3 className="size-4" />} tone={!data.totalTests ? "text-muted-foreground" : data.totalFailedTests ? "text-rose-500" : "text-emerald-500"} />
         <Metric label={chartMode === "recent" ? "Unique inverters" : "Total tests"} value={number(data.totalTests)} detail={<span className="inline-flex items-center gap-1"><CheckCheck className="size-3 text-emerald-500" />{number(data.totalTests - data.totalFailedTests)} passed</span>} icon={<ClipboardList className="size-4" />} />
         <Metric label={chartMode === "recent" ? "Failed · latest per inverter" : "Failed tests"} value={number(data.totalFailedTests)} detail={chartMode === "recent" ? "Most recent PASS / FAIL within the period" : "Every failed test run within the period"} icon={<CircleX className="size-4" />} tone={data.totalFailedTests ? "text-rose-500" : undefined} />
-        <Metric label="Annotation coverage" value={coverage === null ? "—" : `${coverage.toFixed(0)}%`} detail={data.totalFailedTests ? <><span>{number(tagged)} of {number(data.totalFailedTests)} failures annotated</span>{data.untaggedFailed > 0 && <Link href={todoHrefFromDashboardRange(range)} className="mt-1 flex items-center gap-1 font-medium text-amber-500 hover:underline">{number(data.untaggedFailed)} untagged · review <ArrowUpRight className="size-3" /></Link>}</> : "No failed tests to annotate"} icon={<Tags className="size-4" />} tone={data.untaggedFailed ? "text-amber-500" : undefined} />
+        <Metric label="Annotated failures" value={number(tagged)} detail={<><span className="block">{coverage === null ? "No failed tests to annotate" : `${coverage.toFixed(0)}% annotation coverage · ${number(data.totalFailedTests)} failures`}</span><span className="mt-1 block text-[11px]">Period total; each failed test counted once.</span>{data.untaggedFailed > 0 && <Link href={todoHrefFromDashboardRange(range)} className="mt-1 flex items-center gap-1 font-medium text-amber-500 hover:underline">{number(data.untaggedFailed)} untagged · review <ArrowUpRight className="size-3" /></Link>}</>} icon={<Tags className="size-4" />} tone={data.untaggedFailed ? "text-amber-500" : undefined} />
       </div>
 
       <section className="space-y-3" aria-label="Failure trend and test volume">
@@ -240,7 +243,8 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
                 {rateView === "tests" && <Select value={String(testWindow)} onValueChange={value => setTestWindow(Number(value))}><SelectTrigger className="h-7 w-[125px] text-[11px]" aria-label="Rolling test window"><SelectValue /></SelectTrigger><SelectContent>{[10, 25, 50, 100, 250, 500, 1000, 2000].map(value => <SelectItem key={value} value={String(value)}>{number(value)} tests</SelectItem>)}</SelectContent></Select>}
               </div>
             )}
-            {rateView === "date" ? chart("Failure rate over time", rateOption, "rate", ratePoints.length > 0, 280) : (
+            <p className="px-4 text-[11px] text-muted-foreground sm:px-5">Selected period: {dateLabel}</p>
+            {rateView === "date" ? <>{chart("Failure rate over time", rateOption, "rate", ratePoints.length > 0, 280)}<p className="px-4 pb-4 text-[11px] leading-relaxed text-muted-foreground sm:px-5"><strong className="font-medium">What is a {averageWindow}-period moving average?</strong> Each point combines failed tests and total tests from the current {periodUnit} and the previous {averageWindow - 1} {periodUnit}s with tests, then divides failures by total tests. Busier periods carry more weight; periods without tests are skipped. The line starts after {averageWindow} periods with data. The window adjusts from 3 to 7 periods based on the available history.</p></> : (
               <><FailureChartPanel title="Failure rate by test count" emptyState={rollingEmpty} height={254} showTitle={false}><ReactECharts option={rollingOption} replaceMerge={["series", "xAxis", "yAxis", "legend"]} style={{ height: 254 }} /></FailureChartPanel><p className="px-5 pb-3 text-[11px] text-muted-foreground">Tests are numbered within the selected period. {chartMode === "recent" ? "Latest counts one outcome per inverter; All tests includes every run." : "Each PASS / FAIL run counts once."}</p></>
             )}
           </Card>
