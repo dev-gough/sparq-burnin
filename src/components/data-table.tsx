@@ -771,7 +771,9 @@ export function DataTable({
     annotationFilter && annotationFilter !== "all",
   );
   const annotationLabel = annotationActive
-    ? annotationFilter.startsWith("group:")
+    ? annotationFilter === "tagged"
+      ? "Tagged tests"
+      : annotationFilter.startsWith("group:")
       ? `Category: ${annotationFilter.slice(6)}`
       : annotationFilter
     : null;
@@ -1018,6 +1020,7 @@ export function DataTable({
                   sideOffset={4}
                 >
                   <SelectItem value="all">All categories</SelectItem>
+                  <SelectItem value="tagged">Tagged tests (any annotation)</SelectItem>
                   {annotationGroups.map((group) => {
                     const hex = group.group_color.replace("#", "");
                     const r = parseInt(hex.substring(0, 2), 16);

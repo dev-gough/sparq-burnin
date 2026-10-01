@@ -359,7 +359,7 @@ export function AnnotationInsights({
               </div>
             )}
 
-            {/* Untagged chip only — caveat lives on /todo (O7 / O30) */}
+            {/* Annotation coverage: review untagged failures or filter to tagged tests. */}
             <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
               <Link
                 href={todoHref}
@@ -385,6 +385,18 @@ export function AnnotationInsights({
                   )}
                 </span>
               </Link>
+              <button
+                type="button"
+                className={cn(chipBase, annotationFilter === "tagged"
+                  ? "border-primary/50 bg-primary/10 text-foreground"
+                  : "border-border/80 bg-muted/30 text-muted-foreground hover:bg-muted")}
+                aria-pressed={annotationFilter === "tagged"}
+                title="Filter to tests with any annotation; count shows tagged failures in this period"
+                onClick={() => toggleFilter("tagged")}
+              >
+                <IconTag className="size-3 shrink-0" />
+                <span>Tagged tests <span className="ml-1 tabular-nums font-semibold">{data.totalFailed - data.untaggedFailed}</span></span>
+              </button>
             </div>
           </div>
         ) : (

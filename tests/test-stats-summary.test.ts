@@ -335,3 +335,22 @@ describe("table test counts", () => {
     expect(sql).toContain("(history.start_time_utc, history.test_id) <= (p.start_time, p.test_id)");
   });
 });
+
+describe("tagged tests filter", () => {
+  it.each([
+    "view=tests&latestOnly=true", "view=tests&latestOnly=false",
+    "view=summary&chartMode=recent", "view=summary&chartMode=all",
+    "view=has-data", "chartMode=recent&bucket=day", "chartMode=all&bucket=day",
+  ])("matches any annotation without treating tagged as a category: %s", async (query) => {
+    installDefaultQueryMock();
+    const response = await GET(req(`${query}&annotation=tagged&timeRange=all`));
+    expect(response.status).toBe(200);
+    const taggedQueries = queryMock.mock.calls.filter(([sql]) => typeof sql === "string" && sql.includes("FROM TestAnnotations tagged"));
+    expect(taggedQueries.length).toBeGreaterThan(0);
+    for (const [sql, params] of taggedQueries) {
+      expect(sql).toMatch(/tagged.current_test_id = (t|lt|latest|bl)\.test_id/);
+      expect(params ?? []).not.toContain("tagged");
+      expect(sql).not.toMatch(/AND ta(?:2)?\.annotation_text = \$/);
+    }
+  });
+});

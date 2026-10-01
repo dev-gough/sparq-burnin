@@ -72,6 +72,11 @@ interface TestRecord {
  */
 const UNGROUPED_ANNOTATION_LABEL = "Other";
 
+/** Any annotation, including free text and categories no longer active. */
+function taggedTestsExistsSql(testIdExpr: string): string {
+  return `EXISTS (SELECT 1 FROM TestAnnotations tagged WHERE tagged.current_test_id = ${testIdExpr})`;
+}
+
 /**
  * EXISTS fragment for group: filter on a test-id expression.
  * Returns whether the caller must bind `groupName` as $paramIndex.
@@ -166,7 +171,9 @@ async function querySummaryStats(
   let annotationUsesParam = false;
   if (annotationActive) {
     const annotationParamIndex = baseParams.length + 1;
-    if (isGroupFilter && filterValue) {
+    if (annotationFilter === "tagged") {
+      summaryAnnotationFilterClause = `AND ${taggedTestsExistsSql("t.test_id")}`;
+    } else if (isGroupFilter && filterValue) {
       const groupExists = annotationGroupExistsSql(
         "t.test_id",
         filterValue,
@@ -478,7 +485,7 @@ export async function GET(request: NextRequest) {
         testsStationSql = `AND t.station_id = $${testsQueryParams.length}`;
       }
       let annParamIdx: number | null = null;
-      if (annotationActive && filterValue) {
+      if (annotationActive && filterValue && annotationFilter !== "tagged") {
         if (isGroupFilter) {
           const probe = annotationGroupExistsSql("x", filterValue, 1);
           if (probe.usesParam) {
@@ -497,6 +504,7 @@ export async function GET(request: NextRequest) {
       /** Annotation EXISTS against an alias's test_id (applied before LIMIT). */
       function testsAnnotationSql(testIdExpr: string): string {
         if (!annotationActive || !filterValue) return "";
+        if (annotationFilter === "tagged") return `AND ${taggedTestsExistsSql(testIdExpr)}`;
         if (isGroupFilter) {
           const g = annotationGroupExistsSql(
             testIdExpr,
@@ -754,7 +762,9 @@ export async function GET(request: NextRequest) {
       const queryParams: string[] = [...timeParams];
       if (annotationActive) {
         const paramIndex = queryParams.length + 1;
-        if (isGroupFilter && filterValue) {
+        if (annotationFilter === "tagged") {
+          annotationSql = `AND ${taggedTestsExistsSql("t.test_id")}`;
+        } else if (isGroupFilter && filterValue) {
           const g = annotationGroupExistsSql(
             "t.test_id",
             filterValue,
@@ -1042,7 +1052,9 @@ export async function GET(request: NextRequest) {
     let chartAnnotationUsesParam = false;
     if (annotationActive) {
       const chartAnnotationParamIndex = chartTimeParams.length + 1;
-      if (isGroupFilter && filterValue) {
+      if (chartAnnotationFilter === "tagged") {
+        annotationFilter = `AND ${taggedTestsExistsSql("t.test_id")}`;
+      } else if (isGroupFilter && filterValue) {
         const g = annotationGroupExistsSql(
           "t.test_id",
           filterValue,
@@ -1067,7 +1079,9 @@ export async function GET(request: NextRequest) {
     let stripTagExists = "TRUE"; // annotation=all → all FAILs count
     if (annotationActive) {
       const stripAnnIdx = chartTimeParams.length + 1;
-      if (isGroupFilter && filterValue) {
+      if (chartAnnotationFilter === "tagged") {
+        stripTagExists = taggedTestsExistsSql("bl.test_id");
+      } else if (isGroupFilter && filterValue) {
         const g = annotationGroupExistsSql(
           "bl.test_id",
           filterValue,

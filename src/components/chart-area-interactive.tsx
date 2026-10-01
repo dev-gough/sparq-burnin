@@ -748,6 +748,7 @@ export function ChartAreaInteractive({
 /** Human label for table/dashboard annotation filter keys. */
 function formatAnnotationFilterLabel(filter: string): string | null {
   if (!filter || filter === "all") return null;
+  if (filter === "tagged") return "tagged tests";
   if (filter.startsWith("group:")) {
     return `category “${filter.slice(6)}”`;
   }
