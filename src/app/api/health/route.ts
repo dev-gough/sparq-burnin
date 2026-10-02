@@ -1003,7 +1003,7 @@ export async function GET(request: Request) {
   const body = {
     status,
     service: SERVICE_NAME,
-    version: process.env.APP_VERSION || process.env.npm_package_version || '0.7.0',
+    version: process.env.APP_VERSION || process.env.npm_package_version || '0.8.0',
     uptimeSec: Math.floor(process.uptime()),
     checkedAt: new Date().toISOString(),
     checks,

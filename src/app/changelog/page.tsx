@@ -15,7 +15,7 @@ export default function ChangelogPage() {
         <p className="text-xs font-medium uppercase tracking-[0.15em] text-muted-foreground">Releases</p>
         <h1 className="mt-1 text-xl font-semibold tracking-tight">Changelog</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-          Notes start with the work in progress. The package is {version}. The next time master is published to GitHub, these notes become the next version and the message on its tag.
+          What changed in each version. The package is {version}. Work after the latest version stays under Unreleased until master is published to GitHub.
         </p>
         <ol className="mt-8 space-y-8">
           {entries.map(entry => (

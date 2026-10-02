@@ -20,7 +20,7 @@ export async function registerNode(): Promise<void> {
       nodeEnv: process.env.NODE_ENV,
       service: 'mfg-datavis',
       version:
-        process.env.APP_VERSION || process.env.npm_package_version || '0.7.0',
+        process.env.APP_VERSION || process.env.npm_package_version || '0.8.0',
     })
   } catch (err) {
     console.error('[instrumentation] app log boot failed', err)
