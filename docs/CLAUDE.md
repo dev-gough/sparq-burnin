@@ -14,6 +14,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run db:schema` - Re-run database schema setup
 - Dont ever call `npm run build`, `npm run lint` is enough to troubleshoot any errors you may find.
 
+## Versions
+
+Releases use [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH` in `package.json`. Annotated tags are `vX.Y.Z`. The changelog starts at the current tree. Do not write notes for older tags.
+
+- **Patch** — a fix. Existing use of the dashboard, ingest, and station enrollment stays the same.
+- **Minor** — a feature existing stations and scripts can ignore. While the leading number is still 0, a contract break is also a minor bump.
+- **Major** — reserved for `1.0.0` and later, once ingest and station enrollment are a stable contract. After that, a break bumps major.
+
+`changelog/unreleased.md` is the working note. A push of `master` to `github` is a release, and it has to increment the version:
+
+1. Pick the bump from the list above.
+2. Move the Unreleased bullets into `changelog/vX.Y.Z.md`. The first line is `vX.Y.Z` or `vX.Y.Z — YYYY-MM-DD`. Sections are `Added`, `Changed`, `Fixed`, and `Shots`, each with `- ` bullets. Leave `changelog/unreleased.md` as the single line `Unreleased`.
+3. Set the version in `package.json` and `package-lock.json` with `npm version X.Y.Z --no-git-tag-version`.
+4. A visual change may add a before/after pair. Both PNGs are the same size, preferably 1920×1080, under `public/changelog/vX.Y.Z/`. The bullet is `- Caption | before /changelog/vX.Y.Z/name-before.png | after /changelog/vX.Y.Z/name-after.png`.
+5. Commit the version, the changelog files, and any shots.
+6. `git tag -a vX.Y.Z -F changelog/vX.Y.Z.md`
+7. When asked to publish GitHub, push that commit and the tag: `git push github master` and `git push github vX.Y.Z`.
+
+Pushing `origin` does not bump the version. Do not push `github` `master` without the new version, the changelog file, and the tag. `npm test` and `npm run build` still pass before that push, and `next dev` is stopped first so it is not sharing `.next`. A pipeline can enforce this later.
+
 ## Project Architecture
 
 This is a Next.js 15 application using the App Router with a dashboard-style interface built on modern React patterns.

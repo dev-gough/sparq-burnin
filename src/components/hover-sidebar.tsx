@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession, signOut, signIn } from "next-auth/react";
-import { User, LogOut, Users, LayoutDashboard, ListTodo, LogIn, BarChart3, Settings, Monitor, Moon, Sun, Server } from "lucide-react";
+import { User, LogOut, Users, LayoutDashboard, ListTodo, LogIn, BarChart3, Settings, Monitor, Moon, Sun, Server, ScrollText } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -34,6 +34,7 @@ export function HoverSidebar() {
     ...(isStationAdmin
       ? [{ href: "/stations", label: "Stations", icon: Server }]
       : []),
+    { href: "/changelog", label: "Changelog", icon: ScrollText },
     { href: "/settings", label: "Settings", icon: Settings },
   ];
 

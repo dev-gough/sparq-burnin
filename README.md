@@ -199,6 +199,12 @@ public/             Static assets
 
 Machine-local and gitignored: `config.json`, `.env.local`, `data/`, `logs/`.
 
+## Versions
+
+`package.json` is `MAJOR.MINOR.PATCH`. `/changelog` is the release list, and it starts from the current work rather than older tags. Notes that are on the lab but not yet published to GitHub stay under Unreleased.
+
+Publishing `master` to GitHub bumps the version, adds `changelog/vX.Y.Z.md`, and creates an annotated tag whose message is that file. A push to `origin` does not. A patch is a fix. A minor bump is a feature, and it is also a contract change while the version is still 0.x. Major starts at 1.0.0, when ingest and station enrollment are treated as stable. The steps, and the before/after screenshot line, are in [docs/CLAUDE.md](docs/CLAUDE.md).
+
 ## Documentation
 
 | Document | Subject |
