@@ -25,6 +25,35 @@ const percentage = (value: number) => `${value.toFixed(2)}%`;
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]!));
 type TooltipPoint = { axisValue?: string; value: number | string | null; marker: string; seriesName: string };
 
+function axisTooltip(dark: boolean, gridColor: string, textColor: string) {
+  return {
+    trigger: "axis" as const, confine: true,
+    backgroundColor: dark ? "#18181b" : "#ffffff", borderColor: gridColor,
+    textStyle: { color: textColor }, padding: [10, 14] as [number, number],
+    extraCssText: "border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15)",
+  };
+}
+
+function timelineAxes(dates: string[], unit: string, grouping: TimeGrouping, muted: string, gridColor: string, isRate = false) {
+  return {
+    grid: { left: 16, right: 20, top: 48, bottom: 16, containLabel: true },
+    xAxis: { type: "category" as const, data: dates, boundaryGap: !isRate, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: muted, hideOverlap: true, fontSize: 10, formatter: (value: string) => formatFailureBucket(value, grouping) } },
+    yAxis: { type: "value" as const, min: 0, ...(isRate ? {} : { minInterval: 1 }), name: unit, nameTextStyle: { color: muted, fontSize: 10 }, axisLabel: { color: muted, fontSize: 10, ...(isRate ? { formatter: "{value}%" } : {}) }, splitLine: { lineStyle: { color: gridColor, type: "dashed" as const } } },
+  };
+}
+
+function historyChartOption(rows: FailureCause[], timeline: FailureAnalyticsData["categoryTimeline"], colors: Map<string, string>, grouping: TimeGrouping, dark: boolean, text: string, muted: string, gridColor: string) {
+  const buckets = groupFailureTimeline(timeline, grouping);
+  return {
+    animationDurationUpdate: 0,
+    ...timelineAxes(buckets.map(point => point.date), "Annotations", grouping, muted, gridColor),
+    grid: { left: 16, right: 20, top: 64, bottom: 16, containLabel: true },
+    tooltip: { ...axisTooltip(dark, gridColor, text), formatter: (points: TooltipPoint[]) => [`<strong>${escapeHtml(points[0]?.axisValue ?? "")}</strong>`, ...points.filter(point => Number(point.value) > 0).map(point => `${point.marker} ${escapeHtml(point.seriesName)}: <strong>${number(Number(point.value))}</strong>`)].join("<br/>") },
+    legend: { type: "scroll" as const, top: 4, left: 16, right: 16, textStyle: { color: muted, fontSize: 10 }, pageTextStyle: { color: muted }, pageIconColor: muted },
+    series: rows.map(row => ({ name: row.name, type: "bar" as const, stack: "annotations", barMaxWidth: 32, data: buckets.map(point => Number(point[row.name] ?? 0)), emphasis: { focus: "series" as const }, itemStyle: { color: colors.get(row.name) } })),
+  };
+}
+
 function SectionLabel({ number: index, title, description, children }: {
   number: string; title: string; description: string; children?: ReactNode;
 }) {
@@ -116,32 +145,23 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
   const coverage = data.totalFailedTests > 0 ? tagged / data.totalFailedTests * 100 : null;
   const selectedDates = range.kind === "custom" ? range : tableDatesForPill(range.kind);
   const dateLabel = range.kind === "all" ? "All time · UTC" : `${selectedDates.from} – ${selectedDates.to} · UTC`;
-  const groupColors = new Map(data.groups.map((group, index) => [group.name, group.group_color || burninSeriesPalette[index % burninSeriesPalette.length]]));
-  const categoryColors = new Map(data.categories.map((category, index) => [category.name, burninSeriesPalette[index % burninSeriesPalette.length]]));
-  const categories = data.categories.filter(category => !expandedGroup || category.group_name === expandedGroup).sort((a, b) => b.count - a.count);
-  const groups = [...data.groups].sort((a, b) => b.count - a.count);
-  const ratePoints = groupFailureTimeline(data.failureRateTimeline.map(point => ({ date: point.date, total: point.total, failed: point.failed, passed: point.passed })), grouping);
-  const totals = ratePoints.map(point => Number(point.total));
-  const failed = ratePoints.map(point => Number(point.failed));
-  const rates = totals.map((total, index) => total > 0 ? failed[index] / total * 100 : 0);
+  const groupColors = useMemo(() => new Map(data.groups.map((group, index) => [group.name, group.group_color || burninSeriesPalette[index % burninSeriesPalette.length]])), [data.groups]);
+  const categoryColors = useMemo(() => new Map(data.categories.map((category, index) => [category.name, burninSeriesPalette[index % burninSeriesPalette.length]])), [data.categories]);
+  const categories = useMemo(() => data.categories.filter(category => !expandedGroup || category.group_name === expandedGroup).sort((a, b) => b.count - a.count), [data.categories, expandedGroup]);
+  const groups = useMemo(() => [...data.groups].sort((a, b) => b.count - a.count), [data.groups]);
+  // These options stay referentially stable across a group drill. A new option
+  // object makes echarts-for-react replace the series and replay the entrance animation.
+  const ratePoints = useMemo(() => groupFailureTimeline(data.failureRateTimeline.map(point => ({ date: point.date, total: point.total, failed: point.failed, passed: point.passed })), grouping), [data.failureRateTimeline, grouping]);
+  const totals = useMemo(() => ratePoints.map(point => Number(point.total)), [ratePoints]);
+  const failedCounts = useMemo(() => ratePoints.map(point => Number(point.failed)), [ratePoints]);
+  const rates = useMemo(() => totals.map((total, index) => total > 0 ? failedCounts[index] / total * 100 : 0), [totals, failedCounts]);
   const averageWindow = Math.min(7, Math.max(3, Math.floor(rates.length / 4)));
   const periodUnit = { daily: "day", weekly: "week", biweekly: "fortnight", monthly: "month", quarterly: "quarter" }[grouping];
   const empty = (breakdown: "category" | "group" | "rate", hasData: boolean) => failureChartEmptyState({ hasData, breakdown, totalTests: data.totalTests, totalFailedTests: data.totalFailedTests });
-  const tooltip = {
-    trigger: "axis", confine: true,
-    backgroundColor: dark ? "#18181b" : "#ffffff", borderColor: grid,
-    textStyle: { color: text }, padding: [10, 14],
-    extraCssText: "border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15)",
-  };
-  const axes = (dates: string[], unit: string, isRate = false) => ({
-    grid: { left: 16, right: 20, top: 48, bottom: 16, containLabel: true },
-    xAxis: { type: "category", data: dates, boundaryGap: !isRate, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: muted, hideOverlap: true, fontSize: 10, formatter: (value: string) => formatFailureBucket(value, grouping) } },
-    yAxis: { type: "value", min: 0, ...(isRate ? {} : { minInterval: 1 }), name: unit, nameTextStyle: { color: muted, fontSize: 10 }, axisLabel: { color: muted, fontSize: 10, ...(isRate ? { formatter: "{value}%" } : {}) }, splitLine: { lineStyle: { color: grid, type: "dashed" } } },
-  });
-  const rateOption = {
+  const rateOption = useMemo(() => ({
     animationDurationUpdate: 0,
-    ...axes(ratePoints.map(point => point.date), "Failure rate", true),
-    tooltip: { ...tooltip, formatter: (points: TooltipPoint[]) => {
+    ...timelineAxes(ratePoints.map(point => point.date), "Failure rate", grouping, muted, grid, true),
+    tooltip: { ...axisTooltip(dark, grid, text), formatter: (points: TooltipPoint[]) => {
       const lines = [`<strong>${escapeHtml(points[0]?.axisValue ?? "")}</strong>`];
       // ECharts exposes missing line values as "-", including the average's warm-up period.
       points.forEach(point => { if (typeof point.value === "number" && Number.isFinite(point.value)) lines.push(`${point.marker} ${escapeHtml(point.seriesName)}: <strong>${percentage(point.value)}</strong>`); });
@@ -149,17 +169,17 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
     } },
     legend: { top: 4, right: 16, textStyle: { color: muted, fontSize: 10 } },
     series: [
-      { name: "Failure rate", type: "line", data: rates, symbol: "circle", symbolSize: 5, itemStyle: { color: burninChartColors.failed.base }, lineStyle: { width: 2 }, areaStyle: { opacity: 0.06 } },
-      { name: `${averageWindow}-period moving average`, type: "line", data: weightedFailureAverage(totals, failed, averageWindow), symbol: "none", smooth: true, itemStyle: { color: burninChartColors.accent.indigo }, lineStyle: { width: 2, type: "dashed" } },
+      { name: "Failure rate", type: "line" as const, data: rates, symbol: "circle", symbolSize: 5, itemStyle: { color: burninChartColors.failed.base }, lineStyle: { width: 2 }, areaStyle: { opacity: 0.06 } },
+      { name: `${averageWindow}-period moving average`, type: "line" as const, data: weightedFailureAverage(totals, failedCounts, averageWindow), symbol: "none", smooth: true, itemStyle: { color: burninChartColors.accent.indigo }, lineStyle: { width: 2, type: "dashed" as const } },
     ],
-  };
+  }), [ratePoints, rates, totals, failedCounts, averageWindow, grouping, muted, grid, dark, text]);
   const rollingPoints = useMemo(() => rollingTestFailureRates(data.testOutcomes, testWindow), [data.testOutcomes, testWindow]);
-  const rollingOption = {
+  const rollingOption = useMemo(() => ({
     animation: false,
     animationDurationUpdate: 0,
     grid: { left: 16, right: 20, top: 32, bottom: 28, containLabel: true },
     tooltip: {
-      ...tooltip, trigger: "axis", axisPointer: { type: "line", snap: true },
+      ...axisTooltip(dark, grid, text), trigger: "axis" as const, axisPointer: { type: "line", snap: true },
       formatter: (points: { value: [number, number] }[]) => {
         const point = points[0];
         if (!point) return "";
@@ -167,40 +187,29 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
         return `<strong>Test ${number(index)}</strong><br/>Tests ${number(index - testWindow + 1)}–${number(index)}<br/>${number(Math.round(rate * testWindow / 100))} failed of ${number(testWindow)}<br/>Failure rate: <strong>${percentage(rate)}</strong>`;
       },
     },
-    xAxis: { type: "value", min: testWindow, max: Math.max(testWindow + 1, data.testOutcomes.length), minInterval: 1, name: "Test sequence", nameLocation: "middle", nameGap: 24, nameTextStyle: { color: muted, fontSize: 10 }, axisLabel: { color: muted, fontSize: 10 }, axisTick: { show: false }, axisLine: { show: false }, splitLine: { show: false } },
-    yAxis: { type: "value", min: 0, name: "Failure rate", nameTextStyle: { color: muted, fontSize: 10 }, axisLabel: { color: muted, fontSize: 10, formatter: "{value}%" }, splitLine: { lineStyle: { color: grid, type: "dashed" } } },
-    series: [{ name: `Last ${testWindow} tests`, type: "line", sampling: "lttb", data: rollingPoints, showSymbol: rollingPoints.length === 1, symbolSize: 5, itemStyle: { color: burninChartColors.failed.base }, lineStyle: { width: 2 }, areaStyle: { opacity: 0.06 } }],
-  };
+    xAxis: { type: "value" as const, min: testWindow, max: Math.max(testWindow + 1, data.testOutcomes.length), minInterval: 1, name: "Test sequence", nameLocation: "middle" as const, nameGap: 24, nameTextStyle: { color: muted, fontSize: 10 }, axisLabel: { color: muted, fontSize: 10 }, axisTick: { show: false }, axisLine: { show: false }, splitLine: { show: false } },
+    yAxis: { type: "value" as const, min: 0, name: "Failure rate", nameTextStyle: { color: muted, fontSize: 10 }, axisLabel: { color: muted, fontSize: 10, formatter: "{value}%" }, splitLine: { lineStyle: { color: grid, type: "dashed" as const } } },
+    series: [{ name: `Last ${testWindow} tests`, type: "line" as const, sampling: "lttb", data: rollingPoints, showSymbol: rollingPoints.length === 1, symbolSize: 5, itemStyle: { color: burninChartColors.failed.base }, lineStyle: { width: 2 }, areaStyle: { opacity: 0.06 } }],
+  }), [dark, grid, text, muted, testWindow, data.testOutcomes.length, rollingPoints]);
   const rollingEmpty = data.totalTests === 0 ? empty("rate", false) : rollingPoints.length ? null : {
     heading: `Not enough tests for a ${number(testWindow)}-test window`,
     description: `This period has ${number(data.testOutcomes.length)} selected outcomes. Choose a smaller window or a wider date range.`,
   };
-  const volumeOption = {
+  const volumeOption = useMemo(() => ({
     animationDurationUpdate: 0,
-    ...axes(ratePoints.map(point => point.date), "Tests"),
-    tooltip: { ...tooltip, formatter: (points: TooltipPoint[]) => {
+    ...timelineAxes(ratePoints.map(point => point.date), "Tests", grouping, muted, grid),
+    tooltip: { ...axisTooltip(dark, grid, text), formatter: (points: TooltipPoint[]) => {
       const total = points.reduce((sum, point) => sum + Number(point.value ?? 0), 0);
       return [`<strong>${escapeHtml(points[0]?.axisValue ?? "")}</strong>`, `Total: <strong>${number(total)}</strong>`, ...points.map(point => `${point.marker} ${escapeHtml(point.seriesName)}: <strong>${number(Number(point.value ?? 0))}</strong>`)].join("<br/>");
     } },
     legend: { top: 4, right: 16, textStyle: { color: muted, fontSize: 10 } },
     series: [
-      { name: "Passed", type: "bar", stack: "tests", barMaxWidth: 28, data: ratePoints.map(point => point.passed), itemStyle: { color: burninChartColors.passed.base, opacity: 0.65 } },
-      { name: "Failed", type: "bar", stack: "tests", barMaxWidth: 28, data: failed, itemStyle: { color: burninChartColors.failed.base, borderRadius: [2, 2, 0, 0] } },
+      { name: "Passed", type: "bar" as const, stack: "tests", barMaxWidth: 28, data: ratePoints.map(point => point.passed), itemStyle: { color: burninChartColors.passed.base, opacity: 0.65 } },
+      { name: "Failed", type: "bar" as const, stack: "tests", barMaxWidth: 28, data: failedCounts, itemStyle: { color: burninChartColors.failed.base, borderRadius: [2, 2, 0, 0] } },
     ],
-  };
-  const historyOption = (breakdown: "category" | "group") => {
-    const rows = breakdown === "category" ? categories : groups;
-    const timeline = groupFailureTimeline(breakdown === "category" ? data.categoryTimeline : data.groupTimeline, grouping);
-    const colors = breakdown === "category" ? categoryColors : groupColors;
-    return {
-      animationDurationUpdate: 0,
-      ...axes(timeline.map(point => point.date), "Annotations"),
-      grid: { left: 16, right: 20, top: 64, bottom: 16, containLabel: true },
-      tooltip: { ...tooltip, formatter: (points: TooltipPoint[]) => [`<strong>${escapeHtml(points[0]?.axisValue ?? "")}</strong>`, ...points.filter(point => Number(point.value) > 0).map(point => `${point.marker} ${escapeHtml(point.seriesName)}: <strong>${number(Number(point.value))}</strong>`)].join("<br/>") },
-      legend: { type: "scroll", top: 4, left: 16, right: 16, textStyle: { color: muted, fontSize: 10 }, pageTextStyle: { color: muted }, pageIconColor: muted },
-      series: rows.map(row => ({ name: row.name, type: "bar", stack: "annotations", barMaxWidth: 32, data: timeline.map(point => Number(point[row.name] ?? 0)), emphasis: { focus: "series" }, itemStyle: { color: colors.get(row.name) } })),
-    };
-  };
+  }), [ratePoints, failedCounts, grouping, muted, grid, dark, text]);
+  const categoryHistoryOption = useMemo(() => historyChartOption(categories, data.categoryTimeline, categoryColors, grouping, dark, text, muted, grid), [categories, data.categoryTimeline, categoryColors, grouping, dark, text, muted, grid]);
+  const groupHistoryOption = useMemo(() => historyChartOption(groups, data.groupTimeline, groupColors, grouping, dark, text, muted, grid), [groups, data.groupTimeline, groupColors, grouping, dark, text, muted, grid]);
   const chart = (title: string, option: object, breakdown: "category" | "group" | "rate", hasData: boolean, height: number) => (
     <FailureChartPanel title={title} emptyState={empty(breakdown, hasData)} height={height} showTitle={false}>
       <ReactECharts option={option} replaceMerge={["series"]} style={{ height }} />
@@ -281,8 +290,8 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
       <section className="space-y-3" aria-label="Timeline analysis">
         <SectionLabel number="03" title="Cause history" description="See when the categories and groups appeared. Both views use the grouping above." />
         <div className="grid gap-3 xl:grid-cols-2">
-          <Card className="min-w-0 gap-3 overflow-hidden py-0 shadow-none">{cardHeading("Failures by category over time", expandedGroup ? `${expandedGroup} · stacked annotation counts` : "All categories · stacked annotation counts")}{chart("Failures by category over time", historyOption("category"), "category", categories.length > 0 && data.categoryTimeline.length > 0, 340)}</Card>
-          <Card className="min-w-0 gap-3 overflow-hidden py-0 shadow-none">{cardHeading("Failures by group over time", "All groups · stacked annotation counts")}{chart("Failures by group over time", historyOption("group"), "group", groups.length > 0 && data.groupTimeline.length > 0, 340)}</Card>
+          <Card className="min-w-0 gap-3 overflow-hidden py-0 shadow-none">{cardHeading("Failures by category over time", expandedGroup ? `${expandedGroup} · stacked annotation counts` : "All categories · stacked annotation counts")}{chart("Failures by category over time", categoryHistoryOption, "category", categories.length > 0 && data.categoryTimeline.length > 0, 340)}</Card>
+          <Card className="min-w-0 gap-3 overflow-hidden py-0 shadow-none">{cardHeading("Failures by group over time", "All groups · stacked annotation counts")}{chart("Failures by group over time", groupHistoryOption, "group", groups.length > 0 && data.groupTimeline.length > 0, 340)}</Card>
         </div>
       </section>
     </div>
