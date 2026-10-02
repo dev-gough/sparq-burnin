@@ -343,7 +343,7 @@ export function FailureRateStrip({
         {(annotationOn || continuousDays) && (
           <span className="text-[11px] text-muted-foreground">
             {annotationOn
-              ? "Tagged failures ÷ all tests"
+              ? "Matching failures ÷ all tests"
               : "All calendar days"}
           </span>
         )}

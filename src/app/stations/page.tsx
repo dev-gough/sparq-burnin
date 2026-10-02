@@ -139,7 +139,7 @@ function StationHeading({
         type="button"
         className="text-muted-foreground hover:text-foreground shrink-0 rounded-sm p-0.5"
         aria-label={`Rename ${displayName}`}
-        title="Rename this station (local label only)"
+        title="Display name saved in this browser only. The station id does not change."
         onClick={() => {
           setDraft(aliased ? displayName : "");
           setEditing(true);

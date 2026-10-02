@@ -45,29 +45,31 @@ import { cn } from "@/lib/utils";
 const METRICS_HELP = (
   <div className="space-y-2 text-left text-xs leading-relaxed">
     <p>
-      <span className="font-semibold">Latest</span> = one result per inverter
-      in the window (hero + charts).{" "}
-      <span className="font-semibold">All tests</span> = every run counts.
+      <span className="font-semibold">Latest</span> is the latest PASS or FAIL
+      per inverter. <span className="font-semibold">All tests</span> counts
+      every PASS and FAIL. Invalid and retest are left out of the summary and
+      charts. The table can still list them.
     </p>
     <p>
       <span className="font-semibold">Prior period</span> is the equal-length
-      window immediately before the selected range. Hover a trend for dates.
+      window immediately before the selected range. Hover a trend for that
+      comparison.
     </p>
     <p>
-      <span className="font-semibold">Test volume</span> uses dual axes: green
-      bars = pass count (left); red = fail count (right). Hover for failure
-      rate and low-sample cues.
+      <span className="font-semibold">Test volume</span> plots pass counts on
+      the left axis and fail counts on the right. Passes are bars, and become
+      a line once the range has more than 100 buckets. Fails stay a line on
+      the right axis. Hover the plot for the failure rate.
     </p>
     <p>
-      <span className="font-semibold">Timezones:</span> period pills, custom
-      range, charts, and date filters use{" "}
-      <span className="font-semibold">UTC calendar days</span>. Table row
-      timestamps use your selected display timezone (sidebar).
+      Period buttons, the custom range, charts, and date filters use{" "}
+      <span className="font-semibold">UTC calendar days</span>. Table
+      timestamps use the display timezone in the sidebar.
     </p>
     <p>
-      Annotation filters apply to hero, charts, and table. Result mode (Latest /
-      All tests) also drives the table’s Latest only toggle so FAIL counts match
-      the summary cards. Failures → filters the table to Status = FAIL.
+      Category and station filters apply to the summary, the charts, and the
+      table. Latest / All tests is the same switch as One row per inverter.
+      The failures number filters the table to FAIL.
     </p>
   </div>
 );
@@ -242,8 +244,7 @@ export function DashboardHeader({
             <SheetHeader>
               <SheetTitle>Dashboard options</SheetTitle>
               <SheetDescription>
-                Advanced controls for the command center. Period pills stay
-                on the header for quick access.
+                More dashboard controls. Period buttons stay on the header.
               </SheetDescription>
             </SheetHeader>
 
@@ -270,8 +271,9 @@ export function DashboardHeader({
                   </ToggleGroupItem>
                 </ToggleGroup>
                 <p className="text-xs text-muted-foreground">
-                  Same control as the header. Latest = one result per inverter;
-                  All tests = every run.
+                  Same control as the header. Latest is the latest PASS or FAIL
+                  per inverter. All tests counts every PASS and FAIL. Invalid
+                  and retest are left out.
                 </p>
               </div>
 

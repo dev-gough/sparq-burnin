@@ -454,7 +454,7 @@ export function HeroMetrics({
       <Card className="@container/card from-primary/5 to-card bg-gradient-to-t shadow-xs">
         <CardHeader className="gap-2">
           <CardDescription className="text-xs font-medium uppercase tracking-wide">
-            Inverters tested
+            {chartMode === "recent" ? "Inverters tested" : "Tests"}
           </CardDescription>
           <CardTitle className="text-3xl font-semibold tabular-nums leading-none sm:text-4xl">
             <RollingNumber
@@ -485,8 +485,8 @@ export function HeroMetrics({
           <CaptionSlot>
             <span className="text-pretty sm:truncate">
               {chartMode === "recent"
-                ? "Latest per inverter"
-                : "Every test in period"}
+                ? "Latest PASS or FAIL per inverter"
+                : "Every PASS or FAIL in the period"}
             </span>
           </CaptionSlot>
         </CardHeader>
@@ -556,8 +556,8 @@ export function HeroMetrics({
                 className="text-pretty sm:truncate"
                 title={
                   chartMode === "recent"
-                    ? "Latest mode: one result per inverter — same as the table’s Latest only (linked to header Result mode)."
-                    : "All tests mode: every FAIL run in the period (matches the table when Status = FAIL)."
+                    ? "Inverters whose latest PASS or FAIL in the period is FAIL."
+                    : "Every FAIL in the period. Invalid and retest are left out."
                 }
               >
                 {chartMode === "recent"

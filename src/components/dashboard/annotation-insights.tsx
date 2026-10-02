@@ -391,11 +391,11 @@ export function AnnotationInsights({
                   ? "border-primary/50 bg-primary/10 text-foreground"
                   : "border-border/80 bg-muted/30 text-muted-foreground hover:bg-muted")}
                 aria-pressed={annotationFilter === "tagged"}
-                title="Filter to tests with any annotation; count shows tagged failures in this period"
+                title="Failed tests that have an annotation. Click filters the dashboard to every test with one, including passes."
                 onClick={() => toggleFilter("tagged")}
               >
                 <IconTag className="size-3 shrink-0" />
-                <span>Tagged tests <span className="ml-1 tabular-nums font-semibold">{data.totalFailed - data.untaggedFailed}</span></span>
+                <span>Tagged failures <span className="ml-1 tabular-nums font-semibold">{data.totalFailed - data.untaggedFailed}</span></span>
               </button>
             </div>
           </div>

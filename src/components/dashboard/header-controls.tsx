@@ -114,10 +114,10 @@ export function HeaderResultModeControls({
         className={cn("hidden md:flex", !ready && "pointer-events-none opacity-50")}
         aria-label="Result mode"
       >
-        <ToggleGroupItem value="recent" className={HEADER_TOGGLE_CLASS} title="One result per inverter in the window">
+        <ToggleGroupItem value="recent" className={HEADER_TOGGLE_CLASS} title="Latest PASS or FAIL per inverter. Invalid and retest are skipped.">
           Latest
         </ToggleGroupItem>
-        <ToggleGroupItem value="all" className={HEADER_TOGGLE_CLASS} title="Every test run counts">
+        <ToggleGroupItem value="all" className={HEADER_TOGGLE_CLASS} title="Every PASS and FAIL. Invalid and retest are left out of the totals.">
           All tests
         </ToggleGroupItem>
       </ToggleGroup>

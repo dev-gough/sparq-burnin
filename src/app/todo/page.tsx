@@ -236,7 +236,7 @@ export default function TodoPage() {
                     all unannotated fails
                   </span>{" "}
                   in the date range — not only the latest result per inverter.
-                  Date filters below are pre-filled from the command center.
+                  Date filters below are pre-filled from the dashboard.
                 </p>
               </div>
             )}

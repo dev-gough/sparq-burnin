@@ -172,7 +172,7 @@ const createColumns = (formatInTimezone: (dateString: string) => string, selecte
   {
     accessorKey: "test_count",
     header: () => (
-      <span title="Test number of total for this serial number across all dates and results">Tests</span>
+      <span title="This run's place in the serial's full history, across every date and result">Tests</span>
     ),
     cell: ({ row }) => {
       const count = row.original.test_count;
@@ -772,7 +772,7 @@ export function DataTable({
     ? annotationFilter === "tagged"
       ? "Tagged tests"
       : annotationFilter.startsWith("group:")
-      ? `Category: ${annotationFilter.slice(6)}`
+      ? `Group: ${annotationFilter.slice(6)}`
       : annotationFilter
     : null;
   const firmwareActive = Boolean(firmwareFilter && firmwareFilter !== "all");
@@ -991,7 +991,7 @@ export function DataTable({
                     </button>
                   );
                 })}
-                <InfoTooltip content="Choose which test outcomes to show. “Passed or failed” hides invalid runs." />
+                <InfoTooltip content="Choose which verdicts to list. “Passed or failed” keeps PASS and FAIL and hides invalid and retest." />
               </div>
             </div>
 
@@ -1155,7 +1155,7 @@ export function DataTable({
                   One row per inverter
                 </span>
               </button>
-              <InfoTooltip content="Same as Latest / All tests in the header. On = one row per inverter (matches the summary cards)." />
+              <InfoTooltip content="Same switch as Latest / All tests. On keeps the latest PASS or FAIL per inverter, which is what the summary counts. Off lists every run in the date range, including invalid and retest." />
 
               <button
                 type="button"
@@ -1185,7 +1185,7 @@ export function DataTable({
                     : "Dates set separately"}
                 </span>
               </button>
-              <InfoTooltip content="When on, table dates stay in sync with the dashboard period (7d / 30d / …). Category filters always apply to both." />
+              <InfoTooltip content="When on, table dates follow the dashboard period, and editing those dates updates the dashboard range. Annotation filters always apply to both." />
 
               {loading && (
                 <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">

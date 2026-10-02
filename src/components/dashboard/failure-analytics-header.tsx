@@ -27,9 +27,9 @@ export function FailureAnalyticsHeader({ range, onRangeChange, chartMode, onChar
         <h1 className={HEADER_TITLE_CLASS}>Failure Analytics</h1>
         <InfoTooltip side="bottom" content={
           <div className="space-y-2 text-left text-xs leading-relaxed">
-            <p><strong>Latest</strong> analyzes one result per inverter in the selected window. <strong>All tests</strong> includes every run.</p>
-            <p>Periods and custom ranges use UTC calendar days and carry between the dashboard and failure analytics.</p>
-            <p>Percentage options change pie chart labels and tooltips; slice sizes stay the same.</p>
+            <p><strong>Latest</strong> is the latest PASS or FAIL per inverter. <strong>All tests</strong> counts every PASS and FAIL. Invalid and retest are left out.</p>
+            <p>Periods and custom ranges use UTC calendar days and are shared with the dashboard.</p>
+            <p><strong>% of Failed</strong> and <strong>% of All</strong> change the denominator on the cause rankings. The counts do not change. One test can carry several annotations, so a share of failed tests can pass 100%.</p>
           </div>
         } />
       </div>
@@ -50,12 +50,12 @@ export function FailureAnalyticsHeader({ range, onRangeChange, chartMode, onChar
             if (value === "all" || value === "failed") onPercentageModeChange(value);
           }}
           variant="outline"
-          aria-label="Pie chart percentage"
+          aria-label="Cause ranking percentage"
         >
-          <ToggleGroupItem value="failed" className={HEADER_TOGGLE_CLASS} title="Percentage of failed tests">
+          <ToggleGroupItem value="failed" className={HEADER_TOGGLE_CLASS} title="Rank each cause as a share of failed tests">
             % of Failed
           </ToggleGroupItem>
-          <ToggleGroupItem value="all" className={HEADER_TOGGLE_CLASS} title="Percentage of all tests">
+          <ToggleGroupItem value="all" className={HEADER_TOGGLE_CLASS} title="Rank each cause as a share of all tests">
             % of All
           </ToggleGroupItem>
         </ToggleGroup>

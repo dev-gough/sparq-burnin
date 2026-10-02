@@ -615,7 +615,7 @@ export function ChartAreaInteractive({
   }
   if (annotationOn) {
     emptyHints.push(
-      "Clear or change the category filter in Find tests, or widen the period above.",
+      "Clear or change the annotation filter in Find tests, or widen the period above.",
     );
   } else {
     emptyHints.push("Widen the period above if you expected data here.");
@@ -635,7 +635,7 @@ export function ChartAreaInteractive({
               <CardTitle>Test volume</CardTitle>
               <span
                 className="inline-flex items-center rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] font-medium text-rose-600 dark:text-rose-400"
-                title="Fails use the right Y-axis (counts). Hover a bar for failure rate — a short bar with a large fail marker is riskier than a tall bar with one fail."
+                title="Fail counts use the right axis. Pass counts use the left. Hover the plot for the failure rate."
               >
                 Fails →
               </span>
@@ -750,7 +750,7 @@ function formatAnnotationFilterLabel(filter: string): string | null {
   if (!filter || filter === "all") return null;
   if (filter === "tagged") return "tagged tests";
   if (filter.startsWith("group:")) {
-    return `category “${filter.slice(6)}”`;
+    return `group “${filter.slice(6)}”`;
   }
   return `“${filter}”`;
 }
