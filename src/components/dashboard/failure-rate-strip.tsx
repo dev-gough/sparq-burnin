@@ -28,6 +28,7 @@ import {
 import { useSettings } from "@/contexts/settings-context";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useFailureRatePrefs } from "@/hooks/useFailureRatePrefs";
 import { useTestOutcomes } from "@/hooks/useTestOutcomes";
 import { rollingTestFailureRates } from "@/lib/failure-analytics";
@@ -48,6 +49,7 @@ interface FailureRateStripProps {
 
 /** Shared plot height — skeleton, empty, and chart use this so layout never jumps. */
 const FAILURE_RATE_STRIP_HEIGHT_PX = 156;
+const TEST_WINDOWS = [10, 25, 50, 100, 250, 500, 1000, 2000];
 
 /**
  * Nice upper bound for a 0–max percentage axis with room above the peak rate.
@@ -390,33 +392,38 @@ export function FailureRateStrip({
 
   return (
     <Card className="@container/card gap-0 overflow-hidden py-0 shadow-sm">
-      <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2 space-y-0 px-4 pb-1 pt-2">
+      <CardHeader className="grid shrink-0 grid-cols-[minmax(0,1fr)_125px] items-center gap-2 space-y-0 px-4 pb-1 pt-2 sm:grid-cols-[minmax(0,1fr)_auto_125px]">
         {/* O43/O44: Title Case section voice (match Test volume) */}
-        <CardTitle className="text-sm font-semibold">
+        <CardTitle className="col-span-2 text-sm font-semibold sm:col-span-1">
           {byTests ? "Failure rate by test count" : "Failure rate over time"}
         </CardTitle>
-        <ToggleGroup type="single" value={prefs.view} disabled={!prefsReady} variant="outline" aria-label="Dashboard failure rate view"
+        <ToggleGroup type="single" value={prefs.view} disabled={!prefsReady} variant="outline" className="justify-self-end" aria-label="Dashboard failure rate view"
           onValueChange={value => { if (value === "rate" || value === "tests") updatePrefs({ view: value }); }}>
           <ToggleGroupItem value="rate" className="h-7 px-2 text-[11px]">By date</ToggleGroupItem>
           <ToggleGroupItem value="tests" className="h-7 px-2 text-[11px]">By test count</ToggleGroupItem>
         </ToggleGroup>
-        {!byTests && (annotationOn || continuousDays) && (
-          <span className="text-[11px] text-muted-foreground">
-            {annotationOn
-              ? "Matching failures ÷ all tests"
-              : "All calendar days"}
-          </span>
-        )}
+        <div className="w-[125px]">
+          {byTests && (
+            <Select value={String(prefs.window)} disabled={!prefsReady} onValueChange={value => updatePrefs({ window: Number(value) })}>
+              <SelectTrigger className="h-7 w-[125px] text-[11px]" aria-label="Rolling test window"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {/* Preserve a previously saved slider value until another window is selected. */}
+                {!TEST_WINDOWS.includes(prefs.window) && <SelectItem value={String(prefs.window)}>{prefs.window.toLocaleString()} tests</SelectItem>}
+                {TEST_WINDOWS.map(value => <SelectItem key={value} value={String(value)}>{value.toLocaleString()} tests</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="px-3 pb-3 pt-0 sm:px-4">
-        {byTests && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-[11px] text-muted-foreground">
-            <label htmlFor="dashboard-test-window" className="tabular-nums">Rolling window: <strong className="font-medium">{prefs.window.toLocaleString()} tests</strong></label>
-            <input id="dashboard-test-window" type="range" min={10} max={2000} step={1} value={prefs.window} disabled={!prefsReady}
-              aria-valuetext={`${prefs.window} tests`} className="w-40 flex-1 accent-primary sm:max-w-64"
-              onChange={event => updatePrefs({ window: Number(event.target.value) })} />
+        {(byTests || annotationOn || continuousDays) && (
+          <div className="flex items-center gap-1.5 pb-2 pt-1 text-[11px] text-muted-foreground">
+            <span>{byTests
+              ? `Rolling ${prefs.window.toLocaleString()}-test window · Test sequence within the selected period${annotationOn ? " · Matching failures ÷ all tests" : ""}`
+              : annotationOn ? "Matching failures ÷ all tests" : "All calendar days"}</span>
+            {byTests && (
             <InfoTooltip content="Each point is failed tests divided by the last N PASS or FAIL outcomes, ordered chronologically within the selected period. Latest keeps one outcome per inverter. Invalid and retest are excluded. Annotation filters count matching failures over all selected tests. The line starts once a complete window is available." />
-            <span className="w-full">Test sequence within the selected period{annotationOn ? " · Matching failures ÷ all tests" : ""}</span>
+            )}
           </div>
         )}
         {showSkeleton ? (
