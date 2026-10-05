@@ -333,6 +333,7 @@ export function FailureRateStrip({
       interval: rollingYMax / 2,
     },
     tooltip: {
+      ...chartOption.tooltip,
       trigger: "axis", confine: true,
       formatter: (params: unknown) => {
         if (!Array.isArray(params) || !params.length) return "";
