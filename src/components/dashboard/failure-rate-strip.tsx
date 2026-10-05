@@ -392,17 +392,17 @@ export function FailureRateStrip({
 
   return (
     <Card className="@container/card gap-0 overflow-hidden py-0 shadow-sm">
-      <CardHeader className="grid shrink-0 grid-cols-[minmax(0,1fr)_125px] items-center gap-2 space-y-0 px-4 pb-1 pt-2 sm:grid-cols-[minmax(0,1fr)_auto_125px]">
+      <CardHeader className="grid shrink-0 grid-cols-2 items-center gap-2 space-y-0 px-4 pb-1 pt-2 @3xl/card:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
         {/* O43/O44: Title Case section voice (match Test volume) */}
-        <CardTitle className="col-span-2 text-sm font-semibold sm:col-span-1">
+        <CardTitle className="order-1 text-sm font-semibold">
           {byTests ? "Failure rate by test count" : "Failure rate over time"}
         </CardTitle>
-        <ToggleGroup type="single" value={prefs.view} disabled={!prefsReady} variant="outline" className="justify-self-end" aria-label="Dashboard failure rate view"
-          onValueChange={value => { if (value === "rate" || value === "tests") updatePrefs({ view: value }); }}>
-          <ToggleGroupItem value="rate" className="h-7 px-2 text-[11px]">By date</ToggleGroupItem>
-          <ToggleGroupItem value="tests" className="h-7 px-2 text-[11px]">By test count</ToggleGroupItem>
-        </ToggleGroup>
-        <div className="w-[125px]">
+        <div className="order-3 col-span-2 flex items-center justify-center gap-2 justify-self-center @3xl/card:order-2 @3xl/card:col-span-1">
+          <ToggleGroup type="single" value={prefs.view} disabled={!prefsReady} variant="outline" aria-label="Dashboard failure rate view"
+            onValueChange={value => { if (value === "rate" || value === "tests") updatePrefs({ view: value }); }}>
+            <ToggleGroupItem value="rate" className="h-7 px-2 text-[11px]">By date</ToggleGroupItem>
+            <ToggleGroupItem value="tests" className="h-7 px-2 text-[11px]">By test count</ToggleGroupItem>
+          </ToggleGroup>
           {byTests && (
             <Select value={String(prefs.window)} disabled={!prefsReady} onValueChange={value => updatePrefs({ window: Number(value) })}>
               <SelectTrigger className="h-7 w-[125px] text-[11px]" aria-label="Rolling test window"><SelectValue /></SelectTrigger>
@@ -414,18 +414,20 @@ export function FailureRateStrip({
             </Select>
           )}
         </div>
+        <div className="order-2 flex min-w-0 items-center justify-end gap-1.5 text-right text-[11px] text-muted-foreground @3xl/card:order-3">
+          {(byTests || annotationOn || continuousDays) && (
+            <>
+              <span>{byTests
+                ? `${prefs.window.toLocaleString()}-test average${annotationOn ? " · Matching failures ÷ all tests" : ""}`
+                : annotationOn ? "Matching failures ÷ all tests" : "All calendar days"}</span>
+              {byTests && (
+                <InfoTooltip content="Each point is failed tests divided by the last N PASS or FAIL outcomes, ordered chronologically within the selected period. Latest keeps one outcome per inverter. Invalid and retest are excluded. Annotation filters count matching failures over all selected tests. The line starts once a complete window is available." />
+              )}
+            </>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="px-3 pb-3 pt-0 sm:px-4">
-        {(byTests || annotationOn || continuousDays) && (
-          <div className="flex items-center gap-1.5 pb-2 pt-1 text-[11px] text-muted-foreground">
-            <span>{byTests
-              ? `Rolling ${prefs.window.toLocaleString()}-test window · Test sequence within the selected period${annotationOn ? " · Matching failures ÷ all tests" : ""}`
-              : annotationOn ? "Matching failures ÷ all tests" : "All calendar days"}</span>
-            {byTests && (
-            <InfoTooltip content="Each point is failed tests divided by the last N PASS or FAIL outcomes, ordered chronologically within the selected period. Latest keeps one outcome per inverter. Invalid and retest are excluded. Annotation filters count matching failures over all selected tests. The line starts once a complete window is available." />
-            )}
-          </div>
-        )}
         {showSkeleton ? (
           <div
             className="animate-pulse rounded-md bg-muted/40"
