@@ -767,6 +767,18 @@ const migrations: Migration[] = [
       END
       $$;
     `
+  },
+  {
+    id: '020',
+    name: 'user_dashboard_prefs',
+    sql: `
+      CREATE TABLE IF NOT EXISTS UserDashboardPrefs (
+        user_email TEXT PRIMARY KEY,
+        failure_rate_view TEXT NOT NULL DEFAULT 'rate' CHECK (failure_rate_view IN ('rate', 'tests')),
+        failure_rate_window INTEGER NOT NULL DEFAULT 100 CHECK (failure_rate_window BETWEEN 10 AND 2000),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `
   }
 ];
 

@@ -704,6 +704,47 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(versions);
     }
 
+    if (view === "test-outcomes") {
+      const { dateFrom, dateTo, error } = validateDateRange(searchParams.get("dateFrom"), searchParams.get("dateTo"));
+      if (error) return NextResponse.json({ error }, { status: 400 });
+      const window = getCurrentWindow({ timeRange: validateTimeRange(searchParams.get("timeRange")), dateFrom, dateTo });
+      const { sql, params } = buildWindowTimeFilter(window, "t.start_time_utc", 1);
+      const queryParams = [...params];
+      let scope = sql ? `AND ${sql}` : "";
+      if (stationActive) {
+        queryParams.push(stationValue);
+        scope += ` AND t.station_id = $${queryParams.length}`;
+      }
+      const annotation = searchParams.get("annotation");
+      let matching = "TRUE";
+      if (annotation && annotation !== "all") {
+        if (annotation === "tagged") matching = taggedTestsExistsSql("b.test_id");
+        else if (annotation.startsWith("group:")) {
+          const group = annotation.slice(6);
+          const fragment = annotationGroupExistsSql("b.test_id", group, queryParams.length + 1);
+          matching = fragment.sql;
+          if (fragment.usesParam) queryParams.push(group);
+        } else {
+          queryParams.push(annotation);
+          matching = `EXISTS (SELECT 1 FROM TestAnnotations ta WHERE ta.current_test_id = b.test_id AND ta.annotation_text = $${queryParams.length})`;
+        }
+      }
+      const recent = validateChartMode(searchParams.get("chartMode")) === "recent";
+      const result = await client.query(`
+        WITH base_tests AS (
+          SELECT ${recent ? "DISTINCT ON (t.inv_id)" : ""} t.test_id, t.start_time_utc, t.overall_status
+          FROM Tests t
+          WHERE ${outcomeStatusSql("t.overall_status")} ${scope}
+          ${recent ? "ORDER BY t.inv_id, t.start_time_utc DESC, t.test_id DESC" : ""}
+        )
+        SELECT COALESCE(STRING_AGG(
+          CASE WHEN b.overall_status = 'FAIL' AND (${matching}) THEN 'F' ELSE 'P' END,
+          '' ORDER BY b.start_time_utc, b.test_id
+        ), '') AS outcomes FROM base_tests b
+      `, queryParams);
+      return NextResponse.json({ outcomes: result.rows[0]?.outcomes ?? "" });
+    }
+
     if (view === "annotations") {
       // Get unique annotation texts
       const annotationsQuery = `

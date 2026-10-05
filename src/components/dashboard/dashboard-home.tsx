@@ -579,6 +579,10 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
               />
 
               <FailureRateStrip
+                chartMode={chartMode}
+                stationFilter={stationFilter}
+                requestEpoch={requestEpoch}
+                enabled={loadDashboardData}
                 data={stripStats}
                 loading={stripLoading || !loadDashboardData}
                 refreshing={stripRefreshing}

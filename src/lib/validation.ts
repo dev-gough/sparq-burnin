@@ -20,6 +20,7 @@ const ALLOWED_VIEWS = [
   'tests',
   'firmware-versions',
   'annotations',
+  'test-outcomes',
   'annotation-summary',
   /** Fast EXISTS probe for empty-period UI gating */
   'has-data',

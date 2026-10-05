@@ -26,6 +26,11 @@ import {
   type DashboardRange,
 } from "@/lib/dashboard-range";
 import { useSettings } from "@/contexts/settings-context";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { useFailureRatePrefs } from "@/hooks/useFailureRatePrefs";
+import { useTestOutcomes } from "@/hooks/useTestOutcomes";
+import { rollingTestFailureRates } from "@/lib/failure-analytics";
 
 interface FailureRateStripProps {
   data: BucketStats[];
@@ -35,6 +40,10 @@ interface FailureRateStripProps {
   bucket: ChartBucket;
   /** For empty-state copy (“No tests in the last 30 days”). */
   dashboardRange?: DashboardRange;
+  chartMode: string;
+  stationFilter: string;
+  requestEpoch: number;
+  enabled: boolean;
 }
 
 /** Shared plot height — skeleton, empty, and chart use this so layout never jumps. */
@@ -87,7 +96,20 @@ export function FailureRateStrip({
   annotationFilter,
   bucket,
   dashboardRange,
+  chartMode,
+  stationFilter,
+  requestEpoch,
+  enabled,
 }: FailureRateStripProps) {
+  const { prefs, updatePrefs, ready: prefsReady, saveError } = useFailureRatePrefs();
+  const byTests = prefs.view === "tests";
+  const [retryEpoch, setRetryEpoch] = React.useState(0);
+  const testHistory = useTestOutcomes({ dashboardRange, chartMode, annotationFilter, stationFilter,
+    requestEpoch: requestEpoch + retryEpoch, enabled: enabled && prefsReady && byTests });
+  const rollingPoints = React.useMemo(
+    () => rollingTestFailureRates(testHistory.outcomes, prefs.window),
+    [testHistory.outcomes, prefs.window],
+  );
   // Sync read on first paint — avoids notMerge theme flip after first draw.
   const [isDarkMode, setIsDarkMode] = React.useState(
     () =>
@@ -294,6 +316,35 @@ export function FailureRateStrip({
     };
   }, [series, isDarkMode, bucket]);
 
+  const rollingYMax = niceRateMax(rollingPoints.reduce((max, point) => Math.max(max, point[1]), 0));
+  const rollingOption: EChartsOption = React.useMemo(() => ({
+    ...chartOption,
+    animation: false,
+    xAxis: {
+      type: "value", min: prefs.window, max: Math.max(prefs.window + 1, testHistory.outcomes.length), minInterval: 1,
+      axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false },
+      axisLabel: { color: isDarkMode ? burninChartColors.muted.dark : burninChartColors.muted.light, fontSize: 11, hideOverlap: true },
+    },
+    yAxis: {
+      ...chartOption.yAxis,
+      max: rollingYMax,
+      interval: rollingYMax / 2,
+    },
+    tooltip: {
+      trigger: "axis", confine: true,
+      formatter: (params: unknown) => {
+        if (!Array.isArray(params) || !params.length) return "";
+        const [index, rate] = (params[0] as { value: [number, number] }).value;
+        return `<strong>Test ${index.toLocaleString()}</strong><br/>Tests ${(index - prefs.window + 1).toLocaleString()}–${index.toLocaleString()}<br/>${Math.round(rate * prefs.window / 100).toLocaleString()} ${annotationOn ? "matching failures" : "failed"} of ${prefs.window.toLocaleString()}<br/>Failure rate: <strong>${rate.toFixed(2)}%</strong>`;
+      },
+    },
+    series: [{
+      name: `Last ${prefs.window} tests`, type: "line", sampling: "lttb", data: rollingPoints,
+      showSymbol: rollingPoints.length === 1, symbolSize: 5,
+      itemStyle: { color: burninChartColors.failed.base }, lineStyle: { width: 2 }, areaStyle: { opacity: 0.06 },
+    }],
+  }), [chartOption, prefs.window, testHistory.outcomes.length, rollingPoints, rollingYMax, isDarkMode, annotationOn]);
+
   // Derived series key — may thrash while refreshing if range/bucket changed.
   const paintKey = React.useMemo(
     () => series.map((s) => `${s.date}:${s.rate}`).join("|"),
@@ -321,26 +372,35 @@ export function FailureRateStrip({
       (row.passed || 0) + (row.failed || 0) > 0 ||
       (row.totalUnfiltered ?? 0) > 0,
   );
-  const showSkeleton = loading && !hasActivity && series.length < 2;
-  const showEmpty = !loading && !fieldsMissing && !hasActivity;
+  const showSkeleton = !prefsReady || (byTests ? !enabled || testHistory.loading : loading && !hasActivity && series.length < 2);
+  const showEmpty = byTests ? !testHistory.loading && rollingPoints.length === 0 : !loading && !fieldsMissing && !hasActivity;
   const periodPhrase = dashboardRange
     ? dashboardRangeLabel(dashboardRange)
     : "this period";
 
   // Always keep the same card chrome so period changes never collapse the page.
   // Annotation-unavailable: still full height with a one-line note.
-  const emptyMessage = fieldsMissing && !loading
+  const emptyMessage = byTests
+    ? testHistory.error ? "Couldn’t load test history" : testHistory.outcomes.length === 0
+      ? `No test activity in ${periodPhrase}`
+      : `Not enough tests for a ${prefs.window.toLocaleString()}-test window`
+    : fieldsMissing && !loading
     ? "Failure-rate trend unavailable for this annotation filter"
     : `No test activity in ${periodPhrase}`;
 
   return (
     <Card className="@container/card gap-0 overflow-hidden py-0 shadow-sm">
-      <CardHeader className="flex shrink-0 flex-row items-center justify-between gap-0 space-y-0 px-4 pb-1 pt-2">
+      <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2 space-y-0 px-4 pb-1 pt-2">
         {/* O43/O44: Title Case section voice (match Test volume) */}
         <CardTitle className="text-sm font-semibold">
-          Failure rate over time
+          {byTests ? "Failure rate by test count" : "Failure rate over time"}
         </CardTitle>
-        {(annotationOn || continuousDays) && (
+        <ToggleGroup type="single" value={prefs.view} disabled={!prefsReady} variant="outline" aria-label="Dashboard failure rate view"
+          onValueChange={value => { if (value === "rate" || value === "tests") updatePrefs({ view: value }); }}>
+          <ToggleGroupItem value="rate" className="h-7 px-2 text-[11px]">By date</ToggleGroupItem>
+          <ToggleGroupItem value="tests" className="h-7 px-2 text-[11px]">By test count</ToggleGroupItem>
+        </ToggleGroup>
+        {!byTests && (annotationOn || continuousDays) && (
           <span className="text-[11px] text-muted-foreground">
             {annotationOn
               ? "Matching failures ÷ all tests"
@@ -349,13 +409,23 @@ export function FailureRateStrip({
         )}
       </CardHeader>
       <CardContent className="px-3 pb-3 pt-0 sm:px-4">
+        {byTests && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-[11px] text-muted-foreground">
+            <label htmlFor="dashboard-test-window" className="tabular-nums">Rolling window: <strong className="font-medium">{prefs.window.toLocaleString()} tests</strong></label>
+            <input id="dashboard-test-window" type="range" min={10} max={2000} step={1} value={prefs.window} disabled={!prefsReady}
+              aria-valuetext={`${prefs.window} tests`} className="w-40 flex-1 accent-primary sm:max-w-64"
+              onChange={event => updatePrefs({ window: Number(event.target.value) })} />
+            <InfoTooltip content="Each point is failed tests divided by the last N PASS or FAIL outcomes, ordered chronologically within the selected period. Latest keeps one outcome per inverter. Invalid and retest are excluded. Annotation filters count matching failures over all selected tests. The line starts once a complete window is available." />
+            <span className="w-full">Test sequence within the selected period{annotationOn ? " · Matching failures ÷ all tests" : ""}</span>
+          </div>
+        )}
         {showSkeleton ? (
           <div
             className="animate-pulse rounded-md bg-muted/40"
             style={{ height: CHART_HEIGHT_PX }}
             aria-hidden
           />
-        ) : showEmpty || (fieldsMissing && !loading) ? (
+        ) : showEmpty || (!byTests && fieldsMissing && !loading) ? (
           <div
             className="flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border/70 bg-muted/15 px-4"
             style={{ height: CHART_HEIGHT_PX }}
@@ -364,24 +434,28 @@ export function FailureRateStrip({
             <p className="text-center text-sm font-medium text-muted-foreground">
               {emptyMessage}
             </p>
-            {!fieldsMissing && (
+            {byTests && testHistory.error ? (
+              <button type="button" className="text-xs text-primary underline" onClick={() => setRetryEpoch(value => value + 1)}>Try again</button>
+            ) : (!fieldsMissing || byTests) && (
               <p className="text-center text-xs text-muted-foreground/80">
-                Widen the period above if you expected data here
+                {byTests && testHistory.outcomes.length > 0
+                  ? `${testHistory.outcomes.length.toLocaleString()} tests in this period. Choose a smaller window or widen the period.`
+                  : "Widen the period above if you expected data here"}
               </p>
             )}
           </div>
         ) : (
           <div
-            ref={revealRef}
+            ref={byTests ? undefined : revealRef}
             className={
               // Reveal owned by useSeriesRevealClass only (see chart-theme).
-              refreshing
+              !byTests && refreshing
                 ? "opacity-60 transition-opacity duration-500 ease-out"
                 : "opacity-100 transition-opacity duration-500 ease-out"
             }
           >
             <ReactECharts
-              option={displayOption}
+              option={byTests ? rollingOption : displayOption}
               style={{ height: CHART_HEIGHT_PX, width: "100%" }}
               opts={{ renderer: "canvas" }}
               notMerge
@@ -389,6 +463,7 @@ export function FailureRateStrip({
             />
           </div>
         )}
+        {saveError && <p role="status" className="pt-1 text-[11px] text-muted-foreground">Couldn’t sync chart preferences with your account. Change the selection to try again.</p>}
       </CardContent>
     </Card>
   );
