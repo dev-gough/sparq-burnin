@@ -5,3 +5,4 @@ Added
 
 Fixed
 - Center the dashboard failure-rate toggle and window dropdown together, with concise chart context aligned to the right.
+- Align the failure-rate header on desktop and match the dropdown height to the view buttons.

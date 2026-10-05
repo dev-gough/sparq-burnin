@@ -392,12 +392,12 @@ export function FailureRateStrip({
 
   return (
     <Card className="@container/card gap-0 overflow-hidden py-0 shadow-sm">
-      <CardHeader className="grid shrink-0 grid-cols-2 items-center gap-2 space-y-0 px-4 pb-1 pt-2 @3xl/card:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+      <CardHeader className="grid shrink-0 grid-cols-2 grid-rows-1 items-center gap-2 space-y-0 px-4 pb-1 pt-2 @[48rem]/card:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
         {/* O43/O44: Title Case section voice (match Test volume) */}
         <CardTitle className="order-1 text-sm font-semibold">
           {byTests ? "Failure rate by test count" : "Failure rate over time"}
         </CardTitle>
-        <div className="order-3 col-span-2 flex items-center justify-center gap-2 justify-self-center @3xl/card:order-2 @3xl/card:col-span-1">
+        <div className="order-3 col-span-2 flex items-center justify-center gap-2 justify-self-center @[48rem]/card:order-2 @[48rem]/card:col-span-1">
           <ToggleGroup type="single" value={prefs.view} disabled={!prefsReady} variant="outline" aria-label="Dashboard failure rate view"
             onValueChange={value => { if (value === "rate" || value === "tests") updatePrefs({ view: value }); }}>
             <ToggleGroupItem value="rate" className="h-7 px-2 text-[11px]">By date</ToggleGroupItem>
@@ -405,7 +405,7 @@ export function FailureRateStrip({
           </ToggleGroup>
           {byTests && (
             <Select value={String(prefs.window)} disabled={!prefsReady} onValueChange={value => updatePrefs({ window: Number(value) })}>
-              <SelectTrigger className="h-7 w-[125px] text-[11px]" aria-label="Rolling test window"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-7 w-[125px] py-0 text-[11px] data-[size=default]:h-7 data-[size=sm]:h-7" aria-label="Rolling test window"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {/* Preserve a previously saved slider value until another window is selected. */}
                 {!TEST_WINDOWS.includes(prefs.window) && <SelectItem value={String(prefs.window)}>{prefs.window.toLocaleString()} tests</SelectItem>}
@@ -414,7 +414,7 @@ export function FailureRateStrip({
             </Select>
           )}
         </div>
-        <div className="order-2 flex min-w-0 items-center justify-end gap-1.5 text-right text-[11px] text-muted-foreground @3xl/card:order-3">
+        <div className="order-2 flex min-w-0 items-center justify-end gap-1.5 text-right text-[11px] text-muted-foreground @[48rem]/card:order-3">
           {(byTests || annotationOn || continuousDays) && (
             <>
               <span>{byTests
