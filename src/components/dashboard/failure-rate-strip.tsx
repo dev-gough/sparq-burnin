@@ -393,29 +393,31 @@ export function FailureRateStrip({
 
   return (
     <Card className="@container/card gap-0 overflow-hidden py-0 shadow-sm">
-      <CardHeader className="grid shrink-0 grid-cols-2 grid-rows-1 items-center gap-2 space-y-0 px-4 pb-1 pt-2 @[48rem]/card:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+      <CardHeader className="grid shrink-0 grid-cols-2 grid-rows-1 items-center gap-2 space-y-0 px-4 pb-1 pt-2 @[48rem]/card:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] @[48rem]/card:grid-rows-[minmax(36px,auto)]">
         {/* O43/O44: Title Case section voice (match Test volume) */}
         <CardTitle className="order-1 text-sm font-semibold">
           {byTests ? "Failure rate by test count" : "Failure rate over time"}
         </CardTitle>
-        <div className="order-3 col-span-2 flex items-center justify-center gap-2 justify-self-center @[48rem]/card:order-2 @[48rem]/card:col-span-1">
+        <div className={`relative order-3 col-span-2 justify-self-center @[48rem]/card:order-2 @[48rem]/card:col-span-1 ${byTests ? "pb-9 @[30rem]/card:pb-0" : ""}`}>
           <ToggleGroup type="single" value={prefs.view} disabled={!prefsReady} variant="outline" aria-label="Dashboard failure rate view"
             onValueChange={value => { if (value === "rate" || value === "tests") updatePrefs({ view: value }); }}>
             <ToggleGroupItem value="rate" className="h-7 px-2 text-[11px]">By date</ToggleGroupItem>
             <ToggleGroupItem value="tests" className="h-7 px-2 text-[11px]">By test count</ToggleGroupItem>
           </ToggleGroup>
           {byTests && (
-            <Select value={String(prefs.window)} disabled={!prefsReady} onValueChange={value => updatePrefs({ window: Number(value) })}>
-              <SelectTrigger className="h-7 w-[125px] py-0 text-[11px] data-[size=default]:h-7 data-[size=sm]:h-7" aria-label="Rolling test window"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {/* Preserve a previously saved slider value until another window is selected. */}
-                {!TEST_WINDOWS.includes(prefs.window) && <SelectItem value={String(prefs.window)}>{prefs.window.toLocaleString()} tests</SelectItem>}
-                {TEST_WINDOWS.map(value => <SelectItem key={value} value={String(value)}>{value.toLocaleString()} tests</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <div className="absolute left-1/2 top-9 -translate-x-1/2 @[30rem]/card:left-full @[30rem]/card:top-0 @[30rem]/card:ml-2 @[30rem]/card:translate-x-0">
+              <Select value={String(prefs.window)} disabled={!prefsReady} onValueChange={value => updatePrefs({ window: Number(value) })}>
+                <SelectTrigger className="h-7 w-[125px] py-0 text-[11px] data-[size=default]:h-7 data-[size=sm]:h-7" aria-label="Rolling test window"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {/* Preserve a previously saved slider value until another window is selected. */}
+                  {!TEST_WINDOWS.includes(prefs.window) && <SelectItem value={String(prefs.window)}>{prefs.window.toLocaleString()} tests</SelectItem>}
+                  {TEST_WINDOWS.map(value => <SelectItem key={value} value={String(value)}>{value.toLocaleString()} tests</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
           )}
         </div>
-        <div className="order-2 flex min-w-0 items-center justify-end gap-1.5 text-right text-[11px] text-muted-foreground @[48rem]/card:order-3">
+        <div className="order-2 flex min-w-0 items-center justify-end gap-1.5 text-right text-[11px] text-muted-foreground @[48rem]/card:order-3 @[48rem]/card:pl-[133px]">
           {(byTests || annotationOn || continuousDays) && (
             <>
               <span>{byTests
