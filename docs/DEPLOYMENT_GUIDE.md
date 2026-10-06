@@ -1,5 +1,8 @@
 # Burnin Dashboard - Complete Deployment Guide
 
+For updates to the existing production host, use the [manual GitHub deployment workflow](PRODUCTION_CI.md).
+It stages the build, applies database migrations before restart, and checks the deployed release.
+
 **Target:** Fresh EC2 Instance (Amazon Linux 2023)
 **Goal:** Production deployment with systemd services, PostgreSQL database, and pCloud sync
 

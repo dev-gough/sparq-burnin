@@ -9,6 +9,7 @@ Lab-only runbooks, handoffs, and data dumps live under [`archive/`](./archive/) 
 | Document | Description |
 |----------|-------------|
 | [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) | Host / production deployment |
+| [PRODUCTION_CI.md](./PRODUCTION_CI.md) | Manual GitHub releases, production runner setup, and rollback |
 | [CONFIG_SETUP.md](./CONFIG_SETUP.md) | `config.json` layout |
 | [DATABASE.md](./DATABASE.md) | Schema and CSV ingestion |
 | [INGEST_API.md](./INGEST_API.md) | Station → dashboard HTTPS ingest API |

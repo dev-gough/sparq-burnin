@@ -1,0 +1,70 @@
+name: Deploy production
+run-name: Deploy ${{ inputs.release_tag }} to production
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Annotated release tag, e.g. v0.9.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: burnin-production
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check release
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.11.1"
+          cache: npm
+      - name: Resolve and validate release
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Use a vX.Y.Z release tag"; exit 1; }
+          [[ "$(git cat-file -t "refs/tags/$RELEASE_TAG")" == tag ]] || { echo "Release tag must be annotated"; exit 1; }
+          sha="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          git merge-base --is-ancestor "$sha" origin/master
+          git checkout --detach "$sha"
+          [[ "v$(node -p "require('./package.json').version")" == "$RELEASE_TAG" ]] || { echo "Tag and package version differ"; exit 1; }
+          printf 'sha=%s\ntag=%s\n' "$sha" "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm test
+
+  deploy:
+    name: Build and deploy checked release
+    needs: check
+    runs-on: [self-hosted, Linux, X64, burnin-production]
+    environment: production
+    timeout-minutes: 30
+    steps:
+      # The installed script builds outside the running app, migrates, switches
+      # the service, checks health, and restores the previous release on failure.
+      # No checkout or pull-request code runs on the production runner.
+      - name: Deploy
+        env:
+          RELEASE_SHA: ${{ needs.check.outputs.sha }}
+          RELEASE_TAG: ${{ needs.check.outputs.tag }}
+        run: '"$HOME/bin/deploy-burnin-production.sh" "$RELEASE_SHA" "$RELEASE_TAG"'
