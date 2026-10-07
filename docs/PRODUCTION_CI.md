@@ -12,7 +12,8 @@ Production communicates outbound with GitHub; it does not access Gitea.
 3. Leave the workflow branch on **master**, enter the release tag, and run it.
 4. Check the run's **Check release** and **Build and deploy checked release** jobs.
 
-The first job runs on GitHub infrastructure with Node 24.11.1. It requires an
+The first job runs on GitHub infrastructure with the Node version in `.nvmrc`
+(currently 24.11.1). Use that same version for local release validation. It requires an
 annotated tag on master whose name matches `package.json`, resolves its exact
 commit, and runs lint, TypeScript checks, and tests. Only that commit is sent to
 the production runner. A moved tag or a version mismatch stops the deployment.

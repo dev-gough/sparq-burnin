@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { spawn } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -54,7 +54,7 @@ if __name__ == "__main__":`);
     expect(status.pid).toBe(child.pid);
     expect(status.releaseDir).toBe(root);
     // A subsequent deployment changes current, but this process remains pinned.
-    rmSync(current);
+    unlinkSync(current);
     symlinkSync("/another-release", current);
     child.kill("SIGTERM");
     expect(await exited, output).toBe(0);
