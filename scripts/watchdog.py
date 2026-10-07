@@ -7,6 +7,8 @@ import logging
 import subprocess
 import json
 import psutil
+import signal
+import threading
 from logging.handlers import RotatingFileHandler
 
 def load_config():
@@ -29,7 +31,14 @@ main_dir = config['paths']['local']['main_dir']
 to_process_dir = os.path.join(main_dir, 'to_process')
 processed_dir = os.path.join(main_dir, 'processed')
 check_interval = config['settings']['check_interval']
-dashboard_dir = config['paths']['local']['dashboard_dir']
+# Production pins each watchdog process to the release it started with. Lab
+# setups retain their configured checkout when no override is supplied.
+dashboard_dir = os.path.realpath(os.environ.get('BURNIN_RELEASE_DIR') or config['paths']['local']['dashboard_dir'])
+shutdown_requested = threading.Event()
+
+
+def request_shutdown(signum, frame):
+    shutdown_requested.set()
 
 # Define subdirectories for tests and results within to_process
 to_process_tests_dir = os.path.join(to_process_dir, 'tests')
@@ -231,6 +240,7 @@ def write_watchdog_status(payload: dict) -> None:
             'updatedAt': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),
             'checkIntervalSec': check_interval,
             'pid': os.getpid(),
+            'releaseDir': dashboard_dir,
         }
         tmp = WATCHDOG_STATUS_FILE + '.tmp'
         with open(tmp, 'w') as f:
@@ -509,6 +519,8 @@ def run_ingestion():
         release_lock()
 
 def main():
+    signal.signal(signal.SIGTERM, request_shutdown)
+    signal.signal(signal.SIGINT, request_shutdown)
     cycle_count = 0
     logger.info("Watchdog started - monitoring for new files...")
     write_watchdog_status({
@@ -519,7 +531,7 @@ def main():
         'lastIngestTriggered': False,
         'lastIngestSuccess': None,
     })
-    while True:
+    while not shutdown_requested.is_set():
         try:
             cycle_count += 1
             cycle_started = datetime.datetime.now(datetime.timezone.utc)
@@ -677,7 +689,7 @@ def main():
                 'lastResultsFilesChecked': total_results_files,
             })
                 
-            time.sleep(check_interval)
+            shutdown_requested.wait(check_interval)
         except Exception as e:
             logger.error(f"Error in cycle {cycle_count}: {e}")
             cycle_finished = datetime.datetime.now(datetime.timezone.utc)
@@ -691,7 +703,8 @@ def main():
                 'lastIngestSuccess': None,
                 'error': str(e),
             })
-            time.sleep(check_interval)
+            shutdown_requested.wait(check_interval)
+    logger.info("Watchdog stopped after completing its current cycle")
 
 if __name__ == "__main__":
     main()

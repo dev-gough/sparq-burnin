@@ -58,7 +58,7 @@ jobs:
     needs: check
     runs-on: [self-hosted, Linux, X64, burnin-production]
     environment: production
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       # The installed script builds outside the running app, migrates, switches
       # the service, checks health, and restores the previous release on failure.

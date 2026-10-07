@@ -23,17 +23,26 @@ of the original checkout's `config.json` and production environment files
 (`.env.production.local`, `.env.local`, `.env.production`, and `.env` when present).
 After building, it links those files, data, and log directories to the original
 checkout for runtime use. Keeping shared symlinks out of the build prevents
-Turbopack from tracing log links outside the release directory. It then runs
-`npm run migrate`, atomically switches `current`, restarts the dashboard, and
-checks the health response's release version and database status. Build and
-migration failures leave the running application in place. Failed startup or
-health checks switch back to the previous release and restart it.
+Turbopack from tracing log links outside the release directory.
 
-This workflow deploys the dashboard service only. The watchdog still runs from
-the original checkout, and its configured `dashboard_dir` determines where it
-runs CSV ingestion. Changes to watchdog or ingestion scripts in a release do
-not become active through this workflow; those require a separate update of
-the pipeline checkout and a watchdog restart.
+The script checks Python syntax and the watchdog's `psutil` dependency, then
+stops the watchdog before `npm run migrate`. A live ingestion lock causes the
+deployment to stop before interrupting ingestion; retry after that job finishes.
+The watchdog handles termination by completing its current cycle, with systemd
+allowing up to 30 minutes before forcing shutdown.
+
+Deployment atomically switches `current`, restarts the dashboard, checks its
+release version and database health, and starts the watchdog from that same
+release. It verifies the watchdog's reported process ID and release directory.
+Build failures leave both running services alone. Migration failures restart
+the old watchdog. Failed activation restores the previous release and restarts
+both services; database migrations remain applied.
+
+The watchdog receives `BURNIN_RELEASE_DIR` from systemd and resolves it once at
+startup, so cleanup and CSV ingestion use its own release's Node dependencies
+and scripts. Other installations without this override retain the configured
+`dashboard_dir`. The original checkout remains the shared data/configuration
+location and Git cache; production no longer needs its code updated separately.
 
 Database migrations remain applied after application rollback. New migrations
 must be compatible with the previous application version. Release directories
@@ -44,7 +53,7 @@ after confirming they are not `current` or your intended rollback target.
 
 The production service currently runs as `devon`, from `/home/devon/sparq-burnin`,
 using `/home/devon/.nvm/versions/node/v24.11.1/bin/npm`. The setup below preserves
-that checkout for the watchdog and shared configuration.
+that checkout for shared data and configuration.
 
 Install the two scripts on the server as `devon`:
 
@@ -67,11 +76,13 @@ From the production server, perform the one-time privileged setup:
 sudo bash /home/devon/bin/setup-production-service.sh
 ```
 
-This creates the release directories and a `current` link to the existing
-checkout, adds a systemd override for that link, grants `devon` passwordless
-permission for **only** `systemctl restart burnin-dashboard.service`, and installs
-and starts the registered runner as a service. It reloads systemd but does not
-restart the dashboard or deploy a release. Rerunning it is supported.
+This creates the release directories and a `current` link when needed, adds
+systemd overrides so both services use that link, and grants `devon` passwordless
+permission for **only** dashboard restart and watchdog stop/start. It also
+installs and starts the registered runner as a service. It reloads systemd but
+does not restart either application service or deploy a release. Rerunning it
+is supported. Existing installations must rerun this setup before deploying
+the first release with watchdog integration (v0.9.3 or later).
 
 On GitHub, create a **production** environment and restrict deployment branches
 to **master**. Use required reviewers if a second approval is wanted. Keep the
@@ -82,11 +93,12 @@ machines, not the production server.
 
 ```bash
 systemctl show burnin-dashboard.service -p WorkingDirectory
+systemctl show burnin-watchdog.service -p WorkingDirectory -p ExecStart -p Environment
 sudo systemctl status 'actions.runner.*'
 readlink -f /home/devon/sparq-burnin-production/current
 ```
 
-The working directory should be `/home/devon/sparq-burnin-production/current`.
+Both working directories should be `/home/devon/sparq-burnin-production/current`.
 GitHub should show the runner as **Idle** before the first manual run. The
 first deployment changes the current link; setup alone leaves it pointing at
 the original checkout. Once this setup is active, use the workflow for releases
@@ -95,6 +107,8 @@ instead of rebuilding the original live checkout.
 The installed deploy script is intentionally separate from release source.
 When changing deployment behavior, review and reinstall the script on the host.
 Adjust the service and `NODE_BIN_DIR` together when upgrading Node.
+Once watchdog integration is installed, use releases v0.9.3 or later; older
+watchdogs do not report the release identity required by deployment readiness.
 
 References: [GitHub runner setup](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners),
 [runner networking](https://docs.github.com/en/actions/reference/runners/self-hosted-runners),

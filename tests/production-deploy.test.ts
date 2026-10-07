@@ -24,11 +24,14 @@ function fixture() {
   const previous = git("rev-parse", "HEAD");
   writeFileSync(path.join(app, "package.json"), JSON.stringify({ version: "0.9.0" }));
   writeFileSync(path.join(app, "release.txt"), "new release");
+  mkdirSync(path.join(app, "scripts"));
+  writeFileSync(path.join(app, "scripts", "watchdog.py"), readFileSync("scripts/watchdog.py"));
   git("add", "."); git("commit", "-m", "new release");
   const sha = git("rev-parse", "HEAD");
   git("tag", "-a", "v0.9.0", "-m", "new release");
   git("checkout", "--detach", previous);
-  writeFileSync(path.join(app, "config.json"), "{}");
+  writeFileSync(path.join(app, "config.json"), JSON.stringify({ paths: { local: { main_dir: path.join(app, "data") } } }));
+  writeFileSync(path.join(root, "psutil.py"), "# Dependency stub: process behavior is tested separately.\n");
   writeFileSync(path.join(app, ".env.local"), "HEALTH_TOKEN=canary-secret\n");
   mkdirSync(path.join(app, ".next"));
   writeFileSync(path.join(app, ".next", "running-build"), "untouched");
@@ -37,6 +40,7 @@ function fixture() {
   symlinkSync("/var/log/external-watchdog.log", path.join(app, "log", "file_sync.log"));
   symlinkSync(app, path.join(deploy, "current"));
   symlinkSync(process.execPath, path.join(bin, "node"));
+  writeFileSync(path.join(root, "watchdog-state"), "active");
   const executable = (name: string, body: string) => writeFileSync(path.join(bin, name), `#!/usr/bin/env bash\nset -euo pipefail\n${body}\n`, { mode: 0o755 });
   executable("npm", `printf 'npm:%s:%s\\n' "$*" "$PWD" >> "$TRACE_FILE"
     if [[ "$*" == "$FAIL_STEP" ]]; then exit 1; fi
@@ -46,7 +50,28 @@ function fixture() {
       for dir in data log logs; do [[ ! -L "$dir" ]]; done
       mkdir .next; printf 'new build' > .next/staged-build
     fi`);
-  executable("systemctl", `if [[ "$1" == show ]]; then printf '%s/current\\n' "$DEPLOY_ROOT"; else printf 'systemctl:%s\\n' "$*" >> "$TRACE_FILE"; fi`);
+  executable("systemctl", `if [[ "$1" == show ]]; then
+      case "$4" in
+        Environment) printf 'BURNIN_RELEASE_DIR=%s/current\\n' "$DEPLOY_ROOT";;
+        ExecStart) printf '/usr/bin/python3 %s/current/scripts/watchdog.py\\n' "$DEPLOY_ROOT";;
+        MainPID) printf '12345\\n';;
+        *) printf '%s/current\\n' "$DEPLOY_ROOT";;
+      esac
+    elif [[ "$1" == is-active ]]; then
+      [[ "$(cat "$WATCHDOG_STATE")" == active ]]
+    else
+      printf 'systemctl:%s\\n' "$*" >> "$TRACE_FILE"
+      if [[ "$2" == "$WATCHDOG_UNIT" ]]; then
+        if [[ "$1" == stop ]]; then printf inactive > "$WATCHDOG_STATE"; fi
+        if [[ "$1" == start ]]; then
+          printf active > "$WATCHDOG_STATE"
+          current="$(readlink -f "$DEPLOY_ROOT/current")"
+          mkdir -p "$APP_DIR/data/.ops"
+          if [[ "$FAIL_WATCHDOG" == yes && -f "$current/.production-commit" ]]; then current=wrong-release; fi
+          node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({pid:12345,releaseDir:process.argv[2]}))' "$APP_DIR/data/.ops/watchdog-status.json" "$current"
+        fi
+      fi
+    fi`);
   executable("sudo", `if [[ "$2" == -l ]]; then exit 0; fi
     shift; exec "$@"`);
   executable("curl", `output=''
@@ -61,7 +86,8 @@ function fixture() {
   const env = {
     ...process.env, APP_DIR: app, DEPLOY_ROOT: deploy, NODE_BIN_DIR: bin,
     SYSTEMCTL: path.join(bin, "systemctl"), REPO_URL: app,
-    TRACE_FILE: path.join(root, "trace"), FAIL_STEP: "", FAIL_HEALTH: "no",
+    TRACE_FILE: path.join(root, "trace"), FAIL_STEP: "", FAIL_HEALTH: "no", FAIL_WATCHDOG: "no",
+    WATCHDOG_UNIT: "burnin-watchdog.service", WATCHDOG_STATE: path.join(root, "watchdog-state"), PYTHONPATH: root,
     HEALTH_RETRIES: "1", HEALTH_SLEEP_SEC: "0",
   };
   const run = (overrides: Record<string, string> = {}) => spawnSync("bash", [path.resolve("scripts/deploy-burnin-production.sh"), sha, "v0.9.0"], { env: { ...env, ...overrides }, encoding: "utf8" });
@@ -84,6 +110,8 @@ describe("production deployment", () => {
     const trace = f.trace();
     expect(trace.indexOf("npm:run build")).toBeLessThan(trace.indexOf("npm:run migrate"));
     expect(trace.indexOf("npm:run migrate")).toBeLessThan(trace.indexOf("systemctl:restart"));
+    expect(trace.indexOf("systemctl:stop burnin-watchdog.service")).toBeLessThan(trace.indexOf("npm:run migrate"));
+    expect(trace.indexOf("systemctl:restart")).toBeLessThan(trace.indexOf("systemctl:start burnin-watchdog.service"));
     expect(result.stdout + result.stderr + trace).not.toContain("canary-secret");
   });
   it("deploys servers configured with only .env.production", () => {
@@ -124,6 +152,7 @@ describe("production deployment", () => {
     expect(readlinkSync(path.join(f.deploy, "current"))).toBe(f.app);
     expect(f.trace()).not.toContain("systemctl:restart");
     if (step !== "run migrate") expect(f.trace()).not.toContain("npm:run migrate");
+    if (step === "run migrate") expect(f.trace()).toContain("systemctl:start burnin-watchdog.service");
   });
   it("restores and restarts the previous release if the new application's health check fails", () => {
     const f = fixture();
@@ -132,6 +161,25 @@ describe("production deployment", () => {
     expect(readlinkSync(path.join(f.deploy, "current"))).toBe(f.app);
     expect(f.trace().match(/systemctl:restart/g)).toHaveLength(2);
     expect(result.stdout).toContain("previous release restored; database migrations remain applied");
+    expect(f.trace()).toContain("systemctl:start burnin-watchdog.service");
+  });
+  it("restores both services when the watchdog reports a different release", () => {
+    const f = fixture();
+    const result = f.run({ FAIL_WATCHDOG: "yes" });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("watchdog failed its release/process readiness check");
+    expect(readlinkSync(path.join(f.deploy, "current"))).toBe(f.app);
+    expect(readFileSync(path.join(f.root, "watchdog-state"), "utf8")).toBe("active");
+  });
+  it("leaves active ingestion alone and asks for a retry", () => {
+    const f = fixture();
+    writeFileSync(path.join(f.app, "data", ".ingestion.lock"), JSON.stringify({ pid: process.pid }));
+    const result = f.run();
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Ingestion is active");
+    expect(f.trace()).not.toContain("systemctl:stop");
+    expect(f.trace()).not.toContain("npm:run migrate");
+    expect(readlinkSync(path.join(f.deploy, "current"))).toBe(f.app);
   });
   it("rejects a tag moved away from the commit that passed CI", () => {
     const f = fixture();
