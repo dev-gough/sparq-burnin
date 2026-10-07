@@ -230,4 +230,61 @@
   }
   .echarts-for-react canvas { touch-action: pan-y; }
   #test-table { scroll-margin-top: 4.5rem; }
+
+  .mobile-app-header button {
+    width: 2.75rem;
+    height: 2.75rem;
+    min-height: 2.75rem;
+    padding: 0;
+  }
+  .mobile-app-header .dashboard-header-actions span { display: none; }
+  .dashboard-header-title [data-slot="tooltip-trigger"] { display: none; }
+  .dashboard-home {
+    display: block;
+    overflow-y: auto;
+  }
+  .dashboard-scroll { overflow-y: visible; }
+  .dashboard-page-header {
+    display: block;
+    padding: 0.5rem 1rem;
+  }
+  .dashboard-header-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .dashboard-page-header .dashboard-header-actions,
+  .dashboard-page-header [aria-label="Result mode"] { display: none; }
+  .mobile-header-controls > .header-period-controls {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .header-period-controls > .header-period-button {
+    flex: 1 1 0;
+    height: 2.75rem;
+    min-height: 2.75rem;
+  }
+  .mobile-navigation [data-slot="select-trigger"] { width: 100%; }
+  .mobile-navigation[data-slot="sheet-content"] {
+    transition: none;
+    animation-duration: 160ms;
+    animation-timing-function: ease-out;
+    will-change: transform;
+  }
+  .mobile-navigation[data-state="open"] { animation-name: mobile-navigation-in; }
+  .mobile-navigation[data-state="closed"] { animation-name: mobile-navigation-out; }
+}
+
+@keyframes mobile-navigation-in {
+  from { opacity: 0; transform: translateY(-1rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes mobile-navigation-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-1rem); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-navigation[data-slot="sheet-content"] { animation: none; }
 }

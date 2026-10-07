@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   IconDownload,
   IconFileZip,
@@ -110,6 +112,11 @@ export function DashboardHeader({
   onCustomOpenChange,
   dataAsOf = null,
 }: DashboardHeaderProps) {
+  const isMobile = useIsMobile();
+  const [mobileActionsTarget, setMobileActionsTarget] = React.useState<HTMLElement | null>(null);
+  React.useEffect(() => {
+    setMobileActionsTarget(document.getElementById("mobile-header-actions"));
+  }, []);
   const [customOpenInternal, setCustomOpenInternal] = React.useState(false);
   const customOpen = customOpenProp ?? customOpenInternal;
   const setCustomOpen = onCustomOpenChange ?? setCustomOpenInternal;
@@ -197,36 +204,8 @@ export function DashboardHeader({
     }
   };
 
-  return (
-    <header className={HEADER_BAR_CLASS}>
-      <div className="flex min-w-0 items-center gap-1.5">
-        <h1 className={HEADER_TITLE_CLASS}>
-          BurnIn Dashboard
-        </h1>
-        <InfoTooltip content={METRICS_HELP} side="bottom" />
-      </div>
-
-      {/* Period + result mode only — large touch targets (O12).
-          Meta (dates / Updated) is intentionally NOT in this flex so
-          justify-center cannot reflow when those strings mount. */}
-      <div className={HEADER_CONTROLS_CLASS}>
-        <HeaderPeriodControls
-          period={dashboardRange.kind}
-          from={customDates.from}
-          to={customDates.to}
-          onPeriodChange={(period) => onPeriodPill(period as DashboardPill)}
-          onCustomRange={onCustomRange}
-          onPeriodPrefetch={(period) => onPeriodPillPrefetch?.(period as DashboardPill)}
-          ready={prefsReady}
-          open={customOpen}
-          onOpenChange={setCustomOpen}
-        />
-        <HeaderResultModeControls mode={chartMode} onModeChange={onChartModeChange} ready={prefsReady} />
-      </div>
-
-      <HeaderRangeMeta range={dashboardRange} updatedAt={dataAsOf} ready={prefsReady} />
-
-      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+  const headerActions = (
+      <div className="dashboard-header-actions flex shrink-0 items-center gap-1.5 sm:gap-2">
         {/* More sheet */}
         <Sheet>
           <SheetTrigger asChild>
@@ -242,7 +221,10 @@ export function DashboardHeader({
           </SheetTrigger>
           <SheetContent side="right" className="w-full sm:max-w-md">
             <SheetHeader>
-              <SheetTitle>Dashboard options</SheetTitle>
+              <div className="flex items-center gap-2">
+                <SheetTitle>Dashboard options</SheetTitle>
+                <span className="md:hidden"><InfoTooltip content={METRICS_HELP} side="bottom" /></span>
+              </div>
               <SheetDescription>
                 More dashboard controls. Period buttons stay on the header.
               </SheetDescription>
@@ -271,7 +253,7 @@ export function DashboardHeader({
                   </ToggleGroupItem>
                 </ToggleGroup>
                 <p className="text-xs text-muted-foreground">
-                  Same control as the header. Latest is the latest PASS or FAIL
+                  <span className="hidden md:inline">Same control as the header. </span>Latest is the latest PASS or FAIL
                   per inverter. All tests counts every PASS and FAIL. Invalid
                   and retest are left out.
                 </p>
@@ -418,6 +400,38 @@ export function DashboardHeader({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+  );
+
+  return (
+    <header className={cn(HEADER_BAR_CLASS, "dashboard-page-header")}>
+      <div className="dashboard-header-title flex min-w-0 items-center gap-1.5">
+        <h1 className={HEADER_TITLE_CLASS}>
+          BurnIn Dashboard
+        </h1>
+        <InfoTooltip content={METRICS_HELP} side="bottom" />
+      </div>
+
+      {/* Period + result mode only — large touch targets (O12).
+          Meta (dates / Updated) is intentionally NOT in this flex so
+          justify-center cannot reflow when those strings mount. */}
+      <div className={HEADER_CONTROLS_CLASS}>
+        <HeaderPeriodControls
+          period={dashboardRange.kind}
+          from={customDates.from}
+          to={customDates.to}
+          onPeriodChange={(period) => onPeriodPill(period as DashboardPill)}
+          onCustomRange={onCustomRange}
+          onPeriodPrefetch={(period) => onPeriodPillPrefetch?.(period as DashboardPill)}
+          ready={prefsReady}
+          open={customOpen}
+          onOpenChange={setCustomOpen}
+        />
+        <HeaderResultModeControls mode={chartMode} onModeChange={onChartModeChange} ready={prefsReady} />
+      </div>
+
+      <HeaderRangeMeta range={dashboardRange} updatedAt={dataAsOf} ready={prefsReady} />
+
+      {isMobile && mobileActionsTarget ? createPortal(headerActions, mobileActionsTarget) : headerActions}
     </header>
   );
 }

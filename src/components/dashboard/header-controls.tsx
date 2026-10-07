@@ -51,7 +51,7 @@ export function HeaderPeriodControls({
         if (value && value !== "custom") onPeriodChange(value);
       }}
       variant="outline"
-      className={cn("flex", !ready && "pointer-events-none opacity-50")}
+      className={cn("header-period-controls flex", !ready && "pointer-events-none opacity-50")}
       aria-label="Period"
       aria-busy={!ready}
     >
@@ -60,7 +60,7 @@ export function HeaderPeriodControls({
           key={p.value}
           value={p.value}
           disabled={!ready}
-          className={cn(HEADER_TOGGLE_CLASS, "min-w-11")}
+          className={cn(HEADER_TOGGLE_CLASS, "header-period-button min-w-11")}
           aria-label={p.label}
           onPointerEnter={() => onPeriodPrefetch?.(p.value)}
           onFocus={() => onPeriodPrefetch?.(p.value)}
@@ -76,7 +76,7 @@ export function HeaderPeriodControls({
             value="custom"
             data-selected={custom}
             disabled={!ready}
-            className={CUSTOM_TOGGLE_CLASS}
+            className={cn(CUSTOM_TOGGLE_CLASS, "header-period-button")}
             aria-label="Custom date range"
           >
             Custom

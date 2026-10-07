@@ -370,6 +370,53 @@ const station = {
       `${selector} outside screen: ${JSON.stringify(box)}`,
     );
   }
+  // Mobile chrome must leave room for the dashboard and scroll out of the way.
+  for (const width of [412, 384, 320]) {
+    await page.setViewportSize({ width, height: 700 });
+    await page.goto(base + "/");
+    await page.waitForTimeout(2000);
+    const chrome = await page.evaluate(() => {
+      const header = document.querySelector(".dashboard-page-header").getBoundingClientRect();
+      return {
+        bottom: header.bottom,
+        buttons: [...document.querySelectorAll(".header-period-button")].map((e) => {
+          const r = e.getBoundingClientRect();
+          return { width: r.width, height: r.height };
+        }),
+      };
+    });
+    assert(chrome.bottom <= 120, `Dashboard chrome uses ${chrome.bottom}px at ${width}px`);
+    assert.equal(chrome.buttons.length, 5);
+    for (const button of chrome.buttons) {
+      assert.equal(button.height, 44);
+      assert(Math.abs(button.width - chrome.buttons[0].width) < 1, "Period buttons differ in width");
+    }
+    for (const name of ["Open navigation", "More options", "Export"]) {
+      const target = await page.getByRole("button", { name, exact: true }).boundingBox();
+      assert(target && target.width >= 44 && target.height >= 44, `${name} is too small`);
+    }
+    await shot(`${width}-compact-dashboard`);
+    await page.locator(".dashboard-home").evaluate((e) => { e.scrollTop = 350; });
+    assert(await page.locator(".dashboard-page-header").evaluate((e) => e.getBoundingClientRect().bottom <= 56));
+    assert(await page.getByRole("button", { name: "Open navigation" }).isVisible());
+    await shot(`${width}-dashboard-scrolled`);
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    await fits(".mobile-navigation");
+    const menu = await page.locator(".mobile-navigation").evaluate((e) => ({
+      height: e.clientHeight, scrollHeight: e.scrollHeight,
+      animationMs: parseFloat(getComputedStyle(e).animationDuration) * 1000,
+    }));
+    assert(menu.scrollHeight <= menu.height + 1, `Navigation needs scrolling at ${width}px: ${JSON.stringify(menu)}`);
+    assert(menu.animationMs <= 180, "Navigation animation is too slow");
+    await shot(`${width}-compact-navigation`);
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(250);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    assert.equal(await page.locator(".mobile-navigation").evaluate((e) => getComputedStyle(e).animationName), "none");
+    await page.keyboard.press("Escape");
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+  }
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto(base + "/");

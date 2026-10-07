@@ -299,25 +299,79 @@ export function HoverSidebar() {
 
   return (
     <>
-      <div className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background px-4 md:hidden">
+      <div className="mobile-app-header sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background px-4 md:hidden">
         <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight" aria-label="BurnIn home">
           <Image src="/logo.png" alt="" width={126} height={85} className="h-auto w-9" />
           BurnIn
         </Link>
-        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-          <SheetTrigger asChild>
-            <Button variant="outline" size="icon" className="size-10" aria-label="Open navigation">
-              <Menu className="size-5" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="top" className="max-h-dvh gap-0 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)] md:hidden">
-            <SheetHeader className="border-b pr-16">
-              <SheetTitle>BurnIn</SheetTitle>
-              <SheetDescription>Navigation and preferences</SheetDescription>
-            </SheetHeader>
-            {sidebarContent}
-          </SheetContent>
-        </Sheet>
+        <div className="flex items-center gap-2">
+          <div id="mobile-header-actions" />
+          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="icon" className="size-10" aria-label="Open navigation">
+                <Menu className="size-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="top" className="mobile-navigation max-h-dvh gap-0 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)] md:hidden">
+              <SheetHeader className="border-b pr-16">
+                <SheetTitle>BurnIn</SheetTitle>
+                <SheetDescription>Navigation and preferences</SheetDescription>
+              </SheetHeader>
+              <div className="space-y-3 p-4">
+                <div className="flex items-center gap-3 rounded-lg bg-muted/50 p-3">
+                  <User className="size-5 shrink-0 text-primary" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{userName}</p>
+                    {userEmail && <p className="truncate text-xs text-muted-foreground">{userEmail}</p>}
+                  </div>
+                </div>
+                <nav aria-label="Main navigation" className="grid grid-cols-2 gap-1.5">
+                  {[...navItems, { href: "/changelog", label: "Changelog", icon: ScrollText }].map((item) => {
+                    const Icon = item.icon;
+                    const active = pathname === item.href;
+                    return (
+                      <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}
+                        aria-current={active ? "page" : undefined}
+                        className={`flex min-h-11 min-w-0 items-center gap-2 rounded-md px-2 py-2 text-sm ${active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>
+                        <Icon className="size-4 shrink-0" />
+                        <span className="min-w-0 flex-1">{item.label}</span>
+                        {"badge" in item && item.badge != null && item.badge > 0 && (
+                          <span className="rounded-full bg-orange-500 px-1.5 text-xs text-white">{item.badge}</span>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </nav>
+                <div className="space-y-3 border-t pt-3">
+                  {mounted && (
+                    <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="Color theme">
+                      {([
+                        { value: "light", label: "Light", title: "Light mode", icon: Sun },
+                        { value: "dark", label: "Dark", title: "Dark mode", icon: Moon },
+                        { value: "system", label: "System", title: "System theme", icon: Monitor },
+                      ] as const).map(({ value, label, title, icon: Icon }) => (
+                        <Button key={value} variant={theme === value ? "default" : "outline"}
+                          size="sm" className="gap-1.5 px-2" title={title}
+                          aria-pressed={theme === value} onClick={() => setTheme(value)}>
+                          <Icon className="size-4" />{label}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1"><TimezoneSelector /></div>
+                    <Button variant="outline" size="sm" className="shrink-0 gap-2"
+                      onClick={() => session?.user ? signOut({ callbackUrl: "/auth/signin" }) : signIn("azure-ad")}>
+                      {session?.user ? <LogOut className="size-4" /> : <LogIn className="size-4" />}
+                      {session?.user ? "Sign Out" : "Sign In"}
+                    </Button>
+                  </div>
+                  <p className="text-right text-xs text-muted-foreground" aria-label={`Version ${version}`}>v{version}</p>
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
       </div>
     <div
       id="hover-sidebar"
