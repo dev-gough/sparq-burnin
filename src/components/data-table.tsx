@@ -17,6 +17,7 @@ import {
 } from "@tabler/icons-react";
 import {
   CalendarRange,
+  ChevronDown,
   Link2,
   Loader2,
   Search,
@@ -51,6 +52,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -834,6 +836,96 @@ export function DataTable({
     return null;
   })();
 
+  const datePicker = (
+    <div className="sm:col-span-2">
+      <DateRangePicker
+        from={dateFromFilter}
+        to={dateToFilter}
+        onRangeChange={(from, to) => {
+          if (onDateRangeChange) {
+            onDateRangeChange(from, to);
+            return;
+          }
+          onDateFromFilterChange(from);
+          onDateToFilterChange(to);
+        }}
+      />
+    </div>
+  );
+  const tableDates = showDateRangeFilter ? datePicker : null;
+  const modeControls = (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={latestOnly}
+        onClick={() =>
+          onChartModeChange(latestOnly ? "all" : "recent")
+        }
+        className={cn(
+          "inline-flex h-9 items-center gap-2 rounded-md border px-2.5 text-sm transition-colors",
+          latestOnly
+            ? "border-primary/40 bg-primary/10 text-foreground"
+            : "border-border bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+        )}
+        title="Matches Latest / All tests in the page header"
+      >
+        <span
+          className={cn(
+            "flex size-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold",
+            latestOnly
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-border bg-muted",
+          )}
+          aria-hidden
+        >
+          {latestOnly ? "✓" : ""}
+        </span>
+        <span className="font-medium text-foreground">
+          One row per inverter
+        </span>
+      </button>
+      <InfoTooltip content="Same switch as Latest / All tests. On keeps the latest PASS or FAIL per inverter, which is what the summary counts. Off lists every run in the date range, including invalid and retest." />
+
+      <button
+        type="button"
+        role="switch"
+        aria-checked={filterLinked}
+        onClick={() => onFilterLinkedChange(!filterLinked)}
+        className={cn(
+          "inline-flex h-9 items-center gap-2 rounded-md border px-2.5 text-sm transition-colors",
+          filterLinked
+            ? "border-primary/40 bg-primary/10 text-foreground"
+            : "border-border bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+        )}
+        title={
+          filterLinked
+            ? "Table dates follow the dashboard period"
+            : "Table dates are independent of the dashboard"
+        }
+      >
+        {filterLinked ? (
+          <Link2 className="size-3.5 shrink-0 text-primary" />
+        ) : (
+          <Unlink className="size-3.5 shrink-0 text-muted-foreground" />
+        )}
+        <span className="font-medium text-foreground">
+          {filterLinked
+            ? "Dates match dashboard"
+            : "Dates set separately"}
+        </span>
+      </button>
+      <InfoTooltip content="When on, table dates follow the dashboard period, and editing those dates updates the dashboard range. Annotation filters always apply to both." />
+
+      {loading && (
+        <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          Updating list…
+        </span>
+      )}
+    </div>
+  );
+
   return (
     <Tabs
       id="test-table"
@@ -971,7 +1063,7 @@ export function DataTable({
               </div>
 
               <div
-                className="flex flex-wrap gap-1.5"
+                className="hidden flex-wrap gap-1.5 md:flex"
                 role="group"
                 aria-label="Filter by result"
               >
@@ -1004,19 +1096,29 @@ export function DataTable({
             {/* Category / firmware / station / dates — denser grid */}
             <div
               className={cn(
-                "grid gap-2 sm:grid-cols-2",
-                stationOptions.length > 0 ? "xl:grid-cols-5" : "xl:grid-cols-4",
+                "table-filter-row grid gap-2 sm:grid-cols-2",
+                stationOptions.length > 0 ? "mobile-five-filters xl:grid-cols-5" : "xl:grid-cols-4",
               )}
             >
+              <Select value={statusFilter} onValueChange={onStatusFilterChange}>
+                <SelectTrigger className="mobile-filter-trigger md:hidden" aria-label="Filter by result"
+                  data-active={statusFilter !== "all"} title={statusMeta.label}>
+                  <span>{statusFilter === "all" ? "Result" : statusFilter === "valid" ? "Valid" : statusMeta.short}</span>
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_OPTIONS.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
               <Select
                 value={annotationFilter}
                 onValueChange={onAnnotationFilterChange}
               >
                 <SelectTrigger
                   className="h-9 min-h-9 w-full min-w-0 bg-background shadow-xs"
-                  aria-label="Category or note"
+                  aria-label="Category or note" data-active={annotationFilter !== "all"}
                 >
-                  <SelectValue placeholder="All categories" />
+                  <span className="mobile-filter-label md:hidden" aria-hidden>Tag</span>
+                  <SelectValue className="hidden md:flex" placeholder="All categories" />
                 </SelectTrigger>
                 <SelectContent
                   className="max-h-[400px] overflow-y-auto [&>*[data-slot=select-scroll-up-button]]:hidden [&>*[data-slot=select-scroll-down-button]]:hidden"
@@ -1077,9 +1179,10 @@ export function DataTable({
               <Select value={firmwareFilter} onValueChange={setFirmwareFilter}>
                 <SelectTrigger
                   className="h-9 min-h-9 w-full min-w-0 bg-background shadow-xs"
-                  aria-label="Firmware version"
+                  aria-label="Firmware version" data-active={firmwareFilter !== "all"}
                 >
-                  <SelectValue placeholder="All versions" />
+                  <span className="mobile-filter-label md:hidden" aria-hidden>FW</span>
+                  <SelectValue className="hidden md:flex" placeholder="All versions" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All versions</SelectItem>
@@ -1098,9 +1201,10 @@ export function DataTable({
                 >
                   <SelectTrigger
                     className="h-9 min-h-9 w-full min-w-0 bg-background shadow-xs"
-                    aria-label="Test station"
+                    aria-label="Test station" data-active={stationFilter !== "all"}
                   >
-                    <SelectValue placeholder="All stations" />
+                    <span className="mobile-filter-label md:hidden" aria-hidden>Station</span>
+                    <SelectValue className="hidden md:flex" placeholder="All stations" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All stations</SelectItem>
@@ -1113,93 +1217,24 @@ export function DataTable({
                 </Select>
               )}
 
-              {showDateRangeFilter && <div className="sm:col-span-2">
-                <DateRangePicker
-                  from={dateFromFilter}
-                  to={dateToFilter}
-                  onRangeChange={(from, to) => {
-                    if (onDateRangeChange) {
-                      onDateRangeChange(from, to);
-                      return;
-                    }
-                    onDateFromFilterChange(from);
-                    onDateToFilterChange(to);
-                  }}
-                />
-              </div>}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="mobile-filter-trigger md:hidden" aria-label="Table options"
+                    data-active={!latestOnly || !filterLinked}>
+                    <span>More</span><ChevronDown className="size-3 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="mobile-table-options w-[min(340px,calc(100vw-32px))] space-y-3 p-3">
+                  <p className="text-sm font-semibold">Table options</p>
+                  {modeControls}
+                  {(!filterLinked || showDateRangeFilter) && datePicker}
+                </PopoverContent>
+              </Popover>
+              <div className="hidden md:contents">{tableDates}</div>
             </div>
 
             {/* Mode switches — single-line chips */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={latestOnly}
-                onClick={() =>
-                  onChartModeChange(latestOnly ? "all" : "recent")
-                }
-                className={cn(
-                  "inline-flex h-9 items-center gap-2 rounded-md border px-2.5 text-sm transition-colors",
-                  latestOnly
-                    ? "border-primary/40 bg-primary/10 text-foreground"
-                    : "border-border bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                )}
-                title="Matches Latest / All tests in the page header"
-              >
-                <span
-                  className={cn(
-                    "flex size-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold",
-                    latestOnly
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-muted",
-                  )}
-                  aria-hidden
-                >
-                  {latestOnly ? "✓" : ""}
-                </span>
-                <span className="font-medium text-foreground">
-                  One row per inverter
-                </span>
-              </button>
-              <InfoTooltip content="Same switch as Latest / All tests. On keeps the latest PASS or FAIL per inverter, which is what the summary counts. Off lists every run in the date range, including invalid and retest." />
-
-              <button
-                type="button"
-                role="switch"
-                aria-checked={filterLinked}
-                onClick={() => onFilterLinkedChange(!filterLinked)}
-                className={cn(
-                  "inline-flex h-9 items-center gap-2 rounded-md border px-2.5 text-sm transition-colors",
-                  filterLinked
-                    ? "border-primary/40 bg-primary/10 text-foreground"
-                    : "border-border bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                )}
-                title={
-                  filterLinked
-                    ? "Table dates follow the dashboard period"
-                    : "Table dates are independent of the dashboard"
-                }
-              >
-                {filterLinked ? (
-                  <Link2 className="size-3.5 shrink-0 text-primary" />
-                ) : (
-                  <Unlink className="size-3.5 shrink-0 text-muted-foreground" />
-                )}
-                <span className="font-medium text-foreground">
-                  {filterLinked
-                    ? "Dates match dashboard"
-                    : "Dates set separately"}
-                </span>
-              </button>
-              <InfoTooltip content="When on, table dates follow the dashboard period, and editing those dates updates the dashboard range. Annotation filters always apply to both." />
-
-              {loading && (
-                <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                  Updating list…
-                </span>
-              )}
-            </div>
+            <div className="hidden md:block">{modeControls}</div>
           </div>
         </div>
 

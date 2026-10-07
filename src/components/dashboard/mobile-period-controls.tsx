@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { HEADER_PERIODS, HeaderPeriodControls } from "@/components/dashboard/header-controls";
 
@@ -114,12 +113,14 @@ export function MobilePeriodControls({ scrollContainerRef, ...props }: MobilePer
 
   return (
     <>
+      {/* The transformed radio stays visible; this transparent button supplies
+          its header tap target without a second painted pill to flicker. */}
       <Button ref={summaryRef} variant="default" size="sm"
         className="mobile-period-summary rounded-full bg-primary text-primary-foreground"
         data-collapsed={collapsed} aria-hidden={!collapsed} tabIndex={collapsed ? 0 : -1}
         aria-label={`Expand date filters, selected ${label}`} aria-controls={panelId}
         aria-expanded={!collapsed} disabled={!ready} title={label} onClick={expand}>
-        <span>{shortLabel}</span><ChevronDown className="size-3" />
+        <span>{shortLabel}</span>
       </Button>
       <div ref={panelRef} id={panelId} className="mobile-period-panel mobile-header-controls"
         data-collapsed={collapsed} aria-hidden={collapsed} inert={collapsed}

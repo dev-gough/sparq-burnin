@@ -445,13 +445,15 @@ const station = {
     await page.waitForTimeout(420);
     const pill = await summary.boundingBox();
     assert(pill && pill.y >= 0 && pill.y + pill.height <= 56, "Selected range should fit in the fixed header");
-    const colors = await summary.evaluate((e) => {
-      const source = document.querySelector('.mobile-period-panel [aria-checked="true"]');
-      return { pill: getComputedStyle(e).backgroundColor, row: getComputedStyle(source).backgroundColor,
-        text: getComputedStyle(e).color, rowText: getComputedStyle(source).color };
-    });
-    assert.equal(colors.pill, colors.row, "Folded selection should keep the date row's background contrast");
-    assert.equal(colors.text, colors.rowText, "Folded selection should keep readable text");
+    assert(pill.width >= 84, "Header badge should have a generous width");
+    const painted = panel.locator('[aria-checked="true"]');
+    const paintedBox = await painted.boundingBox();
+    assert(Math.abs(paintedBox.x - pill.x) < 1 && Math.abs(paintedBox.width - pill.width) < 1,
+      "The animated pill should remain aligned with its header tap target");
+    assert.equal(await painted.evaluate((e) => getComputedStyle(e).opacity), "1",
+      "The selected pill should remain visible after the animation finishes");
+    await page.waitForTimeout(180);
+    assert.equal(await painted.evaluate((e) => getComputedStyle(e).opacity), "1");
     assert.equal(await summary.getAttribute("aria-expanded"), "false");
     assert.equal(await page.getByRole("radio", { name: "30 days", exact: true }).count(), 0, "Folded controls should not be focusable");
     await shot(`${width}-dates-folded`);
@@ -521,6 +523,66 @@ const station = {
     assert.equal(await page.locator(".mobile-period-panel").count(), 0, "Desktop should retain its original date controls");
     assert(await page.getByRole("radio", { name: "Custom date range", exact: true }).isVisible());
   }
+  // Search stays full width; all other phone controls share one dropdown row.
+  const stationFixture = (r) => r.fulfill({ contentType: "application/json",
+    body: JSON.stringify({ stations: [station.stationId] }) });
+  await page.route("**/api/stations/options", stationFixture);
+  for (const width of [320, 390, 412]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(base + "/");
+    await page.waitForTimeout(1600);
+    await page.locator("#serial-search").scrollIntoViewIfNeeded();
+    const row = page.locator(".table-filter-row");
+    const buttons = row.locator("button:visible");
+    assert.equal(await buttons.count(), 5);
+    const boxes = await buttons.evaluateAll((es) => es.map((e) => {
+      const r = e.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right };
+    }));
+    assert(boxes.every((b) => Math.abs(b.y - boxes[0].y) < 1 && b.height >= 44 && b.right <= width),
+      "Five touch-sized filter dropdowns should fit on one row");
+    const searchBox = await page.locator("#serial-search").boundingBox();
+    const rowBox = await row.boundingBox();
+    assert(Math.abs(searchBox.width - rowBox.width) < 1, "Serial search should remain full width");
+    await shot(`${width}-compact-table-filters`);
+    const result = row.getByRole("combobox", { name: "Filter by result" });
+    await result.click();
+    await fits("[data-slot=select-content]");
+    await page.getByRole("option", { name: "Failed", exact: true }).click();
+    assert.equal(await result.getAttribute("data-active"), "true");
+    await row.getByRole("combobox", { name: "Category or note" }).click();
+    await fits("[data-slot=select-content]");
+    await page.getByRole("option", { name: "Tagged tests (any annotation)", exact: true }).click();
+    assert.equal(await row.getByRole("combobox", { name: "Category or note" }).getAttribute("data-active"), "true");
+    await row.getByRole("combobox", { name: "Firmware version" }).click();
+    await fits("[data-slot=select-content]");
+    await page.getByRole("option", { name: tests[0].firmware_version, exact: true }).click();
+    await row.getByRole("combobox", { name: "Test station" }).click();
+    await fits("[data-slot=select-content]");
+    await page.getByRole("option", { name: station.stationId, exact: true }).click();
+    await page.getByRole("button", { name: "Table options", exact: true }).click();
+    const options = page.locator(".mobile-table-options");
+    await fits(".mobile-table-options");
+    const mode = options.getByRole("switch", { name: /One row per inverter/ });
+    const previous = await mode.getAttribute("aria-checked");
+    await mode.click();
+    assert.notEqual(await mode.getAttribute("aria-checked"), previous);
+    const link = options.getByRole("switch", { name: /Dates/ });
+    const linked = await link.getAttribute("aria-checked");
+    await link.click();
+    assert.notEqual(await link.getAttribute("aria-checked"), linked);
+    if (await link.getAttribute("aria-checked") === "true") await link.click();
+    await shot(`${width}-table-options`);
+    await options.getByRole("button", { name: /date range/i }).click();
+    await fits("[data-slot=popover-content]:not(.mobile-table-options)");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Clear all", exact: true }).click();
+    await page.locator("#serial-search").fill("SPARQ*");
+    assert.equal(await page.locator("#serial-search").inputValue(), "SPARQ*");
+    await page.getByRole("button", { name: "Clear serial search" }).click();
+  }
+  await page.unroute("**/api/stations/options", stationFixture);
   // The clock stays icon-only while its accessible label follows the chosen timezone.
   await page.setViewportSize({ width: 412, height: 915 });
   await page.goto(base + "/");
@@ -726,13 +788,8 @@ const station = {
   await page.locator(".dashboard-home").evaluate((e) => { e.scrollTop = 220; });
   await page.locator('.mobile-period-panel[data-collapsed="true"]').waitFor({ state: "attached" });
   await page.waitForTimeout(420);
-  const lightColors = await page.locator(".mobile-period-summary").evaluate((e) => {
-    const source = document.querySelector('.mobile-period-panel [aria-checked="true"]');
-    return { pill: getComputedStyle(e).backgroundColor, row: getComputedStyle(source).backgroundColor,
-      text: getComputedStyle(e).color, rowText: getComputedStyle(source).color };
-  });
-  assert.equal(lightColors.pill, lightColors.row);
-  assert.equal(lightColors.text, lightColors.rowText);
+  const lightPill = page.locator('.mobile-period-panel [aria-checked="true"]');
+  assert.equal(await lightPill.evaluate((e) => getComputedStyle(e).opacity), "1");
   await shot("390-dates-folded-light");
   await page.getByRole("button", { name: "Open navigation" }).click();
   await page.setViewportSize({ width: 1440, height: 1000 });
