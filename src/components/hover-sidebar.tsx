@@ -10,6 +10,7 @@ import { TimezoneSelector } from "@/components/timezone-selector";
 import { usePathname } from "next/navigation";
 import { useSettings } from "@/contexts/settings-context";
 import { useTheme } from "next-themes";
+import { version } from "../../package.json";
 
 export function HoverSidebar() {
   const { data: session, status: sessionStatus } = useSession();
@@ -251,6 +252,7 @@ export function HoverSidebar() {
               >
                 <ScrollText className="size-3.5" />
                 <span>Changelog</span>
+                <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/60" aria-label={`Version ${version}`}>v{version}</span>
               </Link>
             </div>
 
