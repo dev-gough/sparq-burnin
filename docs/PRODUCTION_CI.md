@@ -18,9 +18,12 @@ commit, and runs lint, TypeScript checks, and tests. Only that commit is sent to
 the production runner. A moved tag or a version mismatch stops the deployment.
 
 The production job runs the installed `/home/devon/bin/deploy-burnin-production.sh`.
-It builds in `/home/devon/sparq-burnin-production/releases/`, sharing the original
-checkout's `config.json`, production environment files (`.env.production.local`,
-`.env.local`, `.env.production`, and `.env` when present), data, and log directories. It then runs
+It builds in `/home/devon/sparq-burnin-production/releases/`, using private copies
+of the original checkout's `config.json` and production environment files
+(`.env.production.local`, `.env.local`, `.env.production`, and `.env` when present).
+After building, it links those files, data, and log directories to the original
+checkout for runtime use. Keeping shared symlinks out of the build prevents
+Turbopack from tracing log links outside the release directory. It then runs
 `npm run migrate`, atomically switches `current`, restarts the dashboard, and
 checks the health response's release version and database status. Build and
 migration failures leave the running application in place. Failed startup or

@@ -88,14 +88,25 @@ git -C "$APP_DIR" merge-base --is-ancestor "$SHA" refs/remotes/production/master
 release="$(mktemp -d "$DEPLOY_ROOT/releases/$SHA.XXXXXX")"
 git -C "$APP_DIR" archive "$SHA" | tar -x -C "$release"
 [[ "v$(node -p "require(process.argv[1]).version" "$release/package.json")" == "$TAG" ]] || die "tag and package version differ"
-# Keep configuration, ingest data, and logs on the server, shared with watchdog.
-for name in config.json "${env_files[@]}" data log logs; do
-  if [[ -e "$APP_DIR/$name" ]]; then ln -s "$APP_DIR/$name" "$release/$name"; fi
+# Build with local configuration copies, without shared-directory symlinks.
+# Turbopack traces log paths and rejects links outside its project root.
+for name in config.json "${env_files[@]}"; do
+  if [[ -f "$APP_DIR/$name" ]]; then cp -L "$APP_DIR/$name" "$release/$name"; chmod 600 "$release/$name"; fi
 done
 cd "$release"
 log "install and build in $release (running app is untouched)"
 npm ci
 npm run build
+# At runtime, share configuration, ingest data, and logs with the watchdog.
+for name in config.json "${env_files[@]}" data log logs; do
+  if [[ -e "$APP_DIR/$name" ]]; then
+    if [[ -e "$release/$name" || -L "$release/$name" ]]; then
+      [[ -f "$release/$name" && ! -L "$release/$name" ]] || die "unexpected staged path: $name"
+      rm "$release/$name"
+    fi
+    ln -s "$APP_DIR/$name" "$release/$name"
+  fi
+done
 printf '%s\n' "$SHA" > .production-commit
 
 # Do not put the health token on a process command line or in CI output.

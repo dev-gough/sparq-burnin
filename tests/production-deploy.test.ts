@@ -33,12 +33,19 @@ function fixture() {
   mkdirSync(path.join(app, ".next"));
   writeFileSync(path.join(app, ".next", "running-build"), "untouched");
   mkdirSync(path.join(app, "data"));
+  mkdirSync(path.join(app, "log"));
+  symlinkSync("/var/log/external-watchdog.log", path.join(app, "log", "file_sync.log"));
   symlinkSync(app, path.join(deploy, "current"));
   symlinkSync(process.execPath, path.join(bin, "node"));
   const executable = (name: string, body: string) => writeFileSync(path.join(bin, name), `#!/usr/bin/env bash\nset -euo pipefail\n${body}\n`, { mode: 0o755 });
   executable("npm", `printf 'npm:%s:%s\\n' "$*" "$PWD" >> "$TRACE_FILE"
     if [[ "$*" == "$FAIL_STEP" ]]; then exit 1; fi
-    if [[ "$*" == 'run build' ]]; then mkdir .next; printf 'new build' > .next/staged-build; fi`);
+    if [[ "$*" == 'run build' ]]; then
+      [[ -f config.json && ! -L config.json ]]
+      for file in .env.production.local .env.local .env.production .env; do [[ ! -L "$file" ]]; done
+      for dir in data log logs; do [[ ! -L "$dir" ]]; done
+      mkdir .next; printf 'new build' > .next/staged-build
+    fi`);
   executable("systemctl", `if [[ "$1" == show ]]; then printf '%s/current\\n' "$DEPLOY_ROOT"; else printf 'systemctl:%s\\n' "$*" >> "$TRACE_FILE"; fi`);
   executable("sudo", `if [[ "$2" == -l ]]; then exit 0; fi
     shift; exec "$@"`);
@@ -73,6 +80,7 @@ describe("production deployment", () => {
     expect(f.git("rev-parse", "HEAD")).not.toBe(f.sha);
     expect(readlinkSync(path.join(release, "config.json"))).toBe(path.join(f.app, "config.json"));
     expect(readlinkSync(path.join(release, "data"))).toBe(path.join(f.app, "data"));
+    expect(readlinkSync(path.join(release, "log"))).toBe(path.join(f.app, "log"));
     const trace = f.trace();
     expect(trace.indexOf("npm:run build")).toBeLessThan(trace.indexOf("npm:run migrate"));
     expect(trace.indexOf("npm:run migrate")).toBeLessThan(trace.indexOf("systemctl:restart"));
