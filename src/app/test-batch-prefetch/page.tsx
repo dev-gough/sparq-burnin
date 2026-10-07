@@ -119,7 +119,7 @@ export default function TestBatchPrefetch() {
 
             <div>
               <label className="block text-sm font-medium mb-2">Mode</label>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <Button
                   variant={mode === 'quick' ? 'default' : 'outline'}
                   onClick={() => setMode('quick')}
@@ -135,7 +135,7 @@ export default function TestBatchPrefetch() {
               </div>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <Button
                 onClick={testBatchEndpoint}
                 disabled={loading}

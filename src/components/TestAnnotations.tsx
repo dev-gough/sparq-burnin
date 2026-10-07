@@ -100,7 +100,7 @@ function DraggableQuickOption({
         type="button"
         onClick={onClick}
         title={`Add "${option.option_text}" to this test`}
-        className="inline-flex items-center rounded-md border bg-background py-1 pl-2.5 pr-6 text-xs font-medium transition-colors hover:bg-muted"
+        className="inline-flex max-w-full items-center rounded-md border bg-background min-h-11 md:min-h-0 py-1 pl-2.5 pr-6 text-xs font-medium transition-colors hover:bg-muted"
         style={
           accentColor
             ? {
@@ -811,7 +811,7 @@ export default function TestAnnotations({
                     </div>
                   ) : (
                     <div className="mt-1.5">
-                      <p className="text-sm leading-snug">{annotation.annotation_text}</p>
+                      <p className="break-words text-sm leading-snug">{annotation.annotation_text}</p>
                       <div className="mt-1 flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
                         <span
                           className="font-medium text-foreground/80"

@@ -9,7 +9,7 @@ export default function ChangelogPage() {
   const version = readPackageVersion();
   const entries = loadChangelog();
   return (
-    <div className="ml-10 flex min-h-dvh flex-col">
+    <div className="ml-0 md:ml-10 flex min-h-dvh flex-col">
       <SiteHeader title="Changelog" />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 lg:px-6">
         <p className="text-xs font-medium uppercase tracking-[0.15em] text-muted-foreground">Releases</p>

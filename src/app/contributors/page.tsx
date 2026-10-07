@@ -429,7 +429,7 @@ export default function ContributorsPage() {
   const maximum = Math.max(1, ...breakdown.map((item) => item.count));
 
   return (
-    <div className="ml-10 flex h-dvh flex-col overflow-hidden">
+    <div className="ml-0 md:ml-10 flex h-[calc(100dvh-3.5rem)] md:h-dvh flex-col overflow-hidden">
       <SiteHeader title="Contributors" />
       <div className="flex-1 overflow-y-auto" aria-busy={loading}>
         <div className="w-full space-y-6 px-4 py-5 lg:px-6 lg:py-6">
@@ -671,7 +671,74 @@ export default function ContributorsPage() {
                           : "contributors"}
                       </span>
                     </div>
-                    <div className="max-h-[520px] overflow-auto">
+                    <div className="space-y-3 p-4 md:hidden">
+                      <div className="flex flex-wrap gap-2" aria-label="Sort contributors">
+                        <button
+                          type="button"
+                          onClick={() => sort("total_annotations")}
+                          className="min-h-11 rounded-md border px-3 text-sm"
+                        >
+                          Annotations{" "}
+                          {sortField === "total_annotations" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => sort("contributor_name")}
+                          className="min-h-11 rounded-md border px-3 text-sm"
+                        >
+                          Name {sortField === "contributor_name" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                        </button>
+                      </div>
+                      {contributors.map((person) => (
+                        <button
+                          key={person.contributor_name}
+                          type="button"
+                          aria-pressed={selected?.contributor_name === person.contributor_name}
+                          onClick={() => {
+                            setSelectedName(person.contributor_name);
+                            setSelectedGroup(null);
+                            document
+                              .getElementById("contributor-details")
+                              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                          }}
+                          className={cn(
+                            "block w-full space-y-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            selected?.contributor_name === person.contributor_name &&
+                              "border-primary/40 bg-primary/5",
+                          )}
+                        >
+                          <div>
+                            <p className="break-words text-sm font-semibold">
+                              {displayName(person.contributor_name)}
+                            </p>
+                            <p className="break-all text-xs text-muted-foreground">{person.contributor_name}</p>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 text-sm tabular-nums">
+                            <div>
+                              <p className="font-semibold">{number(person.total_annotations)}</p>
+                              <p className="text-xs text-muted-foreground">Annotations</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold">{number(person.unique_tests_annotated)}</p>
+                              <p className="text-xs text-muted-foreground">Tests</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold">{person.percentage_of_tests.toFixed(1)}%</p>
+                              <p className="text-xs text-muted-foreground">Share of tests</p>
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Last active · {formatDate(person.last_activity)} UTC
+                          </p>
+                        </button>
+                      ))}
+                      {!contributors.length && (
+                        <p className="py-6 text-center text-sm text-muted-foreground">
+                          No contributors match your search.
+                        </p>
+                      )}
+                    </div>
+                    <div className="hidden md:block max-h-[520px] overflow-auto">
                       <table className="w-full text-left text-sm">
                         <thead className="sticky top-0 z-10 bg-card text-muted-foreground">
                           <tr>
@@ -776,7 +843,7 @@ export default function ContributorsPage() {
                       overlap.
                     </p>
                   </Card>
-                  <Card className="gap-0 overflow-hidden py-0 shadow-none">
+                  <Card id="contributor-details" className="scroll-mt-16 gap-0 overflow-hidden py-0 shadow-none">
                     {selected ? (
                       <>
                         <div className="border-b p-4 sm:p-5">

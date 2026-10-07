@@ -355,11 +355,11 @@ export function HeroMetrics({
 
   // Static card shells — only metric values / dynamic phrase fragments update
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-6">
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-6">
       {/* FAILURE RATE */}
       <Card
         className={cn(
-          "@container/card to-card bg-gradient-to-t shadow-xs md:col-span-1",
+          "@container/card col-span-2 to-card bg-gradient-to-t shadow-xs md:col-span-1",
           rateTone.cue === "Elevated"
             ? "from-rose-500/10"
             : rateTone.cue === "Watch"

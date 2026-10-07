@@ -213,12 +213,12 @@ function StationCardSkeleton() {
 
 function StationsPageSkeleton() {
   return (
-    <div className="ml-10">
+    <div className="ml-0 md:ml-10">
       <SiteHeader title="Stations" />
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col">
           <div className="flex flex-col gap-3 py-3 mx-auto w-full px-4 lg:px-6 max-w-6xl">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col items-start gap-4 md:flex-row md:items-center md:justify-between">
               <Skeleton className="h-7 w-64" />
               <div className="flex items-center gap-2">
                 <Skeleton className="h-3.5 w-28" />
@@ -526,7 +526,7 @@ export default function StationsPage() {
 
   if (isAdmin === false) {
     return (
-      <div className="ml-10">
+      <div className="ml-0 md:ml-10">
         <SiteHeader title="Stations" />
         <div className="flex flex-1 flex-col">
           <div className="flex flex-col gap-3 py-3 mx-auto w-full px-4 lg:px-6 max-w-6xl">
@@ -553,7 +553,7 @@ export default function StationsPage() {
     : stations.filter((s) => !s.hiddenAt);
 
   return (
-    <div className="ml-10">
+    <div className="ml-0 md:ml-10">
       <SiteHeader title="Stations" />
       <div className="flex flex-1 flex-col">
         <div className="flex flex-col gap-3 py-3 mx-auto w-full px-4 lg:px-6 max-w-6xl">
@@ -861,11 +861,11 @@ export default function StationsPage() {
                       <StatTile label="7d" value={st.testsLast7d} />
                     </div>
 
-                    <div className="flex gap-2 items-stretch">
+                    <div className="flex flex-wrap gap-2 items-stretch">
                       <input
                         id={`reason-${s.stationId}`}
                         aria-label="Disable reason"
-                        className="min-w-0 flex-1 rounded-md border bg-background px-3 py-1.5 text-sm h-9"
+                        className="min-w-0 basis-full sm:basis-auto flex-1 rounded-md border bg-background px-3 py-1.5 text-sm h-9"
                         value={reasonDraft[s.stationId] ?? ""}
                         onChange={(e) =>
                           setReasonDraft((d) => ({
@@ -953,7 +953,7 @@ export default function StationsPage() {
               <div className="flex gap-2 items-stretch flex-wrap">
                 <input
                   aria-label="Token label"
-                  className="min-w-0 flex-1 rounded-md border bg-background px-3 py-1.5 text-sm h-9"
+                  className="min-w-0 basis-full sm:basis-auto flex-1 rounded-md border bg-background px-3 py-1.5 text-sm h-9"
                   value={mintLabel}
                   onChange={(e) => setMintLabel(e.target.value)}
                   placeholder='Label (e.g. "MFG shipment 2026-09")'

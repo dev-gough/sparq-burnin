@@ -108,7 +108,7 @@ export default function SettingsPage() {
 
   if (!mounted) {
     return (
-      <div className="ml-10">
+      <div className="ml-0 md:ml-10">
         <SiteHeader title="Settings" />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
@@ -122,7 +122,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="ml-10">
+    <div className="ml-0 md:ml-10">
       <SiteHeader title="Settings" />
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
@@ -193,6 +193,9 @@ export default function SettingsPage() {
                   <Label className="text-base font-medium">Sidebar Trigger</Label>
                   <p className="text-sm text-muted-foreground">
                     Choose how you want to open the sidebar
+                  </p>
+                  <p className="text-sm text-muted-foreground md:hidden">
+                    This preference applies on desktop. On phones, use the menu button at the top.
                   </p>
                   <RadioGroup
                     value={settings.sidebarTrigger}

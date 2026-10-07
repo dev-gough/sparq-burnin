@@ -483,7 +483,7 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
   return (
     // Header sits outside the scroll region so Radix Select/Dropdown scroll-lock
     // cannot unstick it. Solid bg (no blur) — nothing scrolls under the bar.
-    <div className="ml-10 flex h-dvh flex-col overflow-hidden">
+    <div className="ml-0 md:ml-10 flex h-[calc(100dvh-3.5rem)] md:h-dvh flex-col overflow-hidden">
       <DashboardHeader
         dashboardRange={dashboardRange}
         onPeriodPill={handlePeriodPill}

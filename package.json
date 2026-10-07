@@ -16,7 +16,8 @@
     "migrate": "tsx scripts/migrate-db.ts",
     "migrate:annotations": "tsx scripts/migrate-annotations.ts",
     "setup-db": "./scripts/setup.sh",
-    "db:schema": "psql -d burnin_dashboard -f scripts/setup-database.sql"
+    "db:schema": "psql -d burnin_dashboard -f scripts/setup-database.sql",
+    "test:mobile": "node tests/browser/mobile-layout.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -63,6 +64,7 @@
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.2.12",
     "pg-copy-streams": "^7.0.0",
+    "playwright": "^1.63.0",
     "tailwindcss": "^4",
     "tsx": "^4.19.2",
     "tw-animate-css": "^1.3.3",

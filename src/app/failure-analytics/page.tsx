@@ -109,7 +109,7 @@ export default function FailureAnalyticsPage() {
   );
 
   return (
-    <div className="ml-10 flex h-dvh flex-col overflow-hidden">
+    <div className="ml-0 md:ml-10 flex h-[calc(100dvh-3.5rem)] md:h-dvh flex-col overflow-hidden">
       {header}
       <div className="flex-1 overflow-y-auto" aria-busy={initialLoading || refetching}>
         {fetchError && (

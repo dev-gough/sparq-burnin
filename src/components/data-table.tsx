@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useTimezone } from "@/contexts/TimezoneContext";
@@ -395,7 +396,12 @@ export function DataTableSkeleton({
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-lg border">
+        <div className="space-y-3 md:hidden">
+          {Array.from({ length: rowCount }, (_, index) => (
+            <Skeleton key={index} className="h-36 rounded-xl" />
+          ))}
+        </div>
+        <div className="hidden md:block overflow-hidden rounded-lg border">
           <Table>
             <TableHeader className="bg-muted sticky top-0 z-10">
               <TableRow>
@@ -1197,9 +1203,79 @@ export function DataTable({
           </div>
         </div>
 
+        <div className="space-y-3 md:hidden" aria-label="Tests">
+          {tablePending ? (
+            Array.from({ length: 5 }, (_, index) => (
+              <Skeleton key={index} className="h-36 rounded-lg" />
+            ))
+          ) : table.getRowModel().rows.length ? (
+            table.getRowModel().rows.map(({ original: test }) => (
+              <Link
+                key={test.test_id}
+                href={`/test/${test.test_id}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  handleRowClick(test.test_id);
+                }}
+                className="block space-y-3 rounded-xl border bg-card p-4 transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="break-all font-semibold">{test.serial_number}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Test #{test.test_id}
+                      {test.test_number && test.test_count
+                        ? ` · Run ${test.test_number} of ${test.test_count}`
+                        : ""}
+                    </p>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "shrink-0",
+                      test.status === "FAIL"
+                        ? "text-rose-600 dark:text-rose-400"
+                        : test.status === "PASS"
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "",
+                    )}
+                  >
+                    {test.status}
+                  </Badge>
+                </div>
+                <dl className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Started</dt>
+                    <dd>{formatInTimezone(test.start_time)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Duration</dt>
+                    <dd>{(test.duration / (1000 * 60 * 60)).toFixed(2)} hrs</dd>
+                  </div>
+                  <div className="col-span-2">
+                    <dt className="text-xs text-muted-foreground">Firmware</dt>
+                    <dd className="break-all font-mono text-xs">{test.firmware_version}</dd>
+                  </div>
+                </dl>
+                {test.failure_reason && (
+                  <p className="break-words text-sm text-muted-foreground">{test.failure_reason}</p>
+                )}
+                {test.annotations && (
+                  <p className="break-words border-t pt-2 text-xs text-muted-foreground">
+                    {test.annotations}
+                  </p>
+                )}
+              </Link>
+            ))
+          ) : (
+            <p className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+              No results.
+            </p>
+          )}
+        </div>
         <div
           className={cn(
-            "overflow-hidden rounded-lg border transition-opacity duration-500 ease-out",
+            "hidden md:block overflow-hidden rounded-lg border transition-opacity duration-500 ease-out",
             loading && data.length > 0 && "opacity-55",
           )}
         >

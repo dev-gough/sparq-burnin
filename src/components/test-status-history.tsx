@@ -101,7 +101,7 @@ export function TestStatusHistory({ testId, refreshKey = 0 }: TestStatusHistoryP
           ) : null}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-96 p-0" sideOffset={6}>
+      <PopoverContent align="start" className="w-96 max-w-[calc(100vw-2rem)] p-0" sideOffset={6}>
         <div className="border-b px-3 py-2">
           <p className="text-sm font-medium">Status history</p>
         </div>

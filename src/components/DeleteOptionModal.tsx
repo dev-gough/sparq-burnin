@@ -89,15 +89,15 @@ export default function DeleteOptionModal({
       onClick={onClose}
     >
       <div
-        className="bg-background rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col"
+        className="bg-background rounded-lg shadow-xl w-full max-w-3xl max-h-[90dvh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between p-6 border-b">
+        <div className="flex items-start justify-between gap-2 p-4 md:p-6 border-b">
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-6 w-6 text-destructive flex-shrink-0 mt-1" />
             <div>
-              <h2 className="text-xl font-bold text-destructive">Delete Quick Annotation Option</h2>
+              <h2 className="text-lg md:text-xl font-bold text-destructive">Delete Quick Annotation Option</h2>
               <p className="text-sm text-muted-foreground mt-1">
                 This action cannot be undone
               </p>
@@ -114,7 +114,7 @@ export default function DeleteOptionModal({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div className="flex-1 overflow-auto p-4 md:p-6 space-y-4">
           <div className="bg-destructive/10 dark:bg-destructive/20 border border-destructive/30 rounded-lg p-4">
             <p className="font-medium">
               You are about to delete: <span className="font-bold">&quot;{optionText}&quot;</span>
@@ -186,12 +186,12 @@ export default function DeleteOptionModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 p-6 border-t bg-muted/20">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 p-4 md:p-6 border-t bg-muted/20">
           <Button
             variant="outline"
             onClick={onClose}
             disabled={deleting}
-            className="cursor-pointer"
+            className="cursor-pointer whitespace-normal h-auto min-h-9"
           >
             Cancel
           </Button>
@@ -199,7 +199,7 @@ export default function DeleteOptionModal({
             variant="destructive"
             onClick={handleConfirm}
             disabled={deleting || loading}
-            className="cursor-pointer"
+            className="cursor-pointer whitespace-normal h-auto min-h-9"
           >
             {deleting ? 'Deleting...' : `Delete ${affectedCount > 0 ? `and Remove ${affectedCount} Annotation${affectedCount !== 1 ? 's' : ''}` : 'Option'}`}
           </Button>

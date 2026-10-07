@@ -1,5 +1,6 @@
 "use client"
 
+import { useIsMobile } from "@/hooks/use-mobile"
 import { useParams, useRouter } from "next/navigation"
 import { useEffect, useState, useMemo, useCallback, useRef } from "react"
 import { useTestDataCache } from "@/contexts/TestDataCacheContext"
@@ -209,9 +210,9 @@ function FailedTestNavigation({
     : 'No next failures'
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-amber-300/70 bg-amber-50 py-1.5 pr-1.5 pl-3 dark:border-amber-700/60 dark:bg-amber-950/40">
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300/70 bg-amber-50 py-1.5 pr-1.5 pl-3 dark:border-amber-700/60 dark:bg-amber-950/40">
       <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
-      <span className="whitespace-nowrap text-sm font-medium text-amber-800 dark:text-amber-200">
+      <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
         {navigation.current_failure_index
           ? `Failure ${navigation.current_failure_index} of ${navigation.total_failed_tests} for this S/N`
           : `${navigation.total_failed_tests} failures for this S/N`}
@@ -256,9 +257,9 @@ function MetaItem({
   valueClassName?: string
 }) {
   return (
-    <div className="flex flex-col">
+    <div className="flex min-w-0 flex-col">
       <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className={`font-medium ${valueClassName}`}>{value}</dd>
+      <dd className={`break-all md:break-normal font-medium ${valueClassName}`}>{value}</dd>
     </div>
   )
 }
@@ -558,6 +559,13 @@ function FullScreenChart({
   }
 
   // ECharts configuration
+  const isMobile = useIsMobile()
+  useEffect(() => {
+    if (!isMobile) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => { document.body.style.overflow = previousOverflow }
+  }, [isMobile])
   const chartOption: EChartsOption = useMemo(() => {
     const textColor = isDarkMode ? "#d1d5db" : "#4b5563"
     const mutedColor = isDarkMode ? "#6b7280" : "#9ca3af"
@@ -587,8 +595,8 @@ function FullScreenChart({
       backgroundColor: "transparent",
       textStyle: { color: textColor, fontFamily: "var(--font-geist-sans), sans-serif" },
       grid: {
-        left: 56,
-        right: 24,
+        left: isMobile ? 42 : 56,
+        right: isMobile ? 12 : 24,
         bottom: 76,
         top: 44,
       },
@@ -600,7 +608,7 @@ function FullScreenChart({
           fontSize: 11,
           rotate: -45,
           hideOverlap: true,
-          interval: Math.max(0, Math.ceil(chartData.length / 12)),
+          interval: Math.max(0, Math.ceil(chartData.length / (isMobile ? 4 : 12))),
         },
         axisTick: { show: false },
         axisLine: { show: true, lineStyle: { color: gridColor } },
@@ -677,7 +685,7 @@ function FullScreenChart({
           start: 0,
           end: 100,
           zoomOnMouseWheel: true, // Enable scroll to zoom
-          moveOnMouseMove: true, // Enable click-drag to pan
+          moveOnMouseMove: !isMobile, // Enable click-drag to pan
           moveOnMouseWheel: false, // Disable pan on scroll
           zoomLock: false,
           orient: "horizontal",
@@ -701,13 +709,13 @@ function FullScreenChart({
         },
       ],
     }
-  }, [chartData, selectedColumns, isDarkMode, tooltipEnabled, decimationEnabled])
+  }, [chartData, selectedColumns, isDarkMode, tooltipEnabled, decimationEnabled, isMobile])
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-background rounded-xl border shadow-2xl w-[96vw] h-[96vh] p-4 flex flex-col">
+      <div className="bg-background rounded-xl border shadow-2xl w-[96vw] h-[96dvh] p-3 md:p-4 flex flex-col">
         {/* Header */}
-        <div className="flex justify-between items-center mb-3">
+        <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
           <div>
             <h2 className="text-lg font-bold">{initialState.sourceChartTitle} — Full Screen</h2>
             <span className="text-xs text-muted-foreground tabular-nums">
@@ -743,7 +751,7 @@ function FullScreenChart({
         </div>
 
         {/* Chart */}
-        <div className="flex-1 min-h-0">
+        <div className="min-h-48 flex-1 md:min-h-0">
           <ReactECharts
             ref={chartRef}
             option={chartOption}
@@ -755,7 +763,7 @@ function FullScreenChart({
         </div>
 
         {/* Enhanced Column Selection with Compact Grouping */}
-        <div className="mt-4 max-h-80 overflow-y-auto">
+        <div className="mt-4 max-h-[32dvh] md:max-h-80 overflow-y-auto">
           {/* Quick Presets */}
           <div className="mb-3 p-2 bg-gray-50 dark:bg-gray-900 rounded border dark:border-gray-700">
             <div className="flex flex-wrap gap-1">
@@ -803,7 +811,7 @@ function FullScreenChart({
           </div>
 
           {/* Compact grouped column selector */}
-          <div className="grid grid-cols-2 gap-1.5 md:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 md:grid-cols-3 xl:grid-cols-6">
             {Object.entries(columnGroups).map(([groupName, group]) => {
               const selectedCount = getGroupSelectedCount(group.columns)
               const totalCount = group.columns.length
@@ -1020,6 +1028,7 @@ function ConfigurableChart({
   }, [processedData, selectedColumns, formatTimeWithSecondsInTimezone])
 
   // ECharts configuration
+  const isMobile = useIsMobile()
   const chartOption: EChartsOption = useMemo(() => {
     const textColor = isDarkMode ? "#d1d5db" : "#4b5563"
     const mutedColor = isDarkMode ? "#6b7280" : "#9ca3af"
@@ -1049,8 +1058,8 @@ function ConfigurableChart({
       backgroundColor: "transparent",
       textStyle: { color: textColor, fontFamily: "var(--font-geist-sans), sans-serif" },
       grid: {
-        left: 56,
-        right: 20,
+        left: isMobile ? 42 : 56,
+        right: isMobile ? 12 : 20,
         bottom: 74,
         top: 16,
       },
@@ -1062,7 +1071,7 @@ function ConfigurableChart({
           fontSize: 11,
           rotate: -45,
           hideOverlap: true,
-          interval: Math.max(0, Math.ceil(chartData.length / 8)),
+          interval: Math.max(0, Math.ceil(chartData.length / (isMobile ? 4 : 8))),
         },
         axisTick: { show: false },
         axisLine: { show: true, lineStyle: { color: gridColor } },
@@ -1132,7 +1141,7 @@ function ConfigurableChart({
           start: 0,
           end: 100,
           zoomOnMouseWheel: true, // Enable scroll to zoom
-          moveOnMouseMove: true, // Enable click-drag to pan
+          moveOnMouseMove: !isMobile, // Enable click-drag to pan
           moveOnMouseWheel: false, // Disable pan on scroll
           zoomLock: false,
           orient: "horizontal",
@@ -1156,7 +1165,7 @@ function ConfigurableChart({
         },
       ],
     }
-  }, [chartData, selectedColumns, availableColumns, isDarkMode, tooltipEnabled, decimationEnabled])
+  }, [chartData, selectedColumns, availableColumns, isDarkMode, tooltipEnabled, decimationEnabled, isMobile])
 
   return (
     <Card className="gap-3 py-4">
@@ -1516,9 +1525,9 @@ export default function TestPage() {
 
   if (loading) {
     return (
-      <div className="ml-10 px-6 py-6 4xl:px-8 4xl:py-8 5xl:px-12 5xl:py-12 space-y-6 4xl:space-y-8 5xl:space-y-10">
+      <div className="ml-0 md:ml-10 px-4 py-4 md:px-6 md:py-6 4xl:px-8 4xl:py-8 5xl:px-12 5xl:py-12 space-y-6 4xl:space-y-8 5xl:space-y-10">
         {/* Header Skeleton */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-2">
           <Skeleton className="h-9 w-40" />
           <Skeleton className="h-9 w-36" />
         </div>
@@ -1548,13 +1557,13 @@ export default function TestPage() {
           </div>
 
           {/* Charts Grid Skeleton */}
-          <div className="grid grid-cols-[1fr_360px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px] gap-6 4xl:gap-8 5xl:gap-12">
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_360px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px] gap-6 4xl:gap-8 5xl:gap-12">
             {/* Charts Column */}
             <div className="min-w-0 space-y-6 4xl:space-y-8 5xl:space-y-10">
               {/* Chart 1 Skeleton */}
               <Card>
                 <CardHeader>
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-2">
                     <Skeleton className="h-6 w-32" />
                     <div className="flex gap-2">
                       <Skeleton className="h-9 w-24" />
@@ -1575,7 +1584,7 @@ export default function TestPage() {
               {/* Chart 2 Skeleton */}
               <Card>
                 <CardHeader>
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-2">
                     <Skeleton className="h-6 w-32" />
                     <div className="flex gap-2">
                       <Skeleton className="h-9 w-24" />
@@ -1596,7 +1605,7 @@ export default function TestPage() {
               {/* Chart 3 Skeleton */}
               <Card>
                 <CardHeader>
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-2">
                     <Skeleton className="h-6 w-32" />
                     <div className="flex gap-2">
                       <Skeleton className="h-9 w-24" />
@@ -1616,7 +1625,7 @@ export default function TestPage() {
             </div>
 
             {/* Annotations Sidebar Skeleton */}
-            <div className="sticky top-6 h-fit">
+            <div className="md:sticky top-6 h-fit">
               <Card>
                 <CardHeader>
                   <Skeleton className="h-6 w-32" />
@@ -1651,7 +1660,7 @@ export default function TestPage() {
 
   if (error) {
     return (
-      <div className="ml-10 px-6 py-6 pr-6">
+      <div className="ml-0 md:ml-10 px-4 py-4 md:px-6 md:py-6 pr-6">
         <div className="flex items-center justify-center h-64">
           <div className="text-red-500">Error: {error}</div>
         </div>
@@ -1661,7 +1670,7 @@ export default function TestPage() {
 
   if (!testData) {
     return (
-      <div className="ml-10 px-6 py-6 pr-6">
+      <div className="ml-0 md:ml-10 px-4 py-4 md:px-6 md:py-6 pr-6">
         <div className="flex items-center justify-center h-64">
           <div className="text-muted-foreground">No test data found</div>
         </div>
@@ -1732,12 +1741,13 @@ export default function TestPage() {
   }
 
   return (
-    <div className="ml-10 px-6 py-6 4xl:px-8 4xl:py-8 5xl:px-12 5xl:py-12 space-y-6 4xl:space-y-8 5xl:space-y-10">
-      <div className="flex items-center justify-between">
+    <div className="ml-0 md:ml-10 px-4 py-4 md:px-6 md:py-6 4xl:px-8 4xl:py-8 5xl:px-12 5xl:py-12 space-y-6 4xl:space-y-8 5xl:space-y-10">
+      <div className="flex flex-wrap md:flex-nowrap items-center justify-between gap-2">
         <Link href="/">
           <Button variant="outline" size="sm">
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Dashboard
+            <span className="hidden sm:inline">Back to Dashboard</span>
+            <span className="sm:hidden">Dashboard</span>
           </Button>
         </Link>
         <Button variant="outline" size="sm" onClick={downloadCSV}>
@@ -1751,7 +1761,7 @@ export default function TestPage() {
           {/* Test Information */}
           <div className="min-w-0 space-y-3">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <h1 className="text-2xl 4xl:text-3xl 5xl:text-4xl font-bold tracking-tight">
+              <h1 className="break-all text-xl md:text-2xl 4xl:text-3xl 5xl:text-4xl font-bold tracking-tight">
                 <span className="font-medium text-muted-foreground">S/N</span>{" "}
                 {testData.serial_number}
               </h1>
@@ -1814,8 +1824,18 @@ export default function TestPage() {
           </div>
 
           {/* Failed-test navigation + annotations toggle */}
-          <div className="flex items-center gap-2">
+          <div className="flex max-w-full flex-wrap items-center gap-2">
             <FailedTestNavigation testData={testData} onNavigate={navigateToTest} />
+            <Button
+              variant="outline"
+              className="md:hidden"
+              onClick={() => {
+                setSidebarVisible(true)
+                requestAnimationFrame(() => document.getElementById("test-annotations-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }))
+              }}
+            >
+              Annotations ↓
+            </Button>
             <Button
               variant="outline"
               size="icon"
@@ -1844,8 +1864,8 @@ export default function TestPage() {
           }}
           className={`grid transition-[grid-template-columns,gap] duration-300 ease-in-out ${
             sidebarVisible
-              ? 'gap-6 4xl:gap-8 5xl:gap-12 grid-cols-[1fr_360px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px]'
-              : 'gap-0 grid-cols-[1fr_0px] 4xl:grid-cols-[1fr_0px] 5xl:grid-cols-[1fr_0px]'
+              ? 'gap-6 4xl:gap-8 5xl:gap-12 grid-cols-1 md:grid-cols-[1fr_360px] 4xl:grid-cols-[1fr_400px] 5xl:grid-cols-[1fr_480px]'
+              : 'gap-0 grid-cols-1 md:grid-cols-[1fr_0px] 4xl:grid-cols-[1fr_0px] 5xl:grid-cols-[1fr_0px]'
           }`}
         >
           {/* Charts Column */}
@@ -1879,11 +1899,11 @@ export default function TestPage() {
             id="test-annotations-panel"
             aria-hidden={!sidebarVisible}
             inert={!sidebarVisible ? true : undefined}
-            className={`sticky top-6 h-fit min-w-0 overflow-hidden transition-opacity duration-300 ${
-              sidebarVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+            className={`test-annotations-panel scroll-mt-16 md:scroll-mt-0 md:sticky top-6 h-fit min-w-0 overflow-hidden transition-opacity duration-300 ${
+              sidebarVisible ? 'opacity-100' : 'hidden md:block pointer-events-none opacity-0'
             }`}
           >
-            <div className="w-[360px] 4xl:w-[400px] 5xl:w-[480px]">
+            <div className="w-full md:w-[360px] 4xl:w-[400px] 5xl:w-[480px]">
               <TestAnnotations
                 testId={testData.test_id}
                 serialNumber={testData.serial_number}

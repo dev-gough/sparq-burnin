@@ -175,3 +175,59 @@
     animation: none;
   }
 }
+
+/* Phone layouts are scoped below the existing desktop navigation breakpoint. */
+@media (max-width: 767px) {
+  .mobile-page-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+  }
+  .mobile-header-controls {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+    min-width: 0;
+  }
+  .mobile-header-controls > [data-slot="toggle-group"]:first-child {
+    width: 100%;
+  }
+  .mobile-header-controls > [data-slot="toggle-group"]:first-child > * {
+    flex: 1;
+    min-width: 0;
+    padding-inline: 0.5rem;
+  }
+  [data-slot="card"] { min-width: 0; }
+  [data-slot="card-header"], [data-slot="card-content"], [data-slot="card-footer"] {
+    padding-inline: 1rem;
+  }
+  /* Avoid iOS zooming the page when a text field receives focus. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea {
+    font-size: 16px;
+  }
+  [data-slot="button"], [data-slot="input"], [data-slot="select-trigger"], [data-slot="toggle-group-item"] {
+    min-height: 2.75rem;
+  }
+  [data-slot="popover-content"] {
+    max-height: calc(100dvh - 1rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  [data-slot="sheet-content"] {
+    max-height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  [data-slot="sheet-content"] > button:last-child {
+    display: flex;
+    width: 2.75rem;
+    height: 2.75rem;
+    top: 0.5rem;
+    right: 0.5rem;
+    align-items: center;
+    justify-content: center;
+  }
+  .echarts-for-react canvas { touch-action: pan-y; }
+  #test-table { scroll-margin-top: 4.5rem; }
+}

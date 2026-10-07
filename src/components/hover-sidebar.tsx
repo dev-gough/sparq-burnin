@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession, signOut, signIn } from "next-auth/react";
-import { User, LogOut, Users, LayoutDashboard, ListTodo, LogIn, BarChart3, Settings, Monitor, Moon, Sun, Server, ScrollText } from "lucide-react";
+import { Menu, User, LogOut, Users, LayoutDashboard, ListTodo, LogIn, BarChart3, Settings, Monitor, Moon, Sun, Server, ScrollText } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -10,6 +10,8 @@ import { TimezoneSelector } from "@/components/timezone-selector";
 import { usePathname } from "next/navigation";
 import { useSettings } from "@/contexts/settings-context";
 import { useTheme } from "next-themes";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { version } from "../../package.json";
 
 export function HoverSidebar() {
@@ -17,6 +19,8 @@ export function HoverSidebar() {
   const pathname = usePathname();
   const { settings } = useSettings();
   const { theme, setTheme } = useTheme();
+  const isMobile = useIsMobile();
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [isInteracting, setIsInteracting] = useState(false);
   const [todoCount, setTodoCount] = useState<number | null>(null);
@@ -37,6 +41,11 @@ export function HoverSidebar() {
       : []),
     { href: "/settings", label: "Settings", icon: Settings },
   ];
+
+  useEffect(() => {
+    setMobileOpen(false);
+    setIsOpen(false);
+  }, [pathname, isMobile]);
 
   // Avoid hydration mismatch for theme
   useEffect(() => {
@@ -151,15 +160,168 @@ export function HoverSidebar() {
     };
   }, [settings.sidebarTrigger, isOpen]);
 
+  const sidebarContent = (
+    <div className="flex-1 flex flex-col p-4 space-y-4 animate-in fade-in duration-200">
+      {/* User section */}
+      <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+          <User className="h-4 w-4 text-primary" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium truncate">{userName}</p>
+          {userEmail && (
+            <p className="text-xs text-muted-foreground truncate">
+              {userEmail}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Navigation items */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="px-3 py-2 text-xs font-semibold text-muted-foreground">
+          NAVIGATION
+        </div>
+        <div className="space-y-1">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = pathname === item.href;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => setMobileOpen(false)}
+              aria-current={isActive ? "page" : undefined}
+              className={`flex items-center gap-3 px-3 py-3 md:py-2 rounded-md text-sm transition-colors ${
+                isActive
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-muted text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              <span className="flex-1">{item.label}</span>
+              {item.badge !== null && item.badge !== undefined && item.badge > 0 && (
+                <span className="bg-orange-500 text-white text-xs px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                  {item.badge}
+                </span>
+              )}
+            </Link>
+          );
+        })}
+        </div>
+        <Link
+          href="/changelog"
+          onClick={() => setMobileOpen(false)}
+          className={`mt-auto flex items-center gap-2 px-3 pt-3 text-xs text-muted-foreground transition-colors hover:text-foreground ${
+            pathname === "/changelog" ? "text-foreground" : ""
+          }`}
+        >
+          <ScrollText className="size-3.5" />
+          <span>Changelog</span>
+          <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/60" aria-label={`Version ${version}`}>v{version}</span>
+        </Link>
+      </div>
+
+      {/* Bottom section - Theme, Timezone & Auth */}
+      <div
+        className="space-y-2 pt-4 border-t"
+        onMouseEnter={handleInteractionStart}
+        onMouseLeave={handleInteractionEnd}
+        onClick={handleInteractionStart}
+      >
+        {/* Theme Toggle */}
+        {mounted && (
+          <div className="space-y-1">
+            <div className="px-3 py-1 text-xs font-semibold text-muted-foreground">
+              THEME
+            </div>
+            <div className="flex gap-1 px-3">
+              <Button
+                variant={theme === "light" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setTheme("light")}
+                className="flex-1 h-8"
+                title="Light mode"
+              >
+                <Sun className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={theme === "dark" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setTheme("dark")}
+                className="flex-1 h-8"
+                title="Dark mode"
+              >
+                <Moon className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={theme === "system" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setTheme("system")}
+                className="flex-1 h-8"
+                title="System theme"
+              >
+                <Monitor className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+        <TimezoneSelector />
+        {session?.user ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => signOut({ callbackUrl: "/auth/signin" })}
+            className="w-full justify-start gap-2"
+          >
+            <LogOut className="h-4 w-4" />
+            <span>Sign Out</span>
+          </Button>
+        ) : (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => signIn("azure-ad")}
+            className="w-full justify-start gap-2"
+          >
+            <LogIn className="h-4 w-4" />
+            <span>Sign In</span>
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+
   // Auth pages (sign-in / error) should not show navigation — user is not in-app yet.
   if (pathname?.startsWith("/auth/")) {
     return null;
   }
 
   return (
+    <>
+      <div className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background px-4 md:hidden">
+        <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight" aria-label="BurnIn home">
+          <Image src="/logo.png" alt="" width={126} height={85} className="h-auto w-9" />
+          BurnIn
+        </Link>
+        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="icon" className="size-10" aria-label="Open navigation">
+              <Menu className="size-5" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="top" className="max-h-dvh gap-0 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)] md:hidden">
+            <SheetHeader className="border-b pr-16">
+              <SheetTitle>BurnIn</SheetTitle>
+              <SheetDescription>Navigation and preferences</SheetDescription>
+            </SheetHeader>
+            {sidebarContent}
+          </SheetContent>
+        </Sheet>
+      </div>
     <div
       id="hover-sidebar"
-      className="fixed left-0 top-0 h-screen z-50 transition-all duration-300 ease-in-out"
+      className="hidden md:block fixed left-0 top-0 h-screen z-50 transition-all duration-300 ease-in-out"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
@@ -197,135 +359,9 @@ export function HoverSidebar() {
         </div>
 
         {/* Expanded content */}
-        {isOpen && (
-          <div className="flex-1 flex flex-col p-4 space-y-4 animate-in fade-in duration-200">
-            {/* User section */}
-            <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                <User className="h-4 w-4 text-primary" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{userName}</p>
-                {userEmail && (
-                  <p className="text-xs text-muted-foreground truncate">
-                    {userEmail}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Navigation items */}
-            <div className="flex min-h-0 flex-1 flex-col">
-              <div className="px-3 py-2 text-xs font-semibold text-muted-foreground">
-                NAVIGATION
-              </div>
-              <div className="space-y-1">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = pathname === item.href;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-                      isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "hover:bg-muted text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span className="flex-1">{item.label}</span>
-                    {item.badge !== null && item.badge !== undefined && item.badge > 0 && (
-                      <span className="bg-orange-500 text-white text-xs px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                        {item.badge}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
-              </div>
-              <Link
-                href="/changelog"
-                className={`mt-auto flex items-center gap-2 px-3 pt-3 text-xs text-muted-foreground transition-colors hover:text-foreground ${
-                  pathname === "/changelog" ? "text-foreground" : ""
-                }`}
-              >
-                <ScrollText className="size-3.5" />
-                <span>Changelog</span>
-                <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/60" aria-label={`Version ${version}`}>v{version}</span>
-              </Link>
-            </div>
-
-            {/* Bottom section - Theme, Timezone & Auth */}
-            <div
-              className="space-y-2 pt-4 border-t"
-              onMouseEnter={handleInteractionStart}
-              onMouseLeave={handleInteractionEnd}
-              onClick={handleInteractionStart}
-            >
-              {/* Theme Toggle */}
-              {mounted && (
-                <div className="space-y-1">
-                  <div className="px-3 py-1 text-xs font-semibold text-muted-foreground">
-                    THEME
-                  </div>
-                  <div className="flex gap-1 px-3">
-                    <Button
-                      variant={theme === "light" ? "default" : "ghost"}
-                      size="sm"
-                      onClick={() => setTheme("light")}
-                      className="flex-1 h-8"
-                      title="Light mode"
-                    >
-                      <Sun className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant={theme === "dark" ? "default" : "ghost"}
-                      size="sm"
-                      onClick={() => setTheme("dark")}
-                      className="flex-1 h-8"
-                      title="Dark mode"
-                    >
-                      <Moon className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant={theme === "system" ? "default" : "ghost"}
-                      size="sm"
-                      onClick={() => setTheme("system")}
-                      className="flex-1 h-8"
-                      title="System theme"
-                    >
-                      <Monitor className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-              <TimezoneSelector />
-              {session?.user ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => signOut({ callbackUrl: "/auth/signin" })}
-                  className="w-full justify-start gap-2"
-                >
-                  <LogOut className="h-4 w-4" />
-                  <span>Sign Out</span>
-                </Button>
-              ) : (
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={() => signIn("azure-ad")}
-                  className="w-full justify-start gap-2"
-                >
-                  <LogIn className="h-4 w-4" />
-                  <span>Sign In</span>
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
+        {isOpen && sidebarContent}
       </div>
     </div>
+    </>
   );
 }

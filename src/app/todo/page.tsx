@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 
@@ -166,16 +167,16 @@ export default function TodoPage() {
 
   if (loading) {
     return (
-      <div className="ml-10">
+      <div className="ml-0 md:ml-10">
         <SiteHeader title="Todo - Unannotated Tests" />
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6 4xl:gap-8 5xl:gap-10 mx-auto w-full px-4 lg:px-6 4xl:px-8 5xl:px-12">
               {/* Skeleton for header */}
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3 md:gap-0">
                 <div>
                   <div className="h-8 w-64 bg-muted animate-pulse rounded mb-2" />
-                  <div className="h-4 w-96 bg-muted animate-pulse rounded" />
+                  <div className="h-4 w-full max-w-96 bg-muted animate-pulse rounded" />
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="h-5 w-5 bg-muted animate-pulse rounded" />
@@ -188,7 +189,7 @@ export default function TodoPage() {
               <Card>
                 <CardHeader>
                   <div className="h-6 w-48 bg-muted animate-pulse rounded mb-2" />
-                  <div className="h-4 w-96 bg-muted animate-pulse rounded" />
+                  <div className="h-4 w-full max-w-96 bg-muted animate-pulse rounded" />
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
@@ -209,7 +210,7 @@ export default function TodoPage() {
     return (
       <div>
         <SiteHeader />
-        <div className="flex flex-1 flex-col ml-10">
+        <div className="flex flex-1 flex-col ml-0 md:ml-10">
           <div className="flex items-center justify-center h-96">
             <p className="text-destructive">Failed to load todo data</p>
           </div>
@@ -219,7 +220,7 @@ export default function TodoPage() {
   }
 
   return (
-    <div className="ml-10">
+    <div className="ml-0 md:ml-10">
       <SiteHeader title="Todo - Unannotated Tests" />
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
@@ -240,7 +241,7 @@ export default function TodoPage() {
                 </p>
               </div>
             )}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col items-start gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <h1 className="text-2xl font-bold">Todo - Unannotated Failed Tests</h1>
                 <p className="text-muted-foreground mt-1">
@@ -286,7 +287,7 @@ export default function TodoPage() {
                   <div>
                     <label className="text-sm font-medium mb-2 block">Firmware Version</label>
                     <Select value={filterFirmware} onValueChange={setFilterFirmware}>
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full md:w-fit">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -334,11 +335,62 @@ export default function TodoPage() {
                 <CardHeader>
                   <CardTitle>Unannotated Failed Tests</CardTitle>
                   <CardDescription>
-                    Click on a test ID to view details and add annotations
+                    Open a test to view details and add annotations
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto">
+                  <div className="space-y-3 md:hidden">
+                    <Select
+                      value={sortField}
+                      onValueChange={(field) => handleSort(field as keyof UnannotatedTest)}
+                    >
+                      <SelectTrigger className="w-full" aria-label="Sort unannotated tests">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="start_time">Start time</SelectItem>
+                        <SelectItem value="test_id">Test ID</SelectItem>
+                        <SelectItem value="serial_number">Serial number</SelectItem>
+                        <SelectItem value="duration_hours">Duration</SelectItem>
+                        <SelectItem value="firmware_version">Firmware</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="outline"
+                      onClick={() => setSortDirection(sortDirection === "asc" ? "desc" : "asc")}
+                      className="w-full"
+                    >
+                      {sortDirection === "asc" ? "Ascending ↑" : "Descending ↓"}
+                    </Button>
+                    {filteredAndSortedTests.map((test) => (
+                      <Link
+                        key={test.test_id}
+                        href={`/test/${test.test_id}`}
+                        className="block space-y-3 rounded-lg border p-4 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <div>
+                          <p className="break-all font-semibold">{test.serial_number}</p>
+                          <p className="text-xs text-muted-foreground">Test #{test.test_id}</p>
+                        </div>
+                        <dl className="grid grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <dt className="text-xs text-muted-foreground">Started</dt>
+                            <dd>{new Date(test.start_time).toLocaleString()}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-muted-foreground">Duration</dt>
+                            <dd>{test.duration_hours.toFixed(2)} hrs</dd>
+                          </div>
+                          <div className="col-span-2">
+                            <dt className="text-xs text-muted-foreground">Firmware</dt>
+                            <dd className="break-all font-mono text-xs">{test.firmware_version}</dd>
+                          </div>
+                        </dl>
+                        <p className="break-words text-sm text-muted-foreground">{test.failure_description}</p>
+                      </Link>
+                    ))}
+                  </div>
+                  <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b">
