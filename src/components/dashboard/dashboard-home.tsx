@@ -41,6 +41,7 @@ export type DashboardHomeProps = {
 };
 
 export function DashboardHome({ boot = {} }: DashboardHomeProps) {
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   // Capture boot-derived state once. localStorage remains source of truth and
   // is reconciled in layoutEffect (also seeds the cookie for users who only
   // had localStorage before this change).
@@ -481,9 +482,10 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
   }, [showDashboardShell, showEmpty]);
 
   return (
-    // Desktop keeps a fixed header; on phones the date row scrolls with the dashboard.
-    <div className="dashboard-home ml-0 md:ml-10 flex h-[calc(100dvh-3.5rem)] md:h-dvh flex-col overflow-hidden">
+    // Desktop keeps its fixed header; mobile dates fold into the shared top bar.
+    <div ref={scrollContainerRef} className="dashboard-home ml-0 md:ml-10 flex h-[calc(100dvh-3.5rem)] md:h-dvh flex-col overflow-hidden">
       <DashboardHeader
+        scrollContainerRef={scrollContainerRef}
         dashboardRange={dashboardRange}
         onPeriodPill={handlePeriodPill}
         onPeriodPillPrefetch={handlePeriodPillPrefetch}

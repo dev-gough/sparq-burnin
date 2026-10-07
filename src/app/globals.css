@@ -267,6 +267,85 @@
     min-height: 2.75rem;
   }
   .hero-comparison-note p { white-space: nowrap; }
+
+  .dashboard-page-header[data-mobile-periods="true"] {
+    height: 61px;
+    min-height: 61px;
+    padding: 0;
+    border: 0;
+  }
+  .mobile-app-header .mobile-period-summary {
+    width: auto;
+    min-width: 3.5rem;
+    max-width: 100%;
+    padding-inline: 0.625rem;
+    gap: 0.25rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 80ms ease-out;
+  }
+  .mobile-period-summary[data-collapsed="true"] {
+    opacity: 1;
+    pointer-events: auto;
+    transition-delay: 300ms;
+  }
+  .mobile-period-panel {
+    position: absolute;
+    inset-inline: 0;
+    top: 100%;
+    height: 61px;
+    display: block;
+    padding: 0.5rem 1rem;
+  }
+  .mobile-period-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--background);
+    border-bottom: 1px solid var(--border);
+    transform-origin: top;
+    transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease;
+  }
+  .mobile-period-panel[data-collapsed="true"]::before {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  .mobile-period-panel[data-collapsed="true"] { pointer-events: none; }
+  .mobile-period-panel .header-period-controls { position: relative; }
+  .mobile-period-panel .header-period-button {
+    width: 100%;
+    transform-origin: center;
+    transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1), border-radius 380ms ease,
+      opacity 180ms ease 100ms;
+  }
+  .mobile-period-panel .header-period-label {
+    display: inline-block;
+    transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .mobile-period-panel[data-collapsed="true"] .header-period-button {
+    transform: translate3d(var(--fold-x, 0px), var(--fold-y, -58px), 0) scaleX(var(--fold-scale, 1));
+    border-radius: 999px;
+    opacity: 0;
+    transition-delay: 0ms;
+  }
+  .mobile-period-panel[data-collapsed="true"] .header-period-label {
+    transform: scaleX(calc(1 / var(--fold-scale, 1)));
+  }
+  .mobile-period-panel .header-period-button[aria-checked="true"] {
+    transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1), border-radius 380ms ease,
+      opacity 80ms ease;
+  }
+  .mobile-period-panel[data-collapsed="true"] .header-period-button[aria-checked="true"] {
+    border: 1px solid var(--primary);
+    transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1), border-radius 380ms ease,
+      opacity 80ms ease 300ms;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mobile-app-header .mobile-period-summary,
+    .mobile-period-panel::before,
+    .mobile-period-panel .header-period-button,
+    .mobile-period-panel .header-period-label { transition: none; }
+  }
 }
 
 /* Navigation and exports share a responsive left drawer. */

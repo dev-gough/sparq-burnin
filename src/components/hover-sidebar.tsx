@@ -359,6 +359,7 @@ export function HoverSidebar() {
           </SidebarDrawer>
           <div id="mobile-header-actions" />
         </div>
+        <div id="mobile-header-periods" className="flex min-w-0 flex-1 justify-center px-2" />
         <Link href="/" aria-label="BurnIn home" className="flex shrink-0 items-center">
           <Image src="/logo.png" alt="SPARQ" width={126} height={85} className="h-auto w-12" loading="eager" />
         </Link>

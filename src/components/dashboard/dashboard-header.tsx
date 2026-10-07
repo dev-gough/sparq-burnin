@@ -3,6 +3,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { MobilePeriodControls } from "@/components/dashboard/mobile-period-controls";
 import {
   IconDownload,
   IconFileZip,
@@ -56,6 +57,7 @@ const METRICS_HELP = (
 );
 
 interface DashboardHeaderProps {
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
   dashboardRange: DashboardRange;
   onPeriodPill: (kind: DashboardPill) => void;
   /** Hover/focus intent: warm chart series cache for a period pill. */
@@ -76,6 +78,7 @@ interface DashboardHeaderProps {
 }
 
 export function DashboardHeader({
+  scrollContainerRef,
   dashboardRange,
   onPeriodPill,
   onPeriodPillPrefetch,
@@ -89,7 +92,9 @@ export function DashboardHeader({
 }: DashboardHeaderProps) {
   const isMobile = useIsMobile();
   const [mobileActionsTarget, setMobileActionsTarget] = React.useState<HTMLElement | null>(null);
+  const [mobilePeriodsTarget, setMobilePeriodsTarget] = React.useState<HTMLElement | null>(null);
   React.useEffect(() => {
+    setMobilePeriodsTarget(document.getElementById("mobile-header-periods"));
     setMobileActionsTarget(document.getElementById("mobile-header-actions"));
   }, []);
   const [customOpenInternal, setCustomOpenInternal] = React.useState(false);
@@ -208,8 +213,21 @@ export function DashboardHeader({
     </div>
   );
 
+  const periodProps = {
+    period: dashboardRange.kind,
+    from: customDates.from,
+    to: customDates.to,
+    onPeriodChange: (period: string) => onPeriodPill(period as DashboardPill),
+    onCustomRange,
+    onPeriodPrefetch: (period: string) => onPeriodPillPrefetch?.(period as DashboardPill),
+    ready: prefsReady,
+    open: customOpen,
+    onOpenChange: setCustomOpen,
+  };
+  const mobilePeriods = isMobile && mobilePeriodsTarget;
+
   return (
-    <header className={cn(HEADER_BAR_CLASS, "dashboard-page-header")}>
+    <header data-mobile-periods={Boolean(mobilePeriods)} className={cn(HEADER_BAR_CLASS, "dashboard-page-header")}>
       <div className="dashboard-header-title flex min-w-0 items-center gap-1.5">
         <h1 className={HEADER_TITLE_CLASS}>
           BurnIn Dashboard
@@ -221,17 +239,9 @@ export function DashboardHeader({
           Meta (dates / Updated) is intentionally NOT in this flex so
           justify-center cannot reflow when those strings mount. */}
       <div className={HEADER_CONTROLS_CLASS}>
-        <HeaderPeriodControls
-          period={dashboardRange.kind}
-          from={customDates.from}
-          to={customDates.to}
-          onPeriodChange={(period) => onPeriodPill(period as DashboardPill)}
-          onCustomRange={onCustomRange}
-          onPeriodPrefetch={(period) => onPeriodPillPrefetch?.(period as DashboardPill)}
-          ready={prefsReady}
-          open={customOpen}
-          onOpenChange={setCustomOpen}
-        />
+        {mobilePeriods
+          ? createPortal(<MobilePeriodControls {...periodProps} scrollContainerRef={scrollContainerRef} />, mobilePeriods)
+          : <HeaderPeriodControls {...periodProps} />}
         <HeaderResultModeControls mode={chartMode} onModeChange={onChartModeChange} ready={prefsReady} />
       </div>
 

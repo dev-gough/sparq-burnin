@@ -65,7 +65,7 @@ export function HeaderPeriodControls({
           onPointerEnter={() => onPeriodPrefetch?.(p.value)}
           onFocus={() => onPeriodPrefetch?.(p.value)}
         >
-          {p.short}
+          <span className="header-period-label">{p.short}</span>
         </ToggleGroupItem>
       ))}
       <DateRangePicker
@@ -79,7 +79,7 @@ export function HeaderPeriodControls({
             className={cn(CUSTOM_TOGGLE_CLASS, "header-period-button")}
             aria-label="Custom date range"
           >
-            Custom
+            <span className="header-period-label">Custom</span>
           </ToggleGroupItem>
         }
         active={custom}

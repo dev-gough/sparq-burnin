@@ -426,6 +426,101 @@ const station = {
       assert.equal(icon.background, "rgba(0, 0, 0, 0)", "Preference icons should be unfilled");
     }
   }
+  // The selected date pill travels into the mobile bar and can reopen in place.
+  for (const width of [320, 412]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(base + "/");
+    await page.waitForTimeout(1600);
+    const scroll = page.locator(".dashboard-home");
+    const panel = page.locator(".mobile-period-panel");
+    const summary = page.locator(".mobile-period-summary");
+    assert.equal(await panel.getAttribute("data-collapsed"), "false");
+    await page.getByRole("radio", { name: "30 days", exact: true }).click();
+    await scroll.evaluate((e) => { e.scrollTop = 220; });
+    await page.locator('.mobile-period-panel[data-collapsed="true"]').waitFor({ state: "attached" });
+    if (width === 412) {
+      await page.waitForTimeout(100);
+      await page.screenshot({ path: `${out}/${width}-dates-folding.png` });
+    }
+    await page.waitForTimeout(420);
+    const pill = await summary.boundingBox();
+    assert(pill && pill.y >= 0 && pill.y + pill.height <= 56, "Selected range should fit in the fixed header");
+    const colors = await summary.evaluate((e) => {
+      const source = document.querySelector('.mobile-period-panel [aria-checked="true"]');
+      return { pill: getComputedStyle(e).backgroundColor, row: getComputedStyle(source).backgroundColor,
+        text: getComputedStyle(e).color, rowText: getComputedStyle(source).color };
+    });
+    assert.equal(colors.pill, colors.row, "Folded selection should keep the date row's background contrast");
+    assert.equal(colors.text, colors.rowText, "Folded selection should keep readable text");
+    assert.equal(await summary.getAttribute("aria-expanded"), "false");
+    assert.equal(await page.getByRole("radio", { name: "30 days", exact: true }).count(), 0, "Folded controls should not be focusable");
+    await shot(`${width}-dates-folded`);
+    const top = await scroll.evaluate((e) => e.scrollTop);
+    await summary.click();
+    await page.locator('.mobile-period-panel[data-collapsed="false"]').waitFor({ state: "attached" });
+    if (width === 412) {
+      await page.waitForTimeout(100);
+      await page.screenshot({ path: `${out}/${width}-dates-unfolding.png` });
+    }
+    await page.waitForTimeout(420);
+    assert.equal(await scroll.evaluate((e) => e.scrollTop), top, "Expanding dates should not jump the page");
+    assert(await page.getByRole("radio", { name: "30 days", exact: true }).evaluate((e) => document.activeElement === e));
+    await shot(`${width}-dates-expanded-scrolled`);
+    await scroll.evaluate((e) => { e.scrollTop += 10; });
+    await page.waitForTimeout(100);
+    assert.equal(await panel.getAttribute("data-collapsed"), "false", "A small scroll should not immediately dismiss the row");
+    for (const [label, short] of [["7 days", "7d"], ["90 days", "90d"], ["All time", "All"]]) {
+      if (await panel.getAttribute("data-collapsed") === "true") await summary.click();
+      await page.waitForTimeout(420);
+      await page.getByRole("radio", { name: label, exact: true }).click();
+      await page.locator('.mobile-period-panel[data-collapsed="true"]').waitFor({ state: "attached" });
+      await page.waitForTimeout(420);
+      assert.equal((await summary.textContent()).trim(), short, "Header should retain the selected period");
+    }
+    await summary.click();
+    await page.waitForTimeout(420);
+    await page.getByRole("radio", { name: "Custom date range", exact: true }).click();
+    await fits("[data-slot=popover-content]");
+    await scroll.evaluate((e) => { e.scrollTop += 100; });
+    await page.waitForTimeout(100);
+    assert.equal(await panel.getAttribute("data-collapsed"), "false", "Date picker should keep its anchor expanded");
+    await page.locator("[data-slot=popover-content]").getByRole("button", { name: "6 months", exact: true }).click();
+    await page.waitForTimeout(1000);
+    assert.equal(await panel.getAttribute("data-collapsed"), "true");
+    assert.equal((await summary.textContent()).trim(), "Custom");
+    assert((await summary.getAttribute("aria-label")).includes("Custom date range:"));
+    await shot(`${width}-dates-custom-folded`);
+    await summary.focus();
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(420);
+    assert.equal(await panel.getAttribute("data-collapsed"), "false");
+    assert.equal(await page.locator("[data-slot=popover-content]").count(), 0, "Expanding a Custom pill should open the row first");
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(420);
+    assert.equal(await panel.getAttribute("data-collapsed"), "true");
+    assert(await summary.evaluate((e) => document.activeElement === e));
+    await scroll.evaluate((e) => { e.scrollTop = 0; });
+    await page.waitForTimeout(420);
+    assert.equal(await panel.getAttribute("data-collapsed"), "false", "Returning to the top should reopen dates");
+    await shot(`${width}-dates-returned-to-top`);
+    await scroll.evaluate((e) => { e.scrollTop = 180; });
+    await page.waitForTimeout(60);
+    await scroll.evaluate((e) => { e.scrollTop = 0; });
+    await page.waitForTimeout(60);
+    await scroll.evaluate((e) => { e.scrollTop = 180; });
+    await page.waitForTimeout(420);
+    assert.equal(await panel.getAttribute("data-collapsed"), "true", "Rapid direction changes should settle cleanly");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    assert.equal(await summary.evaluate((e) => getComputedStyle(e).transitionDuration), "0s");
+    await summary.click();
+    await page.waitForTimeout(100);
+    assert.equal(await panel.getAttribute("data-collapsed"), "false");
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator(".mobile-period-panel").count(), 0, "Desktop should retain its original date controls");
+    assert(await page.getByRole("radio", { name: "Custom date range", exact: true }).isVisible());
+  }
   // The clock stays icon-only while its accessible label follows the chosen timezone.
   await page.setViewportSize({ width: 412, height: 915 });
   await page.goto(base + "/");
@@ -628,6 +723,17 @@ const station = {
   await page.getByTitle("Light mode", { exact: true }).click();
   await page.keyboard.press("Escape");
   await shot("390-dashboard-light");
+  await page.locator(".dashboard-home").evaluate((e) => { e.scrollTop = 220; });
+  await page.locator('.mobile-period-panel[data-collapsed="true"]').waitFor({ state: "attached" });
+  await page.waitForTimeout(420);
+  const lightColors = await page.locator(".mobile-period-summary").evaluate((e) => {
+    const source = document.querySelector('.mobile-period-panel [aria-checked="true"]');
+    return { pill: getComputedStyle(e).backgroundColor, row: getComputedStyle(source).backgroundColor,
+      text: getComputedStyle(e).color, rowText: getComputedStyle(source).color };
+  });
+  assert.equal(lightColors.pill, lightColors.row);
+  assert.equal(lightColors.text, lightColors.rowText);
+  await shot("390-dates-folded-light");
   await page.getByRole("button", { name: "Open navigation" }).click();
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.waitForTimeout(500);
