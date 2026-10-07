@@ -119,7 +119,7 @@ export default function FailureAnalyticsPage() {
           </div>
         )}
         {initialLoading ? (
-          <div className="mx-auto max-w-[1800px] space-y-6 px-4 py-5 lg:px-6 lg:py-6" aria-label="Loading failure analytics">
+          <div className="w-full space-y-6 px-4 py-5 lg:px-6 lg:py-6" aria-label="Loading failure analytics">
             <Skeleton className="h-12 w-64" />
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-36 rounded-xl" />)}</div>
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]"><Skeleton className="h-[360px] rounded-xl" /><Skeleton className="h-[360px] rounded-xl" /></div>

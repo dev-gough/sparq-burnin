@@ -37,8 +37,8 @@ function axisTooltip(dark: boolean, gridColor: string, textColor: string) {
 function timelineAxes(dates: string[], unit: string, grouping: TimeGrouping, muted: string, gridColor: string, isRate = false) {
   return {
     grid: { left: 16, right: 20, top: 48, bottom: 16, containLabel: true },
-    xAxis: { type: "category" as const, data: dates, boundaryGap: !isRate, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: muted, hideOverlap: true, fontSize: 10, formatter: (value: string) => formatFailureBucket(value, grouping) } },
-    yAxis: { type: "value" as const, min: 0, ...(isRate ? {} : { minInterval: 1 }), name: unit, nameTextStyle: { color: muted, fontSize: 10 }, axisLabel: { color: muted, fontSize: 10, ...(isRate ? { formatter: "{value}%" } : {}) }, splitLine: { lineStyle: { color: gridColor, type: "dashed" as const } } },
+    xAxis: { type: "category" as const, data: dates, boundaryGap: !isRate, axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: muted, hideOverlap: true, fontSize: 12, formatter: (value: string) => formatFailureBucket(value, grouping) } },
+    yAxis: { type: "value" as const, min: 0, ...(isRate ? {} : { minInterval: 1 }), name: unit, nameTextStyle: { color: muted, fontSize: 12 }, axisLabel: { color: muted, fontSize: 12, ...(isRate ? { formatter: "{value}%" } : {}) }, splitLine: { lineStyle: { color: gridColor, type: "dashed" as const } } },
   };
 }
 
@@ -49,7 +49,7 @@ function historyChartOption(rows: FailureCause[], timeline: FailureAnalyticsData
     ...timelineAxes(buckets.map(point => point.date), "Annotations", grouping, muted, gridColor),
     grid: { left: 16, right: 20, top: 64, bottom: 16, containLabel: true },
     tooltip: { ...axisTooltip(dark, gridColor, text), formatter: (points: TooltipPoint[]) => [`<strong>${escapeHtml(points[0]?.axisValue ?? "")}</strong>`, ...points.filter(point => Number(point.value) > 0).map(point => `${point.marker} ${escapeHtml(point.seriesName)}: <strong>${number(Number(point.value))}</strong>`)].join("<br/>") },
-    legend: { type: "scroll" as const, top: 4, left: 16, right: 16, textStyle: { color: muted, fontSize: 10 }, pageTextStyle: { color: muted }, pageIconColor: muted },
+    legend: { type: "scroll" as const, top: 4, left: 16, right: 16, textStyle: { color: muted, fontSize: 12 }, pageTextStyle: { color: muted }, pageIconColor: muted },
     series: rows.map(row => ({ name: row.name, type: "bar" as const, stack: "annotations", barMaxWidth: 32, data: buckets.map(point => Number(point[row.name] ?? 0)), emphasis: { focus: "series" as const }, itemStyle: { color: colors.get(row.name) } })),
   };
 }
@@ -60,10 +60,10 @@ function SectionLabel({ number: index, title, description, children }: {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border bg-card text-[11px] font-medium tabular-nums text-muted-foreground">{index}</span>
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border bg-card text-xs font-medium tabular-nums text-muted-foreground">{index}</span>
         <div>
           <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</p>
+          <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{description}</p>
         </div>
       </div>
       {children}
@@ -76,11 +76,11 @@ function Metric({ label, value, detail, icon, tone }: {
 }) {
   return (
     <Card className="gap-3 p-4 shadow-none sm:p-5">
-      <div className="flex items-center justify-between gap-2 text-xs font-medium text-muted-foreground">
+      <div className="flex items-center justify-between gap-2 text-sm font-medium text-muted-foreground">
         <span>{label}</span><span aria-hidden>{icon}</span>
       </div>
       <p className={cn("text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl", tone)}>{value}</p>
-      <div className="text-xs leading-relaxed text-muted-foreground">{detail}</div>
+      <div className="text-sm leading-relaxed text-muted-foreground">{detail}</div>
     </Card>
   );
 }
@@ -93,7 +93,7 @@ function CauseRanking({ rows, percentageMode, selectedGroup, onGroupSelect, colo
   const maximum = Math.max(1, ...rows.map(row => row.count));
   return (
     <div className="max-h-[400px] overflow-y-auto overscroll-contain px-4 pb-2 sm:px-5">
-      <div className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_4rem_5rem] gap-3 bg-card pb-3 pt-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_4rem_5rem] gap-3 bg-card pb-3 pt-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
         <span>{onGroupSelect ? "Group" : "Category"}</span><span className="text-right">Count</span><span className="text-right">{percentageMode === "all" ? "% of all" : "% of failed"}</span>
       </div>
       {rows.map((row, index) => {
@@ -104,7 +104,7 @@ function CauseRanking({ rows, percentageMode, selectedGroup, onGroupSelect, colo
             <div className="min-w-0">
               <div className="flex min-w-0 items-start gap-2">
                 <span className="mt-1 size-2 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden />
-                <span className="min-w-0 break-words text-xs font-medium leading-5">{row.name}</span>
+                <span className="min-w-0 break-words text-sm font-medium leading-5">{row.name}</span>
                 {onGroupSelect && <ArrowUpRight className="ml-auto mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />}
               </div>
               <div className="ml-4 mt-2 h-1.5 overflow-hidden rounded-full bg-muted/70">
@@ -112,7 +112,7 @@ function CauseRanking({ rows, percentageMode, selectedGroup, onGroupSelect, colo
               </div>
             </div>
             <span className="pt-0.5 text-right text-sm font-semibold tabular-nums">{number(row.count)}</span>
-            <span className="pt-0.5 text-right text-xs tabular-nums text-muted-foreground">{percentage(percentageMode === "all" ? row.percentage_all : row.percentage_failed)}</span>
+            <span className="pt-0.5 text-right text-sm tabular-nums text-muted-foreground">{percentage(percentageMode === "all" ? row.percentage_all : row.percentage_failed)}</span>
           </>
         );
         const rowClass = cn("grid w-full grid-cols-[minmax(0,1fr)_4rem_5rem] items-start gap-3 border-t px-1 py-3 text-left", selected && "rounded-md bg-primary/5 ring-1 ring-inset ring-primary/25");
@@ -167,7 +167,7 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
       points.forEach(point => { if (typeof point.value === "number" && Number.isFinite(point.value)) lines.push(`${point.marker} ${escapeHtml(point.seriesName)}: <strong>${percentage(point.value)}</strong>`); });
       return lines.join("<br/>");
     } },
-    legend: { top: 4, right: 16, textStyle: { color: muted, fontSize: 10 } },
+    legend: { top: 4, right: 16, textStyle: { color: muted, fontSize: 12 } },
     series: [
       { name: "Failure rate", type: "line" as const, data: rates, symbol: "circle", symbolSize: 5, itemStyle: { color: burninChartColors.failed.base }, lineStyle: { width: 2 }, areaStyle: { opacity: 0.06 } },
       { name: `${averageWindow}-period moving average`, type: "line" as const, data: weightedFailureAverage(totals, failedCounts, averageWindow), symbol: "none", smooth: true, itemStyle: { color: burninChartColors.accent.indigo }, lineStyle: { width: 2, type: "dashed" as const } },
@@ -187,8 +187,8 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
         return `<strong>Test ${number(index)}</strong><br/>Tests ${number(index - testWindow + 1)}–${number(index)}<br/>${number(Math.round(rate * testWindow / 100))} failed of ${number(testWindow)}<br/>Failure rate: <strong>${percentage(rate)}</strong>`;
       },
     },
-    xAxis: { type: "value" as const, min: testWindow, max: Math.max(testWindow + 1, data.testOutcomes.length), minInterval: 1, name: "Test sequence", nameLocation: "middle" as const, nameGap: 24, nameTextStyle: { color: muted, fontSize: 10 }, axisLabel: { color: muted, fontSize: 10 }, axisTick: { show: false }, axisLine: { show: false }, splitLine: { show: false } },
-    yAxis: { type: "value" as const, min: 0, name: "Failure rate", nameTextStyle: { color: muted, fontSize: 10 }, axisLabel: { color: muted, fontSize: 10, formatter: "{value}%" }, splitLine: { lineStyle: { color: grid, type: "dashed" as const } } },
+    xAxis: { type: "value" as const, min: testWindow, max: Math.max(testWindow + 1, data.testOutcomes.length), minInterval: 1, name: "Test sequence", nameLocation: "middle" as const, nameGap: 24, nameTextStyle: { color: muted, fontSize: 12 }, axisLabel: { color: muted, fontSize: 12 }, axisTick: { show: false }, axisLine: { show: false }, splitLine: { show: false } },
+    yAxis: { type: "value" as const, min: 0, name: "Failure rate", nameTextStyle: { color: muted, fontSize: 12 }, axisLabel: { color: muted, fontSize: 12, formatter: "{value}%" }, splitLine: { lineStyle: { color: grid, type: "dashed" as const } } },
     series: [{ name: `Last ${testWindow} tests`, type: "line" as const, sampling: "lttb", data: rollingPoints, showSymbol: rollingPoints.length === 1, symbolSize: 5, itemStyle: { color: burninChartColors.failed.base }, lineStyle: { width: 2 }, areaStyle: { opacity: 0.06 } }],
   }), [dark, grid, text, muted, testWindow, data.testOutcomes.length, rollingPoints]);
   const rollingEmpty = data.totalTests === 0 ? empty("rate", false) : rollingPoints.length ? null : {
@@ -202,7 +202,7 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
       const total = points.reduce((sum, point) => sum + Number(point.value ?? 0), 0);
       return [`<strong>${escapeHtml(points[0]?.axisValue ?? "")}</strong>`, `Total: <strong>${number(total)}</strong>`, ...points.map(point => `${point.marker} ${escapeHtml(point.seriesName)}: <strong>${number(Number(point.value ?? 0))}</strong>`)].join("<br/>");
     } },
-    legend: { top: 4, right: 16, textStyle: { color: muted, fontSize: 10 } },
+    legend: { top: 4, right: 16, textStyle: { color: muted, fontSize: 12 } },
     series: [
       { name: "Passed", type: "bar" as const, stack: "tests", barMaxWidth: 28, data: ratePoints.map(point => point.passed), itemStyle: { color: burninChartColors.passed.base, opacity: 0.65 } },
       { name: "Failed", type: "bar" as const, stack: "tests", barMaxWidth: 28, data: failedCounts, itemStyle: { color: burninChartColors.failed.base, borderRadius: [2, 2, 0, 0] } },
@@ -217,28 +217,28 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
   );
   const cardHeading = (title: string, description: string, badge?: ReactNode) => (
     <div className="flex flex-wrap items-start justify-between gap-2 px-4 pt-4 sm:px-5 sm:pt-5">
-      <div><h3 className="text-sm font-semibold tracking-tight">{title}</h3><p className="mt-1 text-xs text-muted-foreground">{description}</p></div>
+      <div><h3 className="text-base font-semibold tracking-tight">{title}</h3><p className="mt-1 text-sm text-muted-foreground">{description}</p></div>
       {badge}
     </div>
   );
 
   return (
-    <div className="mx-auto w-full max-w-[1800px] space-y-7 px-4 py-5 lg:px-6 lg:py-6">
+    <div className="w-full space-y-7 px-4 py-5 lg:px-6 lg:py-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div><p className="text-xs font-medium uppercase tracking-[0.15em] text-muted-foreground">Quality / failure analysis</p><h2 className="mt-1 text-xl font-semibold tracking-tight">Failure overview</h2></div>
-        <span className="rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground">{dashboardRangeContextLabel(range)} · UTC</span>
+        <div><p className="text-sm font-medium uppercase tracking-[0.15em] text-muted-foreground">Quality / failure analysis</p><h2 className="mt-1 text-xl font-semibold tracking-tight">Failure overview</h2></div>
+        <span className="rounded-full border bg-card px-3 py-1 text-sm text-muted-foreground">{dashboardRangeContextLabel(range)} · UTC</span>
       </div>
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Metric label="Failure rate" value={data.totalTests ? percentage(failureRate) : "—"} detail={<><span className="block">{number(data.totalFailedTests)} failed of {number(data.totalTests)} tested</span><span className="mt-1 block text-[11px]">{dateLabel}</span></>} icon={<BarChart3 className="size-4" />} tone={!data.totalTests ? "text-muted-foreground" : data.totalFailedTests ? "text-rose-500" : "text-emerald-500"} />
+        <Metric label="Failure rate" value={data.totalTests ? percentage(failureRate) : "—"} detail={<><span className="block">{number(data.totalFailedTests)} failed of {number(data.totalTests)} tested</span><span className="mt-1 block text-xs">{dateLabel}</span></>} icon={<BarChart3 className="size-4" />} tone={!data.totalTests ? "text-muted-foreground" : data.totalFailedTests ? "text-rose-500" : "text-emerald-500"} />
         <Metric label={chartMode === "recent" ? "Unique inverters" : "Total tests"} value={number(data.totalTests)} detail={<span className="inline-flex items-center gap-1"><CheckCheck className="size-3 text-emerald-500" />{number(data.totalTests - data.totalFailedTests)} passed</span>} icon={<ClipboardList className="size-4" />} />
         <Metric label={chartMode === "recent" ? "Failed · latest per inverter" : "Failed tests"} value={number(data.totalFailedTests)} detail={chartMode === "recent" ? "Inverters whose latest PASS or FAIL is FAIL" : "Every FAIL in the period. Invalid and retest are left out."} icon={<CircleX className="size-4" />} tone={data.totalFailedTests ? "text-rose-500" : undefined} />
-        <Metric label="Annotated failures" value={number(tagged)} detail={<><span className="block">{coverage === null ? "No failed tests to annotate" : `${coverage.toFixed(0)}% annotation coverage · ${number(data.totalFailedTests)} failures`}</span><span className="mt-1 block text-[11px]">Period total; each failed test counted once.</span>{data.untaggedFailed > 0 && <Link href={todoHrefFromDashboardRange(range)} className="mt-1 flex items-center gap-1 font-medium text-amber-500 hover:underline">{number(data.untaggedFailed)} untagged · review <ArrowUpRight className="size-3" /></Link>}</>} icon={<Tags className="size-4" />} tone={data.untaggedFailed ? "text-amber-500" : undefined} />
+        <Metric label="Annotated failures" value={number(tagged)} detail={<><span className="block">{coverage === null ? "No failed tests to annotate" : `${coverage.toFixed(0)}% annotation coverage · ${number(data.totalFailedTests)} failures`}</span><span className="mt-1 block text-xs">Period total; each failed test counted once.</span>{data.untaggedFailed > 0 && <Link href={todoHrefFromDashboardRange(range)} className="mt-1 flex items-center gap-1 font-medium text-amber-500 hover:underline">{number(data.untaggedFailed)} untagged · review <ArrowUpRight className="size-3" /></Link>}</>} icon={<Tags className="size-4" />} tone={data.untaggedFailed ? "text-amber-500" : undefined} />
       </div>
 
       <section className="space-y-3" aria-label="Failure trend and test volume">
         <SectionLabel number="01" title="Failure trend" description="Read the rate alongside the number of tests behind it.">
-          <div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">Group by</span><InfoTooltip content="UTC calendar buckets for the failure-rate, test-volume, and cause-history charts. The by-date moving average gives busier buckets more weight. By test count ignores this grouping." />
-            <Select value={grouping} onValueChange={value => setGrouping(value as TimeGrouping)}><SelectTrigger className="h-8 w-[125px] text-xs" aria-label="Group timeline by"><SelectValue /></SelectTrigger><SelectContent>{TIME_GROUPINGS.map(value => <SelectItem key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</SelectItem>)}</SelectContent></Select>
+          <div className="flex items-center gap-2"><span className="text-sm text-muted-foreground">Group by</span><InfoTooltip content="UTC calendar buckets for the failure-rate, test-volume, and cause-history charts. The by-date moving average gives busier buckets more weight. By test count ignores this grouping." />
+            <Select value={grouping} onValueChange={value => setGrouping(value as TimeGrouping)}><SelectTrigger className="h-8 w-[125px] text-sm" aria-label="Group timeline by"><SelectValue /></SelectTrigger><SelectContent>{TIME_GROUPINGS.map(value => <SelectItem key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</SelectItem>)}</SelectContent></Select>
           </div>
         </SectionLabel>
         <div className="grid gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
@@ -246,15 +246,15 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
             {cardHeading(rateView === "date" ? "Failure rate over time" : "Failure rate by test count", rateView === "date" ? "Actual rate and a volume-weighted moving average" : `Rolling ${number(testWindow)}-test window · outcomes ordered chronologically`,
               <div className="flex flex-wrap items-center gap-2">
                 <ToggleGroup type="single" value={rateView} onValueChange={value => { if (value) setRateView(value); }} variant="outline" aria-label="Failure rate x-axis">
-                  <ToggleGroupItem value="date" className="h-7 px-2 text-[11px]">By date</ToggleGroupItem>
-                  <ToggleGroupItem value="tests" className="h-7 px-2 text-[11px]">By test count</ToggleGroupItem>
+                  <ToggleGroupItem value="date" className="h-9 px-3 text-sm">By date</ToggleGroupItem>
+                  <ToggleGroupItem value="tests" className="h-9 px-3 text-sm">By test count</ToggleGroupItem>
                 </ToggleGroup>
-                {rateView === "tests" && <Select value={String(testWindow)} onValueChange={value => setTestWindow(Number(value))}><SelectTrigger className="h-7 w-[125px] text-[11px]" aria-label="Rolling test window"><SelectValue /></SelectTrigger><SelectContent>{[10, 25, 50, 100, 250, 500, 1000, 2000].map(value => <SelectItem key={value} value={String(value)}>{number(value)} tests</SelectItem>)}</SelectContent></Select>}
+                {rateView === "tests" && <Select value={String(testWindow)} onValueChange={value => setTestWindow(Number(value))}><SelectTrigger className="h-9 w-[140px] text-sm" aria-label="Rolling test window"><SelectValue /></SelectTrigger><SelectContent>{[10, 25, 50, 100, 250, 500, 1000, 2000].map(value => <SelectItem key={value} value={String(value)}>{number(value)} tests</SelectItem>)}</SelectContent></Select>}
               </div>
             )}
-            <p className="px-4 text-[11px] text-muted-foreground sm:px-5">Selected period: {dateLabel}</p>
-            {rateView === "date" ? <>{chart("Failure rate over time", rateOption, "rate", ratePoints.length > 0, 280)}<div className="flex items-center gap-1.5 px-4 pb-4 text-[11px] leading-relaxed text-muted-foreground sm:px-5"><p><strong className="font-medium">{averageWindow}-period average:</strong> failed ÷ total tests across {averageWindow} {periodUnit}s with data.</p><InfoTooltip content={`Each point combines failed tests and total tests from the current ${periodUnit} and the previous ${averageWindow - 1} ${periodUnit}s with tests, then divides failures by total tests. Busier periods carry more weight; periods without tests are skipped. The line starts after ${averageWindow} periods with data. The window adjusts from 3 to 7 periods based on the available history.`} /></div></> : (
-              <><FailureChartPanel title="Failure rate by test count" emptyState={rollingEmpty} height={254} showTitle={false}><ReactECharts option={rollingOption} replaceMerge={["series", "xAxis", "yAxis", "legend"]} style={{ height: 254 }} /></FailureChartPanel><p className="px-5 pb-3 text-[11px] text-muted-foreground">Tests are numbered within the selected period. {chartMode === "recent" ? "Latest keeps one PASS or FAIL per inverter." : "Each PASS or FAIL run counts once. Invalid and retest are left out."}</p></>
+            <p className="px-4 text-xs text-muted-foreground sm:px-5">Selected period: {dateLabel}</p>
+            {rateView === "date" ? <>{chart("Failure rate over time", rateOption, "rate", ratePoints.length > 0, 280)}<div className="flex items-center gap-1.5 px-4 pb-4 text-xs leading-relaxed text-muted-foreground sm:px-5"><p><strong className="font-medium">{averageWindow}-period average:</strong> failed ÷ total tests across {averageWindow} {periodUnit}s with data.</p><InfoTooltip content={`Each point combines failed tests and total tests from the current ${periodUnit} and the previous ${averageWindow - 1} ${periodUnit}s with tests, then divides failures by total tests. Busier periods carry more weight; periods without tests are skipped. The line starts after ${averageWindow} periods with data. The window adjusts from 3 to 7 periods based on the available history.`} /></div></> : (
+              <><FailureChartPanel title="Failure rate by test count" emptyState={rollingEmpty} height={254} showTitle={false}><ReactECharts option={rollingOption} replaceMerge={["series", "xAxis", "yAxis", "legend"]} style={{ height: 254 }} /></FailureChartPanel><p className="px-5 pb-3 text-xs text-muted-foreground">Tests are numbered within the selected period. {chartMode === "recent" ? "Latest keeps one PASS or FAIL per inverter." : "Each PASS or FAIL run counts once. Invalid and retest are left out."}</p></>
             )}
           </Card>
           <Card className="min-w-0 gap-3 overflow-hidden py-0 shadow-none">
@@ -272,19 +272,19 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
 
       <section className="space-y-3" aria-label="Failure cause breakdowns">
         <SectionLabel number="02" title="What’s driving the failures?" description="Ranked causes, with exact counts and the selected percentage denominator.">
-          {expandedGroup && <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => onGroupChange(null)}><ArrowLeft className="size-3" />All groups</Button>}
+          {expandedGroup && <Button variant="outline" size="sm" className="h-8 gap-1.5 text-sm" onClick={() => onGroupChange(null)}><ArrowLeft className="size-3" />All groups</Button>}
         </SectionLabel>
         <div className="grid gap-3 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
           <Card className="min-w-0 gap-3 overflow-hidden py-0 pb-3 shadow-none">
-            {cardHeading("Failures by group", "Select a group to inspect its categories", <span className="rounded-md bg-muted px-2 py-1 text-[10px] text-muted-foreground">{groups.length} groups</span>)}
+            {cardHeading("Failures by group", "Select a group to inspect its categories", <span className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">{groups.length} groups</span>)}
             <FailureChartPanel title="Failures by group" emptyState={empty("group", groups.length > 0)} height={280} showTitle={false}><CauseRanking rows={groups} percentageMode={percentageMode} selectedGroup={expandedGroup} onGroupSelect={group => onGroupChange(group === expandedGroup ? null : group)} colors={groupColors} /></FailureChartPanel>
           </Card>
           <Card className="min-w-0 gap-3 overflow-hidden py-0 pb-3 shadow-none">
-            {cardHeading("Failures by category", expandedGroup ? `Showing ${expandedGroup}` : "All categories · highest count first", <span className="rounded-md bg-muted px-2 py-1 text-[10px] text-muted-foreground">{categories.length} categories</span>)}
+            {cardHeading("Failures by category", expandedGroup ? `Showing ${expandedGroup}` : "All categories · highest count first", <span className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">{categories.length} categories</span>)}
             <FailureChartPanel title="Failures by category" emptyState={empty("category", categories.length > 0)} height={280} showTitle={false}><CauseRanking rows={categories} percentageMode={percentageMode} colors={categoryColors} /></FailureChartPanel>
           </Card>
         </div>
-        <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground"><InfoTooltip content="Each count is an annotation on a failed test. One test can carry several, including inside the same group, so the percentages do not have to add up to 100%. Free-text notes are included under Other in the group ranking. The category ranking uses the configured category names." /><span>Causes can overlap. Counts represent annotations; percentages use {percentageMode === "all" ? "all tests" : "failed tests"} as the denominator.</span></p>
+        <p className="flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground"><InfoTooltip content="Each count is an annotation on a failed test. One test can carry several, including inside the same group, so the percentages do not have to add up to 100%. Free-text notes are included under Other in the group ranking. The category ranking uses the configured category names." /><span>Causes can overlap. Counts represent annotations; percentages use {percentageMode === "all" ? "all tests" : "failed tests"} as the denominator.</span></p>
       </section>
 
       <section className="space-y-3" aria-label="Timeline analysis">

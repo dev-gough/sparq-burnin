@@ -106,12 +106,12 @@ function Section({
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border bg-card text-[11px] font-medium tabular-nums text-muted-foreground">
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border bg-card text-xs font-medium tabular-nums text-muted-foreground">
           {index}
         </span>
         <div>
           <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+          <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">
             {description}
           </p>
         </div>
@@ -135,7 +135,7 @@ function Metric({
 }) {
   return (
     <Card className="gap-3 p-4 shadow-none sm:p-5">
-      <div className="flex items-center justify-between gap-2 text-xs font-medium text-muted-foreground">
+      <div className="flex items-center justify-between gap-2 text-sm font-medium text-muted-foreground">
         <span>{label}</span>
         <span aria-hidden>{icon}</span>
       </div>
@@ -147,7 +147,7 @@ function Metric({
       >
         {value}
       </p>
-      <p className="text-xs leading-relaxed text-muted-foreground">{detail}</p>
+      <p className="text-sm leading-relaxed text-muted-foreground">{detail}</p>
     </Card>
   );
 }
@@ -312,7 +312,7 @@ export default function ContributorsPage() {
         bottom: 0,
         left: 16,
         right: 16,
-        textStyle: { color: muted, fontSize: 11 },
+        textStyle: { color: muted, fontSize: 12 },
         formatter: displayName,
         pageTextStyle: { color: muted },
         pageIconColor: muted,
@@ -325,7 +325,7 @@ export default function ContributorsPage() {
         axisLabel: {
           color: muted,
           hideOverlap: true,
-          fontSize: 10,
+          fontSize: 12,
           formatter: (date: string) =>
             new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, {
               month: "short",
@@ -338,7 +338,7 @@ export default function ContributorsPage() {
         type: "value",
         min: 0,
         minInterval: 1,
-        axisLabel: { color: muted, fontSize: 10 },
+        axisLabel: { color: muted, fontSize: 12 },
         splitLine: { lineStyle: { color: grid, type: "dashed" } },
       },
       series: names.map((name) => ({
@@ -395,7 +395,7 @@ export default function ContributorsPage() {
           type="button"
           onClick={() => sort(field)}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-sm text-[10px] uppercase tracking-wider hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "inline-flex items-center gap-1.5 rounded-sm text-xs uppercase tracking-wider hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             sortField === field && "text-foreground",
           )}
         >
@@ -432,10 +432,10 @@ export default function ContributorsPage() {
     <div className="ml-10 flex h-dvh flex-col overflow-hidden">
       <SiteHeader title="Contributors" />
       <div className="flex-1 overflow-y-auto" aria-busy={loading}>
-        <div className="mx-auto max-w-[1800px] space-y-6 px-4 py-5 lg:px-6 lg:py-6">
+        <div className="w-full space-y-6 px-4 py-5 lg:px-6 lg:py-6">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
                 Annotation insights
               </p>
               <h1 className="mt-1 text-2xl font-semibold tracking-tight">
@@ -448,7 +448,7 @@ export default function ContributorsPage() {
             </div>
             <div className="flex items-center gap-3">
               {updatedAt && (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-sm text-muted-foreground">
                   Updated{" "}
                   {updatedAt.toLocaleTimeString([], {
                     hour: "2-digit",
@@ -550,11 +550,11 @@ export default function ContributorsPage() {
                         <h3 className="text-sm font-semibold">
                           Annotation activity
                         </h3>
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        <p className="mt-1 text-sm text-muted-foreground">
                           Daily contributions by team member
                         </p>
                       </div>
-                      <span className="rounded-md border bg-muted/30 px-2 py-1 text-[11px] tabular-nums text-muted-foreground">
+                      <span className="rounded-md border bg-muted/30 px-2 py-1 text-xs tabular-nums text-muted-foreground">
                         {number(activityTotal)} annotations · 30 days
                       </span>
                     </div>
@@ -569,7 +569,7 @@ export default function ContributorsPage() {
                       <h3 className="text-sm font-semibold">
                         Failure coverage
                       </h3>
-                      <p className="mt-1 text-xs text-muted-foreground">
+                      <p className="mt-1 text-sm text-muted-foreground">
                         A test counts once, regardless of how many annotations
                         it has.
                       </p>
@@ -611,13 +611,13 @@ export default function ContributorsPage() {
                       <div className="space-y-3">
                         <p className="text-xl font-semibold tabular-nums">
                           {number(stats.total_annotated_tests)}{" "}
-                          <span className="text-xs font-normal text-muted-foreground">
+                          <span className="text-sm font-normal text-muted-foreground">
                             annotated
                           </span>
                         </p>
                         <p className="text-xl font-semibold tabular-nums">
                           {number(remaining)}{" "}
-                          <span className="text-xs font-normal text-muted-foreground">
+                          <span className="text-sm font-normal text-muted-foreground">
                             awaiting review
                           </span>
                         </p>
@@ -654,7 +654,7 @@ export default function ContributorsPage() {
                       placeholder="Search contributors…"
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
-                      className="h-9 pl-9 text-xs"
+                      className="h-9 pl-9 text-sm"
                     />
                   </div>
                 </Section>
@@ -664,7 +664,7 @@ export default function ContributorsPage() {
                       <h3 className="text-sm font-semibold">
                         Team contributions
                       </h3>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-sm text-muted-foreground">
                         {number(contributors.length)}{" "}
                         {contributors.length === 1
                           ? "contributor"
@@ -722,7 +722,7 @@ export default function ContributorsPage() {
                                   className="flex w-full items-center gap-2.5 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 >
                                   <span
-                                    className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-[10px] font-semibold"
+                                    className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold"
                                     style={{
                                       color: colors.get(
                                         person.contributor_name,
@@ -732,11 +732,11 @@ export default function ContributorsPage() {
                                     {initials(person.contributor_name)}
                                   </span>
                                   <span className="min-w-0">
-                                    <span className="block whitespace-nowrap text-xs font-medium">
+                                    <span className="block whitespace-nowrap text-sm font-medium">
                                       {displayName(person.contributor_name)}
                                     </span>
                                     <span
-                                      className="block max-w-52 truncate text-[10px] text-muted-foreground"
+                                      className="block max-w-52 truncate text-xs text-muted-foreground"
                                       title={person.contributor_name}
                                     >
                                       {person.contributor_name.includes("@")
@@ -746,16 +746,16 @@ export default function ContributorsPage() {
                                   </span>
                                 </button>
                               </td>
-                              <td className="px-4 py-3 text-right text-xs font-semibold tabular-nums">
+                              <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums">
                                 {number(person.total_annotations)}
                               </td>
-                              <td className="px-4 py-3 text-right text-xs tabular-nums">
+                              <td className="px-4 py-3 text-right text-sm tabular-nums">
                                 {number(person.unique_tests_annotated)}
                               </td>
-                              <td className="px-4 py-3 text-right text-xs tabular-nums text-muted-foreground">
+                              <td className="px-4 py-3 text-right text-sm tabular-nums text-muted-foreground">
                                 {person.percentage_of_tests.toFixed(1)}%
                               </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-right text-[11px] text-muted-foreground">
+                              <td className="whitespace-nowrap px-4 py-3 text-right text-xs text-muted-foreground">
                                 {formatDate(person.last_activity)}
                               </td>
                             </tr>
@@ -770,7 +770,7 @@ export default function ContributorsPage() {
                         </div>
                       )}
                     </div>
-                    <p className="border-t px-4 py-3 text-[10px] leading-relaxed text-muted-foreground sm:px-5">
+                    <p className="border-t px-4 py-3 text-xs leading-relaxed text-muted-foreground sm:px-5">
                       Share of tests is based on all annotated tests.
                       Contributors can annotate the same test, so shares may
                       overlap.
@@ -780,12 +780,12 @@ export default function ContributorsPage() {
                     {selected ? (
                       <>
                         <div className="border-b p-4 sm:p-5">
-                          <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                             Contributor detail
                           </p>
                           <div className="mt-3 flex items-center gap-3">
                             <span
-                              className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-semibold"
+                              className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-semibold"
                               style={{
                                 color: colors.get(selected.contributor_name),
                               }}
@@ -797,7 +797,7 @@ export default function ContributorsPage() {
                                 {displayName(selected.contributor_name)}
                               </h3>
                               <p
-                                className="truncate text-xs text-muted-foreground"
+                                className="truncate text-sm text-muted-foreground"
                                 title={selected.contributor_name}
                               >
                                 {selected.contributor_name}
@@ -809,7 +809,7 @@ export default function ContributorsPage() {
                               <p className="text-xl font-semibold tabular-nums">
                                 {number(selected.total_annotations)}
                               </p>
-                              <p className="mt-1 text-[10px] text-muted-foreground">
+                              <p className="mt-1 text-xs text-muted-foreground">
                                 Annotations
                               </p>
                             </div>
@@ -817,21 +817,21 @@ export default function ContributorsPage() {
                               <p className="text-xl font-semibold tabular-nums">
                                 {number(selected.unique_tests_annotated)}
                               </p>
-                              <p className="mt-1 text-[10px] text-muted-foreground">
+                              <p className="mt-1 text-xs text-muted-foreground">
                                 Unique tests annotated
                               </p>
                             </div>
                           </div>
                         </div>
                         <div className="flex items-center justify-between gap-2 px-4 pb-2 pt-4 sm:px-5">
-                          <h4 className="min-w-0 break-words text-xs font-semibold">
+                          <h4 className="min-w-0 break-words text-sm font-semibold">
                             {group ? group.group_name : "Annotation groups"}
                           </h4>
                           {group && (
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 shrink-0 text-xs"
+                              className="h-8 shrink-0 text-sm"
                               onClick={() => setSelectedGroup(null)}
                             >
                               <ArrowLeft className="size-3" />
@@ -849,7 +849,7 @@ export default function ContributorsPage() {
                             const content = (
                               <>
                                 <div className="flex items-start justify-between gap-3">
-                                  <span className="flex items-start gap-2 text-xs leading-5">
+                                  <span className="flex items-start gap-2 text-sm leading-5">
                                     <span
                                       className="mt-1.5 size-2 shrink-0 rounded-full"
                                       style={{ backgroundColor: color }}
@@ -857,7 +857,7 @@ export default function ContributorsPage() {
                                     />
                                     {item.name}
                                   </span>
-                                  <span className="flex shrink-0 items-center gap-2 text-xs font-semibold tabular-nums">
+                                  <span className="flex shrink-0 items-center gap-2 text-sm font-semibold tabular-nums">
                                     {number(item.count)}
                                     {!group && (
                                       <ArrowUpRight
@@ -897,12 +897,12 @@ export default function ContributorsPage() {
                             );
                           })}
                           {!breakdown.length && (
-                            <p className="py-8 text-center text-xs text-muted-foreground">
+                            <p className="py-8 text-center text-sm text-muted-foreground">
                               No annotation breakdown available.
                             </p>
                           )}
                           {!group && breakdown.length > 0 && (
-                            <p className="mt-3 text-[10px] text-muted-foreground">
+                            <p className="mt-3 text-xs text-muted-foreground">
                               Select a group to view its categories.
                             </p>
                           )}
