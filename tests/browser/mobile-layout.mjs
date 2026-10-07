@@ -176,6 +176,14 @@ const station = {
     if (u.pathname === "/api/auth/session")
       body = { user: { name: "Alex Chen", email: names[0] }, expires: "2099-01-01" };
     else if (u.pathname === "/api/user/failure-rate-prefs") body = { view: "rate", window: 100 };
+    else if (u.pathname === "/api/test-report") body = {
+      dateRange: { start: "2026-09-01", end: "2026-09-30" },
+      totals: { totalTests: 1000, totalPassed: 900, totalFailed: 100, totalInvalid: 0, overallPassRate: 90, overallFailRate: 10 },
+      dailyData: [{ date: "2026-09-01", total: 100, passed: 90, failed: 10, invalid: 0, passRate: 90, failRate: 10 }],
+    };
+    else if (u.pathname === "/api/failed-test-data") return r.fulfill({
+      contentType: "application/zip", body: Buffer.from("504b0506000000000000000000000000000000000000", "hex"),
+    });
     else if (u.pathname === "/api/todo/count") body = { count: 5 };
     else if (u.pathname === "/api/stations/admin-status") body = { isStationAdmin: true };
     else if (u.pathname === "/api/stations")
@@ -370,6 +378,44 @@ const station = {
       `${selector} outside screen: ${JSON.stringify(box)}`,
     );
   }
+  async function drawerFits() {
+    await fits(".sidebar-drawer");
+    const layout = await page.locator(".sidebar-drawer").evaluate((e) => {
+      const r = e.getBoundingClientRect();
+      return {
+        x: r.x, bottom: r.bottom, height: e.clientHeight, total: e.scrollHeight,
+        targets: [...e.querySelectorAll("a,button,[role=combobox]")].map((target) => {
+          const b = target.getBoundingClientRect();
+          return { text: target.textContent, left: b.left, top: b.top, right: b.right, bottom: b.bottom };
+        }),
+      };
+    });
+    assert.equal(layout.x, 0, "Drawer should enter from the left");
+    assert(layout.total <= layout.height + 1, `Drawer needs scrolling: ${JSON.stringify(layout)}`);
+    for (const target of layout.targets) {
+      assert(target.top >= -1 && target.bottom <= page.viewportSize().height + 1 &&
+        target.left >= -1 && target.right <= page.viewportSize().width + 1,
+        `Drawer control is outside the viewport: ${JSON.stringify(target)}`);
+    }
+  }
+  // Check short portrait and landscape screens, including resizing an open drawer.
+  for (const [width, height] of [[320, 568], [320, 480], [360, 640], [384, 824], [412, 915], [568, 320], [667, 375], [740, 360]]) {
+    await page.setViewportSize({ width, height });
+    await page.goto(base + "/");
+    await page.waitForTimeout(1200);
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    await drawerFits();
+    await shot(`${width}x${height}-left-navigation`);
+    await page.setViewportSize({ width, height: Math.max(320, height - 100) });
+    await drawerFits();
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(250);
+    await page.getByRole("button", { name: "Export", exact: true }).click();
+    await drawerFits();
+    await shot(`${width}x${height}-download-drawer`);
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(250);
+  }
   // Mobile chrome must leave room for the dashboard and scroll out of the way.
   for (const width of [412, 384, 320]) {
     await page.setViewportSize({ width, height: 700 });
@@ -391,10 +437,21 @@ const station = {
       assert.equal(button.height, 44);
       assert(Math.abs(button.width - chrome.buttons[0].width) < 1, "Period buttons differ in width");
     }
-    for (const name of ["Open navigation", "More options", "Export"]) {
+    for (const name of ["Open navigation", "Export"]) {
       const target = await page.getByRole("button", { name, exact: true }).boundingBox();
       assert(target && target.width >= 44 && target.height >= 44, `${name} is too small`);
     }
+    assert.equal(await page.getByRole("button", { name: "More options" }).count(), 0);
+    const hamburger = await page.getByRole("button", { name: "Open navigation" }).boundingBox();
+    const download = await page.getByRole("button", { name: "Export", exact: true }).boundingBox();
+    const logo = await page.getByRole("link", { name: "BurnIn home" }).boundingBox();
+    assert(hamburger.x < download.x && download.x < logo.x, "Mobile header order is incorrect");
+    await page.getByRole("radio", { name: "All time", exact: true }).click();
+    await page.waitForTimeout(600);
+    const note = await page.getByRole("note").boundingBox();
+    assert(note && note.height === 20 && note.width > width - 40, "Comparison note must span one full-width line");
+    await shot(`${width}-all-time-comparison`);
+    await page.getByRole("radio", { name: "30 days", exact: true }).click();
     await shot(`${width}-compact-dashboard`);
     await page.locator(".dashboard-home").evaluate((e) => { e.scrollTop = 350; });
     assert(await page.locator(".dashboard-page-header").evaluate((e) => e.getBoundingClientRect().bottom <= 56));
@@ -438,11 +495,31 @@ const station = {
     await page.getByRole("radio", { name: "Custom date range", exact: true }).click();
     await fits("[data-slot=popover-content]");
     await shot(`${width}-date-picker`);
+    await page.locator("[data-slot=popover-content]").getByRole("button", { name: "6 months", exact: true }).click();
+    await page.waitForTimeout(700);
+    await page.getByRole("button", { name: "Export", exact: true }).click();
+    await drawerFits();
+    assert(await page.getByRole("button", { name: "Test report (CSV)", exact: true }).isDisabled());
+    assert(await page.getByRole("button", { name: "Failed test data (ZIP)", exact: true }).isDisabled());
+    await shot(`${width}-custom-range-downloads`);
     await page.keyboard.press("Escape");
-    await page.waitForTimeout(400);
-    await page.getByRole("button", { name: "More options" }).click();
-    await fits("[role=dialog]");
-    await shot(`${width}-dashboard-options`);
+    await page.waitForTimeout(250);
+    await page.getByRole("radio", { name: "30 days", exact: true }).click();
+    await page.getByRole("button", { name: "Export", exact: true }).click();
+    await drawerFits();
+    await shot(`${width}-dashboard-downloads`);
+    const csvDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Test report (CSV)", exact: true }).click();
+    const csv = await csvDownload;
+    assert(csv.suggestedFilename().endsWith(".csv"));
+    await csv.saveAs(`${out}/${width}-test-report.csv`);
+    assert(fs.readFileSync(`${out}/${width}-test-report.csv`, "utf8").includes("Total Tests: 1000"));
+    const zipDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Failed test data (ZIP)", exact: true }).click();
+    const zip = await zipDownload;
+    assert(zip.suggestedFilename().endsWith(".zip"));
+    await zip.saveAs(`${out}/${width}-failed-tests.zip`);
+    assert.equal(fs.readFileSync(`${out}/${width}-failed-tests.zip`).subarray(0, 2).toString(), "PK");
     await page.keyboard.press("Escape");
     await page.waitForTimeout(400);
     await page.getByRole("radio", { name: "By test count", exact: true }).click();
@@ -495,9 +572,7 @@ const station = {
   await page.goto(base + "/");
   await page.getByRole("button", { name: "Open navigation" }).click();
   await shot("landscape-navigation");
-  assert(await page.getByRole("dialog").evaluate((e) => e.scrollHeight > e.clientHeight));
-  await page.getByRole("dialog").evaluate((e) => (e.scrollTop = e.scrollHeight));
-  await shot("landscape-navigation-bottom");
+  await drawerFits();
   await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(base + "/");

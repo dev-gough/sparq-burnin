@@ -492,8 +492,6 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
         onChartModeChange={(mode) => {
           if (mode === "all" || mode === "recent") setChartMode(mode);
         }}
-        filterLinked={filterLinked}
-        onFilterLinkedChange={setFilterLinked}
         prefsReady={filtersReady}
         customOpen={customOpen}
         onCustomOpenChange={setCustomOpen}

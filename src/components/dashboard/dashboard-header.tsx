@@ -6,35 +6,14 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import {
   IconDownload,
   IconFileZip,
-  IconMoon,
-  IconSettings,
-  IconSun,
 } from "@tabler/icons-react";
-import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { SidebarDrawer } from "@/components/sidebar-drawer";
 import {
   HeaderPeriodControls, HeaderResultModeControls, HeaderRangeMeta,
   HEADER_BAR_CLASS, HEADER_TITLE_CLASS, HEADER_CONTROLS_CLASS,
 } from "@/components/dashboard/header-controls";
-import { Label } from "@/components/ui/label";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import {
   type DashboardPill,
@@ -84,8 +63,6 @@ interface DashboardHeaderProps {
   onCustomRange: (from: string, to: string) => void;
   chartMode: string;
   onChartModeChange: (mode: string) => void;
-  filterLinked: boolean;
-  onFilterLinkedChange: (linked: boolean) => void;
   /**
    * When false, period controls show no selection (avoids flashing SSR default
    * 30d before localStorage prefs apply).
@@ -105,8 +82,6 @@ export function DashboardHeader({
   onCustomRange,
   chartMode,
   onChartModeChange,
-  filterLinked,
-  onFilterLinkedChange,
   prefsReady = true,
   customOpen: customOpenProp,
   onCustomOpenChange,
@@ -120,9 +95,6 @@ export function DashboardHeader({
   const [customOpenInternal, setCustomOpenInternal] = React.useState(false);
   const customOpen = customOpenProp ?? customOpenInternal;
   const setCustomOpen = onCustomOpenChange ?? setCustomOpenInternal;
-  const { theme, setTheme, resolvedTheme } = useTheme();
-  const [themeMounted, setThemeMounted] = React.useState(false);
-  React.useEffect(() => setThemeMounted(true), []);
   const customDates = dashboardRange.kind === "custom"
     ? dashboardRange
     : tableDatesForPill(dashboardRange.kind);
@@ -131,8 +103,6 @@ export function DashboardHeader({
     React.useState(false);
 
   const exportRange = exportTimeRange(dashboardRange);
-  // Always show export limitation note (APIs are timeRange-only; ignore annotation)
-  const showExportLimitation = true;
 
   const generateReport = async () => {
     if (!exportRange) return;
@@ -205,201 +175,37 @@ export function DashboardHeader({
   };
 
   const headerActions = (
-      <div className="dashboard-header-actions flex shrink-0 items-center gap-1.5 sm:gap-2">
-        {/* More sheet */}
-        <Sheet>
-          <SheetTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-10 min-h-10 gap-1.5 px-2.5 sm:px-3"
-              aria-label="More options"
-            >
-              <IconSettings className="size-4" />
-              <span className="hidden sm:inline">More</span>
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="right" className="w-full sm:max-w-md">
-            <SheetHeader>
-              <div className="flex items-center gap-2">
-                <SheetTitle>Dashboard options</SheetTitle>
-                <span className="md:hidden"><InfoTooltip content={METRICS_HELP} side="bottom" /></span>
-              </div>
-              <SheetDescription>
-                More dashboard controls. Period buttons stay on the header.
-              </SheetDescription>
-            </SheetHeader>
-
-            <div className="flex flex-col gap-6 px-4 pb-6">
-              {/* Chart mode (also on header — kept here for advanced copy) */}
-              <div className="space-y-2">
-                <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Result mode
-                </Label>
-                <ToggleGroup
-                  type="single"
-                  value={chartMode}
-                  onValueChange={(value) => {
-                    if (value) onChartModeChange(value);
-                  }}
-                  variant="outline"
-                  className="w-full justify-start"
-                >
-                  <ToggleGroupItem value="recent" className="h-10 flex-1">
-                    Latest per inverter
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="all" className="h-10 flex-1">
-                    All tests
-                  </ToggleGroupItem>
-                </ToggleGroup>
-                <p className="text-xs text-muted-foreground">
-                  <span className="hidden md:inline">Same control as the header. </span>Latest is the latest PASS or FAIL
-                  per inverter. All tests counts every PASS and FAIL. Invalid
-                  and retest are left out.
-                </p>
-              </div>
-
-              {/* O23: Theme — also in sidebar; surfaced here for discoverability */}
-              <div className="space-y-2">
-                <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Appearance
-                </Label>
-                <ToggleGroup
-                  type="single"
-                  value={
-                    themeMounted
-                      ? theme === "system"
-                        ? "system"
-                        : resolvedTheme === "dark"
-                          ? "dark"
-                          : "light"
-                      : undefined
-                  }
-                  onValueChange={(value) => {
-                    if (value) setTheme(value);
-                  }}
-                  variant="outline"
-                  className="w-full justify-start"
-                  aria-label="Color theme"
-                >
-                  <ToggleGroupItem value="light" className="h-10 min-h-10 flex-1 gap-1.5">
-                    <IconSun className="size-4" />
-                    Light
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="dark" className="h-10 min-h-10 flex-1 gap-1.5">
-                    <IconMoon className="size-4" />
-                    Dark
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="system" className="h-10 min-h-10 flex-1">
-                    System
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </div>
-
-              {/* Date link toggle */}
-              <div className="space-y-2">
-                <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Table date sync
-                </Label>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={filterLinked}
-                  onClick={() => onFilterLinkedChange(!filterLinked)}
-                  className={cn(
-                    "flex h-11 w-full items-center justify-between rounded-lg border px-3 text-sm transition-colors",
-                    filterLinked
-                      ? "border-primary/40 bg-primary/10"
-                      : "border-border bg-background",
-                  )}
-                >
-                  <span>Link table dates to dashboard period</span>
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-xs font-medium",
-                      filterLinked
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground",
-                    )}
-                  >
-                    {filterLinked ? "On" : "Off"}
-                  </span>
-                </button>
-                <p className="text-xs text-muted-foreground">
-                  When on, period pills update table dates and table date edits
-                  promote the dashboard to a custom range. Annotation filters
-                  always apply to both regardless of this setting.
-                </p>
-              </div>
-
-              {/* Export disclosure */}
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-muted-foreground">
-                <p className="font-medium text-foreground">Export limitation</p>
-                <p className="mt-1">
-                  Exports use the standard time window only (7d / 30d / 90d /
-                  all). Custom date ranges and annotation filters are not
-                  applied by the export endpoints.
-                </p>
-              </div>
-            </div>
-          </SheetContent>
-        </Sheet>
-
-        {/* Export menu */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-10 gap-1.5 px-3"
-              aria-label="Export"
-            >
-              <IconDownload className="size-4" />
-              <span className="hidden sm:inline">Export</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64">
-            <DropdownMenuLabel>Export data</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              disabled={!exportRange || isGeneratingReport}
-              onClick={generateReport}
-              title={
-                exportRange === null
-                  ? "Exports require a pill period (7d / 30d / 90d / All), not a custom range"
-                  : undefined
-              }
-            >
-              <IconDownload className="mr-2 size-4" />
-              {isGeneratingReport ? "Generating…" : "Test report (CSV)"}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={!exportRange || isGeneratingFailedData}
-              onClick={downloadFailedTestData}
-              title={
-                exportRange === null
-                  ? "Exports require a pill period (7d / 30d / 90d / All), not a custom range"
-                  : undefined
-              }
-            >
-              <IconFileZip className="mr-2 size-4" />
-              {isGeneratingFailedData
-                ? "Downloading…"
-                : "Failed test data (ZIP)"}
-            </DropdownMenuItem>
-            {showExportLimitation && (
-              <>
-                <DropdownMenuSeparator />
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                  {exportRange === null
-                    ? "Export disabled for custom ranges. Choose 7d, 30d, 90d, or All."
-                    : "Exports use the pill time window only and ignore annotation filters."}
-                </div>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+    <div className="dashboard-header-actions flex shrink-0 items-center gap-1.5 sm:gap-2">
+      <SidebarDrawer
+        title="Download"
+        description="Export dashboard data"
+        className="dashboard-export-drawer"
+        trigger={
+          <Button variant="outline" size="sm" className="h-10 gap-1.5 px-3" aria-label="Export">
+            <IconDownload className="size-4" />
+            <span className="hidden sm:inline">Export</span>
+          </Button>
+        }
+      >
+        <div className="drawer-body space-y-3 p-4">
+          <Button variant="outline" className="export-action h-auto min-h-14 w-full justify-start whitespace-normal py-3 text-left"
+            disabled={!exportRange || isGeneratingReport} onClick={generateReport}>
+            <IconDownload className="size-5" />
+            {isGeneratingReport ? "Generating…" : "Test report (CSV)"}
+          </Button>
+          <Button variant="outline" className="export-action h-auto min-h-14 w-full justify-start whitespace-normal py-3 text-left"
+            disabled={!exportRange || isGeneratingFailedData} onClick={downloadFailedTestData}>
+            <IconFileZip className="size-5" />
+            {isGeneratingFailedData ? "Downloading…" : "Failed test data (ZIP)"}
+          </Button>
+          <p className="export-disclosure text-xs leading-relaxed text-muted-foreground">
+            {exportRange === null
+              ? "Exports require 7d, 30d, 90d or All. Custom ranges are not supported."
+              : "Exports use the selected time window. Annotation filters are not included."}
+          </p>
+        </div>
+      </SidebarDrawer>
+    </div>
   );
 
   return (

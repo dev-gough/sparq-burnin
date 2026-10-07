@@ -4,7 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useTimezone, timezoneOptions } from "@/contexts/TimezoneContext"
 import { Clock } from "lucide-react"
 
-export function TimezoneSelector() {
+export function TimezoneSelector({ compact = false }: { compact?: boolean }) {
   const { selectedTimezone, setTimezone } = useTimezone()
 
   return (
@@ -12,7 +12,9 @@ export function TimezoneSelector() {
       <SelectTrigger className="w-48 [&>svg]:hidden">
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4" />
-          <SelectValue />
+          <SelectValue>
+            {compact ? timezoneOptions.find(tz => tz.value === selectedTimezone)?.label : undefined}
+          </SelectValue>
         </div>
       </SelectTrigger>
       <SelectContent>

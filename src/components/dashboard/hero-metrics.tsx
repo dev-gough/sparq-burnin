@@ -574,7 +574,7 @@ export function HeroMetrics({
           - switching to/from all-time
           - soft-refresh toggles metricsPending
           Content is invisible (not unmounted) when not all-time. */}
-      <div className="min-h-5 md:col-span-3" role={isAllTime ? "note" : undefined}>
+      <div className="hero-comparison-note col-span-2 min-h-5 md:col-span-3" role={isAllTime ? "note" : undefined}>
         <p
           className={cn(
             "text-xs leading-5 text-muted-foreground",

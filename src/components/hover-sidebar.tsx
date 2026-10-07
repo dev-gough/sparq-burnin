@@ -10,7 +10,7 @@ import { TimezoneSelector } from "@/components/timezone-selector";
 import { usePathname } from "next/navigation";
 import { useSettings } from "@/contexts/settings-context";
 import { useTheme } from "next-themes";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
+import { SidebarDrawer } from "@/components/sidebar-drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { version } from "../../package.json";
 
@@ -300,32 +300,19 @@ export function HoverSidebar() {
   return (
     <>
       <div className="mobile-app-header sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background px-4 md:hidden">
-        <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight" aria-label="BurnIn home">
-          <Image src="/logo.png" alt="" width={126} height={85} className="h-auto w-9" />
-          BurnIn
-        </Link>
         <div className="flex items-center gap-2">
-          <div id="mobile-header-actions" />
-          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-            <SheetTrigger asChild>
-              <Button variant="outline" size="icon" className="size-10" aria-label="Open navigation">
-                <Menu className="size-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="top" className="mobile-navigation max-h-dvh gap-0 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)] md:hidden">
-              <SheetHeader className="border-b pr-16">
-                <SheetTitle>BurnIn</SheetTitle>
-                <SheetDescription>Navigation and preferences</SheetDescription>
-              </SheetHeader>
-              <div className="space-y-3 p-4">
-                <div className="flex items-center gap-3 rounded-lg bg-muted/50 p-3">
+          <SidebarDrawer open={mobileOpen} onOpenChange={setMobileOpen}
+            title="BurnIn" description="Navigation and preferences" className="mobile-navigation md:hidden"
+            trigger={<Button variant="outline" size="icon" className="size-11" aria-label="Open navigation"><Menu className="size-5" /></Button>}>
+              <div className="mobile-navigation-body drawer-body flex min-h-0 flex-1 flex-col gap-3 p-4">
+                <div className="drawer-account flex items-center gap-3 rounded-lg bg-muted/50 p-3">
                   <User className="size-5 shrink-0 text-primary" />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{userName}</p>
                     {userEmail && <p className="truncate text-xs text-muted-foreground">{userEmail}</p>}
                   </div>
                 </div>
-                <nav aria-label="Main navigation" className="grid grid-cols-2 gap-1.5">
+                <nav aria-label="Main navigation" className="drawer-navigation grid gap-1">
                   {[...navItems, { href: "/changelog", label: "Changelog", icon: ScrollText }].map((item) => {
                     const Icon = item.icon;
                     const active = pathname === item.href;
@@ -342,7 +329,7 @@ export function HoverSidebar() {
                     );
                   })}
                 </nav>
-                <div className="space-y-3 border-t pt-3">
+                <div className="drawer-preferences mt-auto space-y-3 border-t pt-3">
                   {mounted && (
                     <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="Color theme">
                       {([
@@ -359,20 +346,24 @@ export function HoverSidebar() {
                     </div>
                   )}
                   <div className="flex items-center gap-2">
-                    <div className="min-w-0 flex-1"><TimezoneSelector /></div>
+                    <div className="min-w-0 flex-1"><TimezoneSelector compact /></div>
                     <Button variant="outline" size="sm" className="shrink-0 gap-2"
                       onClick={() => session?.user ? signOut({ callbackUrl: "/auth/signin" }) : signIn("azure-ad")}>
                       {session?.user ? <LogOut className="size-4" /> : <LogIn className="size-4" />}
                       {session?.user ? "Sign Out" : "Sign In"}
                     </Button>
                   </div>
-                  <p className="text-right text-xs text-muted-foreground" aria-label={`Version ${version}`}>v{version}</p>
+                  <p className="drawer-version text-right text-xs text-muted-foreground" aria-label={`Version ${version}`}>v{version}</p>
                 </div>
               </div>
-            </SheetContent>
-          </Sheet>
+          </SidebarDrawer>
+          <div id="mobile-header-actions" />
         </div>
+        <Link href="/" aria-label="BurnIn home" className="flex shrink-0 items-center">
+          <Image src="/logo.png" alt="SPARQ" width={126} height={85} className="h-auto w-12" loading="eager" />
+        </Link>
       </div>
+
     <div
       id="hover-sidebar"
       className="hidden md:block fixed left-0 top-0 h-screen z-50 transition-all duration-300 ease-in-out"
