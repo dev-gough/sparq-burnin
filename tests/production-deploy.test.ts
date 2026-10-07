@@ -78,6 +78,38 @@ describe("production deployment", () => {
     expect(trace.indexOf("npm:run migrate")).toBeLessThan(trace.indexOf("systemctl:restart"));
     expect(result.stdout + result.stderr + trace).not.toContain("canary-secret");
   });
+  it("deploys servers configured with only .env.production", () => {
+    const f = fixture();
+    rmSync(path.join(f.app, ".env.local"));
+    writeFileSync(path.join(f.app, ".env.production"), "HEALTH_TOKEN=production-canary\n");
+    const result = f.run();
+    expect(result.status, result.stderr).toBe(0);
+    const release = readlinkSync(path.join(f.deploy, "current"));
+    expect(readlinkSync(path.join(release, ".env.production"))).toBe(path.join(f.app, ".env.production"));
+    expect(readFileSync(path.join(release, ".health-curl-config"), "utf8")).toContain("production-canary");
+    expect(result.stdout + result.stderr + f.trace()).not.toContain("production-canary");
+  });
+  it("preserves production environment file precedence for health authentication", () => {
+    const f = fixture();
+    writeFileSync(path.join(f.app, ".env.production.local"), "HEALTH_TOKEN=priority-canary\n");
+    writeFileSync(path.join(f.app, ".env.production"), "HEALTH_TOKEN=lower-priority-canary\n");
+    const result = f.run();
+    expect(result.status, result.stderr).toBe(0);
+    const release = readlinkSync(path.join(f.deploy, "current"));
+    const healthConfig = readFileSync(path.join(release, ".health-curl-config"), "utf8");
+    expect(healthConfig).toContain("priority-canary");
+    expect(healthConfig).not.toContain("lower-priority-canary");
+    expect(healthConfig).not.toContain("canary-secret");
+  });
+  it("rejects a checkout without environment files before changing the running application", () => {
+    const f = fixture();
+    rmSync(path.join(f.app, ".env.local"));
+    const result = f.run();
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("production environment file missing");
+    expect(readlinkSync(path.join(f.deploy, "current"))).toBe(f.app);
+    expect(readFileSync(path.join(f.app, ".next", "running-build"), "utf8")).toBe("untouched");
+  });
   it.each(["ci", "run build", "run migrate"])("leaves the running application in place when %s fails", step => {
     const f = fixture();
     expect(f.run({ FAIL_STEP: step }).status).not.toBe(0);

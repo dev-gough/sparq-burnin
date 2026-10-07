@@ -23,7 +23,13 @@ export PATH="$NODE_BIN_DIR:$PATH"
 for command in git node npm curl flock sudo; do
   command -v "$command" >/dev/null || die "missing command: $command"
 done
-[[ -d "$APP_DIR/.git" && -f "$APP_DIR/config.json" && -f "$APP_DIR/.env.local" ]] || die "production checkout/configuration missing"
+[[ -d "$APP_DIR/.git" && -f "$APP_DIR/config.json" ]] || die "production checkout/config.json missing"
+env_files=(.env.production.local .env.local .env.production .env)
+env_found=0
+for name in "${env_files[@]}"; do
+  if [[ -f "$APP_DIR/$name" ]]; then env_found=1; fi
+done
+[[ "$env_found" -eq 1 ]] || die "production environment file missing (.env.production.local, .env.local, .env.production, or .env)"
 [[ -L "$DEPLOY_ROOT/current" ]] || die "run setup-production-service.sh first"
 [[ "$("$SYSTEMCTL" show "$UNIT" -p WorkingDirectory --value)" == "$DEPLOY_ROOT/current" ]] || die "service must use $DEPLOY_ROOT/current; run setup-production-service.sh"
 sudo -n -l "$SYSTEMCTL" restart "$UNIT" >/dev/null || die "passwordless restart permission missing; run setup-production-service.sh"
@@ -83,7 +89,7 @@ release="$(mktemp -d "$DEPLOY_ROOT/releases/$SHA.XXXXXX")"
 git -C "$APP_DIR" archive "$SHA" | tar -x -C "$release"
 [[ "v$(node -p "require(process.argv[1]).version" "$release/package.json")" == "$TAG" ]] || die "tag and package version differ"
 # Keep configuration, ingest data, and logs on the server, shared with watchdog.
-for name in config.json .env.local data log logs; do
+for name in config.json "${env_files[@]}" data log logs; do
   if [[ -e "$APP_DIR/$name" ]]; then ln -s "$APP_DIR/$name" "$release/$name"; fi
 done
 cd "$release"
@@ -97,7 +103,10 @@ health_config="$release/.health-curl-config"
 health_body="$release/.health-response.json"
 node -e '
   const fs = require("fs");
-  process.loadEnvFile(".env.local");
+  // Match production environment file precedence, preserving existing values.
+  for (const file of [".env.production.local", ".env.local", ".env.production", ".env"]) {
+    if (fs.existsSync(file)) process.loadEnvFile(file);
+  }
   const token = process.env.HEALTH_TOKEN?.trim();
   fs.writeFileSync(process.argv[1], token ? `header = ${JSON.stringify(`x-health-token: ${token}`)}\n` : "", { mode: 0o600 });
 ' "$health_config"

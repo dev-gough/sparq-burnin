@@ -19,7 +19,8 @@ the production runner. A moved tag or a version mismatch stops the deployment.
 
 The production job runs the installed `/home/devon/bin/deploy-burnin-production.sh`.
 It builds in `/home/devon/sparq-burnin-production/releases/`, sharing the original
-checkout's `config.json`, `.env.local`, data, and log directories. It then runs
+checkout's `config.json`, production environment files (`.env.production.local`,
+`.env.local`, `.env.production`, and `.env` when present), data, and log directories. It then runs
 `npm run migrate`, atomically switches `current`, restarts the dashboard, and
 checks the health response's release version and database status. Build and
 migration failures leave the running application in place. Failed startup or
