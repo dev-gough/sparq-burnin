@@ -489,10 +489,7 @@ async function buildPipelineOps(checkIntervalSec: number): Promise<{
       value: sources.total > 0 ? `${sources.reachable}/${sources.total}` : '0/0',
       unit: 'text',
       status: s.status,
-      detail:
-        sources.missing.length > 0
-          ? sources.missing.slice(0, 4).join(', ')
-          : 'all mounts ok',
+      detail: s.detail,
     },
   ]
 

@@ -25,6 +25,12 @@ checks the health response's release version and database status. Build and
 migration failures leave the running application in place. Failed startup or
 health checks switch back to the previous release and restart it.
 
+This workflow deploys the dashboard service only. The watchdog still runs from
+the original checkout, and its configured `dashboard_dir` determines where it
+runs CSV ingestion. Changes to watchdog or ingestion scripts in a release do
+not become active through this workflow; those require a separate update of
+the pipeline checkout and a watchdog restart.
+
 Database migrations remain applied after application rollback. New migrations
 must be compatible with the previous application version. Release directories
 are retained for inspection and rollback; remove obsolete releases manually

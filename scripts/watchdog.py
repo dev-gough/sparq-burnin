@@ -177,7 +177,7 @@ def load_ingested_names():
     return names
 
 
-def index_test_files(data_dir):
+def index_test_files(data_dir, names=None):
     """Parse pCloud test names once per source, grouped by serial.
 
     Returns (by_serial, results_named_count). Results-shaped names in the
@@ -185,11 +185,12 @@ def index_test_files(data_dir):
     """
     by_sn = {}
     results_named = 0
-    try:
-        names = os.listdir(data_dir)
-    except OSError as e:
-        logger.warning(f"Could not list test directory {data_dir}: {e}")
-        return by_sn, results_named
+    if names is None:
+        try:
+            names = os.listdir(data_dir)
+        except OSError as e:
+            logger.error(f"Could not list test directory {data_dir}: {e}")
+            return by_sn, results_named
     for test_file in names:
         test_info = parse_test_file(test_file)
         if not test_info:
@@ -536,25 +537,29 @@ def main():
             quarantined_results = load_quarantine_names('results')
             quarantined_tests = load_quarantine_names('tests')
             ingested_names = load_ingested_names()
+            source_errors = []
+            sources_reachable = 0
             
             for source_dir in source_directories:
                 results_dir = source_dir['results_dir']
                 data_dir = source_dir['data_dir']
                 source_name = source_dir['name']
                 
-                # Check if source directories exist
-                if not os.path.exists(results_dir):
-                    logger.debug(f"Results directory does not exist for {source_name}: {results_dir}")
+                # exists() hides FUSE I/O/auth failures as False. Actually list
+                # both directories and make a failed source visible to operators.
+                try:
+                    results_files = os.listdir(results_dir)
+                    data_files = os.listdir(data_dir)
+                except OSError as e:
+                    error = f"{source_name}: {e}"
+                    source_errors.append(error)
+                    logger.error(f"Source unreadable: {error}. Check pCloud authorization and mount.")
                     continue
 
-                if not os.path.exists(data_dir):
-                    logger.debug(f"Data directory does not exist for {source_name}: {data_dir}")
-                    continue
-
-                results_files = os.listdir(results_dir)
+                sources_reachable += 1
                 total_results_files += len(results_files)
                 logger.debug(f"Found {len(results_files)} files in {source_name} results directory")
-                tests_by_sn, results_named = index_test_files(data_dir)
+                tests_by_sn, results_named = index_test_files(data_dir, data_files)
                 skipped_results_named += results_named
 
                 for file in results_files:
@@ -667,6 +672,9 @@ def main():
                 'lastSkippedNoMatch': skipped_no_match,
                 'lastIngestTriggered': ingest_triggered,
                 'lastIngestSuccess': ingest_success,
+                'lastSourcesReachable': sources_reachable,
+                'lastSourceErrors': source_errors,
+                'lastResultsFilesChecked': total_results_files,
             })
                 
             time.sleep(check_interval)

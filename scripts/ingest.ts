@@ -30,6 +30,7 @@ import {
   relinkAllAnnotations,
 } from '../src/lib/ingest/dbInsert';
 import type { IngestSample } from '../src/lib/ingest/schema';
+import { resolveCsvSerial } from '../src/lib/ingest/csvSerial';
 
 // CSV data interfaces for raw parsed data
 interface TestDataCsvRow {
@@ -290,8 +291,7 @@ class CSVIngester {
             const allTests: ProcessedTestResult[] = [];
 
             for (const test of tests) {
-              // Extract inverter serial from filename or use Serial Number column
-              const serialNumber = test['Serial Number'];
+              const serialNumber = resolveCsvSerial(test['Serial Number'], filePath, console.warn);
               if (!serialNumber) {
                 console.warn(`No serial number found in row: ${JSON.stringify(test)}`);
                 continue;
@@ -500,7 +500,7 @@ class CSVIngester {
               return;
             }
 
-            const serialNumber = firstRow['Serial Number'];
+            const serialNumber = resolveCsvSerial(firstRow['Serial Number'], filePath, console.warn);
             const startTime = firstRow['Start Time'];
 
             if (!serialNumber || !startTime) {

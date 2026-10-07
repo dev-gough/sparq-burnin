@@ -35,6 +35,8 @@ export interface SourceSnapshot {
   resultsOk: boolean
   dataOk: boolean
   ok: boolean
+  resultsError?: string
+  dataError?: string
 }
 
 export interface SourcesSnapshot {
@@ -62,13 +64,30 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   })
 }
 
-async function dirExists(dir: string): Promise<boolean> {
+async function readableDirectory(dir: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    await withTimeout(fs.access(dir), CHECK_TIMEOUT_MS)
-    const st = await fs.stat(dir)
-    return st.isDirectory()
-  } catch {
-    return false
+    await withTimeout((async () => {
+      const st = await fs.stat(dir)
+      if (!st.isDirectory()) throw Object.assign(new Error(), { code: 'ENOTDIR' })
+      // A FUSE mount can still have cached directory metadata after its cloud
+      // credentials stop working. Read an entry to exercise directory listing.
+      const handle = await fs.opendir(dir)
+      try {
+        await handle.read()
+      } finally {
+        await handle.close()
+      }
+    })(), CHECK_TIMEOUT_MS)
+    return { ok: true }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    // Report only known error codes, never arbitrary filesystem/backend text.
+    const errors: Record<string, string> = {
+      EIO: 'I/O error (EIO)', ENOENT: 'missing directory (ENOENT)',
+      EACCES: 'permission denied (EACCES)', EPERM: 'permission denied (EPERM)',
+      ENOTDIR: 'not a directory (ENOTDIR)', ENOTCONN: 'mount disconnected (ENOTCONN)',
+    }
+    return { ok: false, error: code ? errors[code] ?? 'directory unreadable' : 'directory read timed out or failed' }
   }
 }
 
@@ -233,15 +252,17 @@ export async function snapshotSources(): Promise<SourcesSnapshot> {
     const sources: SourceSnapshot[] = []
 
     for (const src of config.paths.source_directories ?? []) {
-      const [resultsOk, dataOk] = await Promise.all([
-        dirExists(src.results_dir),
-        dirExists(src.data_dir),
+      const [results, data] = await Promise.all([
+        readableDirectory(src.results_dir),
+        readableDirectory(src.data_dir),
       ])
       sources.push({
         name: src.name,
-        resultsOk,
-        dataOk,
-        ok: resultsOk && dataOk,
+        resultsOk: results.ok,
+        dataOk: data.ok,
+        ok: results.ok && data.ok,
+        resultsError: results.error,
+        dataError: data.error,
       })
     }
 
@@ -250,8 +271,8 @@ export async function snapshotSources(): Promise<SourcesSnapshot> {
       .filter((s) => !s.ok)
       .map((s) => {
         const parts: string[] = []
-        if (!s.resultsOk) parts.push('results')
-        if (!s.dataOk) parts.push('data')
+        if (!s.resultsOk) parts.push(`results: ${s.resultsError}`)
+        if (!s.dataOk) parts.push(`data: ${s.dataError}`)
         return `${s.name}(${parts.join('+')})`
       })
 
@@ -355,7 +376,7 @@ export function sourcesStatus(
   if (s.reachable === 0) {
     return {
       status: 'degraded',
-      detail: `0/${s.total} sources reachable`,
+      detail: `0/${s.total} sources reachable · unreadable ${s.missing.slice(0, 3).join(', ')} · check pCloud authorization and mount`,
     }
   }
   if (s.reachable < s.total) {
