@@ -47,10 +47,14 @@ export interface SourcesSnapshot {
 }
 
 const CHECK_TIMEOUT_MS = 400
+// Cloud FUSE listings can enumerate large directories even when reading one entry.
+const SOURCE_CHECK_TIMEOUT_MS = 2500
+
+class CheckTimeoutError extends Error {}
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`timeout after ${ms}ms`)), ms)
+    const timer = setTimeout(() => reject(new CheckTimeoutError(`timeout after ${ms}ms`)), ms)
     promise.then(
       (v) => {
         clearTimeout(timer)
@@ -77,9 +81,12 @@ async function readableDirectory(dir: string): Promise<{ ok: boolean; error?: st
       } finally {
         await handle.close()
       }
-    })(), CHECK_TIMEOUT_MS)
+    })(), SOURCE_CHECK_TIMEOUT_MS)
     return { ok: true }
   } catch (err) {
+    if (err instanceof CheckTimeoutError) {
+      return { ok: false, error: `directory read exceeded ${SOURCE_CHECK_TIMEOUT_MS}ms` }
+    }
     const code = (err as NodeJS.ErrnoException).code
     // Report only known error codes, never arbitrary filesystem/backend text.
     const errors: Record<string, string> = {
