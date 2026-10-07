@@ -305,13 +305,6 @@ export function HoverSidebar() {
             title="BurnIn" description="Navigation and preferences" className="mobile-navigation md:hidden"
             trigger={<Button variant="outline" size="icon" className="size-11" aria-label="Open navigation"><Menu className="size-5" /></Button>}>
               <div className="mobile-navigation-body drawer-body flex min-h-0 flex-1 flex-col gap-3 p-4">
-                <div className="drawer-account flex items-center gap-3 rounded-lg bg-muted/50 p-3">
-                  <User className="size-5 shrink-0 text-primary" />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{userName}</p>
-                    {userEmail && <p className="truncate text-xs text-muted-foreground">{userEmail}</p>}
-                  </div>
-                </div>
                 <nav aria-label="Main navigation" className="drawer-navigation grid gap-1">
                   {[...navItems, { href: "/changelog", label: "Changelog", icon: ScrollText }].map((item) => {
                     const Icon = item.icon;
@@ -329,31 +322,38 @@ export function HoverSidebar() {
                     );
                   })}
                 </nav>
-                <div className="drawer-preferences mt-auto space-y-3 border-t pt-3">
-                  {mounted && (
-                    <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="Color theme">
-                      {([
-                        { value: "light", label: "Light", title: "Light mode", icon: Sun },
-                        { value: "dark", label: "Dark", title: "Dark mode", icon: Moon },
-                        { value: "system", label: "System", title: "System theme", icon: Monitor },
-                      ] as const).map(({ value, label, title, icon: Icon }) => (
-                        <Button key={value} variant={theme === value ? "default" : "outline"}
-                          size="sm" className="gap-1.5 px-2" title={title}
-                          aria-pressed={theme === value} onClick={() => setTheme(value)}>
-                          <Icon className="size-4" />{label}
-                        </Button>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <div className="min-w-0 flex-1"><TimezoneSelector compact /></div>
-                    <Button variant="outline" size="sm" className="shrink-0 gap-2"
+                <div className="drawer-preferences mt-auto border-t">
+                  <div className="drawer-icon-controls flex items-center justify-between">
+                    <TimezoneSelector iconOnly />
+                    {mounted && (
+                      <div className="flex" role="group" aria-label="Color theme">
+                        {([
+                          { value: "light", title: "Light mode", icon: Sun },
+                          { value: "dark", title: "Dark mode", icon: Moon },
+                          { value: "system", title: "System theme", icon: Monitor },
+                        ] as const).map(({ value, title, icon: Icon }) => (
+                          <Button key={value} variant="ghost" size="icon"
+                            className="drawer-icon theme-icon rounded-full" title={title} aria-label={title}
+                            aria-pressed={theme === value} onClick={() => setTheme(value)}>
+                            <Icon className="size-4" />
+                          </Button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="drawer-account flex items-center gap-1">
+                    <span role="img" aria-label={`${userName}${userEmail ? ` (${userEmail})` : ""}`}
+                      title={userEmail ? `${userName} · ${userEmail}` : userName}
+                      className="drawer-avatar flex shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                      {session?.user ? userName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("") : <User className="size-4" />}
+                    </span>
+                    <Button variant="ghost" size="icon" className="drawer-icon rounded-full"
+                      title={session?.user ? "Sign Out" : "Sign In"} aria-label={session?.user ? "Sign Out" : "Sign In"}
                       onClick={() => session?.user ? signOut({ callbackUrl: "/auth/signin" }) : signIn("azure-ad")}>
                       {session?.user ? <LogOut className="size-4" /> : <LogIn className="size-4" />}
-                      {session?.user ? "Sign Out" : "Sign In"}
                     </Button>
+                    <span className="drawer-version ml-auto text-[10px] text-muted-foreground" aria-label={`Version ${version}`}>v{version}</span>
                   </div>
-                  <p className="drawer-version text-right text-xs text-muted-foreground" aria-label={`Version ${version}`}>v{version}</p>
                 </div>
               </div>
           </SidebarDrawer>

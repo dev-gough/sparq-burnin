@@ -3,18 +3,26 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useTimezone, timezoneOptions } from "@/contexts/TimezoneContext"
 import { Clock } from "lucide-react"
+import { cn } from "@/lib/utils"
 
-export function TimezoneSelector({ compact = false }: { compact?: boolean }) {
+export function TimezoneSelector({ compact = false, iconOnly = false }: { compact?: boolean; iconOnly?: boolean }) {
   const { selectedTimezone, setTimezone } = useTimezone()
+  const selectedLabel = timezoneOptions.find(tz => tz.value === selectedTimezone)?.label
 
   return (
     <Select value={selectedTimezone} onValueChange={setTimezone}>
-      <SelectTrigger className="w-48 [&>svg]:hidden">
+      <SelectTrigger
+        className={cn("[&>svg]:hidden", iconOnly ? "timezone-icon justify-center rounded-full border-0 bg-transparent p-0 shadow-none dark:bg-transparent" : "w-48")}
+        aria-label={iconOnly ? `Display timezone: ${selectedLabel}` : undefined}
+        title={iconOnly ? `Display timezone: ${selectedLabel}` : undefined}
+      >
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4" />
-          <SelectValue>
-            {compact ? timezoneOptions.find(tz => tz.value === selectedTimezone)?.label : undefined}
-          </SelectValue>
+          {iconOnly ? (
+            <span className="sr-only"><SelectValue>{selectedLabel}</SelectValue></span>
+          ) : (
+            <SelectValue>{compact ? selectedLabel : undefined}</SelectValue>
+          )}
         </div>
       </SelectTrigger>
       <SelectContent>

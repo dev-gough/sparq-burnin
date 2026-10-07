@@ -398,6 +398,52 @@ const station = {
         `Drawer control is outside the viewport: ${JSON.stringify(target)}`);
     }
   }
+  async function slimNavigation() {
+    const layout = await page.locator(".mobile-navigation").evaluate((e) => {
+      const links = [...e.querySelectorAll(".drawer-navigation a")].map((link) => {
+        const r = link.getBoundingClientRect();
+        return { left: r.left, bottom: r.bottom, top: r.top };
+      });
+      const title = e.querySelector("[data-slot=sheet-title]").getBoundingClientRect();
+      const description = e.querySelector("[data-slot=sheet-description]").getBoundingClientRect();
+      const avatar = e.querySelector(".drawer-avatar").getBoundingClientRect();
+      return {
+        width: e.getBoundingClientRect().width, links,
+        titleY: title.y + title.height / 2, descriptionY: description.y + description.height / 2,
+        avatar: { left: avatar.left, top: avatar.top },
+        icons: [...e.querySelectorAll(".drawer-icon-controls button")].map((button) => ({
+          border: getComputedStyle(button).borderTopWidth,
+          background: getComputedStyle(button).backgroundColor,
+        })),
+      };
+    });
+    assert(layout.width >= 180 && layout.width <= 208, `Navigation is too wide: ${layout.width}`);
+    assert(Math.abs(layout.titleY - layout.descriptionY) < 1, "Sidebar title and description should share a row");
+    for (const link of layout.links) assert.equal(link.left, layout.links[0].left, "Navigation should use one column");
+    assert(layout.avatar.top > layout.links.at(-1).bottom && layout.avatar.left <= 10, "Account should sit at bottom left");
+    for (const icon of layout.icons) {
+      assert.equal(icon.border, "0px", "Preference icons should not have boxes");
+      assert.equal(icon.background, "rgba(0, 0, 0, 0)", "Preference icons should be unfilled");
+    }
+  }
+  // The clock stays icon-only while its accessible label follows the chosen timezone.
+  await page.setViewportSize({ width: 412, height: 915 });
+  await page.goto(base + "/");
+  await page.waitForTimeout(1200);
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByRole("combobox", { name: "Display timezone: Local Time", exact: true }).click();
+  await page.getByRole("option").filter({ hasText: "Coordinated Universal Time" }).click();
+  await page.getByRole("combobox", { name: "Display timezone: UTC", exact: true }).waitFor({ state: "visible" });
+  const timezoneText = await page.locator(".timezone-icon [data-slot=select-value]").evaluate((e) => {
+    const r = e.parentElement.getBoundingClientRect();
+    return { width: r.width, height: r.height };
+  });
+  assert(timezoneText.width <= 1 && timezoneText.height <= 1, "Clock trigger should not show timezone text");
+  await page.getByRole("combobox", { name: "Display timezone: UTC", exact: true }).click();
+  await page.getByRole("option").filter({ hasText: "Your browser timezone" }).click();
+  await page.getByRole("button", { name: "Sign Out", exact: true }).waitFor({ state: "visible" });
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(250);
   // Check short portrait and landscape screens, including resizing an open drawer.
   for (const [width, height] of [[320, 568], [320, 480], [360, 640], [384, 824], [412, 915], [568, 320], [667, 375], [740, 360]]) {
     await page.setViewportSize({ width, height });
@@ -405,9 +451,11 @@ const station = {
     await page.waitForTimeout(1200);
     await page.getByRole("button", { name: "Open navigation" }).click();
     await drawerFits();
+    await slimNavigation();
     await shot(`${width}x${height}-left-navigation`);
     await page.setViewportSize({ width, height: Math.max(320, height - 100) });
     await drawerFits();
+    await slimNavigation();
     await page.keyboard.press("Escape");
     await page.waitForTimeout(250);
     await page.getByRole("button", { name: "Export", exact: true }).click();
