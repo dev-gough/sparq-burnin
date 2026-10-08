@@ -20,6 +20,31 @@ export type ChangelogEntry = {
   shots: ChangelogShot[];
 };
 
+export type ChangelogGroup =
+  | { kind: "release"; entry: ChangelogEntry }
+  | { kind: "patches"; family: string; date?: string; entries: ChangelogEntry[] };
+
+/** Keep feature releases prominent and collect adjacent patches from one day. */
+export function groupChangelog(entries: ChangelogEntry[]): ChangelogGroup[] {
+  const groups: ChangelogGroup[] = [];
+  for (const entry of entries) {
+    const [major, minor, patch] = entry.id.split(".");
+    if (entry.id === "unreleased" || Number(patch) === 0) {
+      groups.push({ kind: "release", entry });
+      continue;
+    }
+    const family = `${major}.${minor}.x`;
+    const date = VERSION_TITLE.exec(entry.title)?.[4];
+    const previous = groups.at(-1);
+    if (previous?.kind === "patches" && previous.family === family && previous.date === date) {
+      previous.entries.push(entry);
+    } else {
+      groups.push({ kind: "patches", family, date, entries: [entry] });
+    }
+  }
+  return groups;
+}
+
 const VERSION_TITLE = /^v(\d+)\.(\d+)\.(\d+)(?: — (\d{4}-\d{2}-\d{2}))?$/;
 const SHOT_PATH = /^\/changelog\/[A-Za-z0-9._/-]+$/;
 

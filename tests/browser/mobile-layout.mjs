@@ -426,6 +426,28 @@ const station = {
       assert.equal(icon.background, "rgba(0, 0, 0, 0)", "Preference icons should be unfilled");
     }
   }
+  // Same-day patch notes stay compact while feature releases remain visible.
+  for (const width of [320, 412, 1440]) {
+    await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 });
+    await page.goto(base + "/changelog");
+    const patches = page.locator(".changelog-patches").filter({ hasText: "0.9.x patches" });
+    const summary = patches.locator("summary");
+    assert.equal(await patches.locator("details").getAttribute("open"), null);
+    assert.equal(await patches.locator(".changelog-patch-entry:visible").count(), 0);
+    assert(await page.getByRole("heading", { name: "v0.9.0 — 2026-10-06", exact: true }).isVisible());
+    await summary.scrollIntoViewIfNeeded();
+    const closed = await patches.boundingBox();
+    assert(closed.height >= 44 && closed.height <= 80, "Four patches should occupy one compact row");
+    await shot(`${width}-changelog-patches-closed`);
+    await summary.focus();
+    await page.keyboard.press("Enter");
+    assert.equal(await patches.locator(".changelog-patch-entry:visible").count(), 4);
+    await shot(`${width}-changelog-patches-open`);
+    assert(await patches.getByRole("heading", { name: "v0.9.4", exact: true }).isVisible());
+    await summary.click();
+    assert.equal(await patches.locator(".changelog-patch-entry:visible").count(), 0);
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  }
   // The selected date pill travels into the mobile bar and can reopen in place.
   for (const width of [320, 412]) {
     await page.setViewportSize({ width, height: 844 });

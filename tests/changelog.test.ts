@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { compareChangelog, loadChangelog, parseChangelog, readPackageVersion, type ChangelogEntry } from "@/lib/changelog";
+import { compareChangelog, groupChangelog, loadChangelog, parseChangelog, readPackageVersion, type ChangelogEntry } from "@/lib/changelog";
 
 const released = (id: string): ChangelogEntry => ({ id, title: `v${id}`, summary: [], sections: [], shots: [] });
 
@@ -46,6 +46,32 @@ describe("changelog notes", () => {
   it("lists Unreleased first, then newer versions", () => {
     const entries = [released("0.7.0"), released("0.10.0"), { ...released("0.0.0"), id: "unreleased" }, released("1.0.0")];
     expect(entries.sort(compareChangelog).map(entry => entry.id)).toEqual(["unreleased", "1.0.0", "0.10.0", "0.7.0"]);
+  });
+
+  it("collects same-day patches without collapsing feature releases or Unreleased", () => {
+    const patches = ["0.9.4", "0.9.3", "0.9.2", "0.9.1"].map(id => ({
+      ...released(id), title: `v${id} — 2026-10-07`,
+    }));
+    const unreleased = { ...released("0.0.0"), id: "unreleased" };
+    const entries = [unreleased, released("0.10.0"), ...patches, released("0.9.0")];
+    expect(groupChangelog(entries)).toEqual([
+      { kind: "release", entry: unreleased },
+      { kind: "release", entry: entries[1] },
+      { kind: "patches", family: "0.9.x", date: "2026-10-07", entries: patches },
+      { kind: "release", entry: entries.at(-1) },
+    ]);
+  });
+
+  it("keeps patches from different days or version families separate", () => {
+    const entries = [
+      { ...released("0.9.4"), title: "v0.9.4 — 2026-10-07" },
+      { ...released("0.9.3"), title: "v0.9.3 — 2026-10-06" },
+      { ...released("0.8.2"), title: "v0.8.2 — 2026-10-06" },
+    ];
+    const groups = groupChangelog(entries);
+    expect(groups).toHaveLength(3);
+    expect(groups.every(group => group.kind === "patches" && group.entries.length === 1)).toBe(true);
+    expect(entries.map(entry => entry.id)).toEqual(["0.9.4", "0.9.3", "0.8.2"]);
   });
 
   it("matches package.json to the newest released note and skips an empty Unreleased file", () => {
