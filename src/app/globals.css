@@ -22,6 +22,7 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
+  --color-skeleton: var(--skeleton);
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
@@ -62,6 +63,7 @@
   --background: #e9e8e6;
   --foreground: #292629;
   --card: #f2f1ef;
+  --skeleton: color-mix(in oklab, var(--card) 92%, white);
   --card-foreground: #292629;
   --popover: #f2f1ef;
   --popover-foreground: #292629;

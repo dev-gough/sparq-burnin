@@ -7,3 +7,4 @@ Changed
 - Match mobile loading placeholders to the compact dashboard filters, failure causes, and test cards. Align contributors and failure analytics skeletons with their section headings, metrics, and chart layouts to reduce loading shifts.
 - Make entire contributor rows clickable, darken unselected rows on hover, and keep selected rows visually steady.
 - Soften light mode with grey page and card surfaces, and use SPARQ maroon and gold for selections, actions, focus rings, header accents, and neutral chart accents in both themes. Improve light-mode chart label contrast.
+- Derive skeleton fills from the card surface with a small neutral lightening, removing brand-coloured flashes while data loads.
