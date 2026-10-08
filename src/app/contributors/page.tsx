@@ -106,7 +106,7 @@ function Section({
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border bg-card text-xs font-medium tabular-nums text-muted-foreground">
+        <span className="brand-section-index mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border bg-card text-xs font-medium tabular-nums text-muted-foreground">
           {index}
         </span>
         <div>
@@ -284,7 +284,7 @@ export default function ContributorsPage() {
         trigger: "axis",
         confine: true,
         axisPointer: { type: "shadow" },
-        backgroundColor: dark ? "#18181b" : "#ffffff",
+        backgroundColor: dark ? burninChartColors.surface.dark : burninChartColors.surface.light,
         borderColor: grid,
         textStyle: { color: text },
         padding: [10, 14],
@@ -348,7 +348,7 @@ export default function ContributorsPage() {
         barMaxWidth: 24,
         emphasis: { focus: "series" },
         itemStyle: {
-          color: colors.get(name) ?? burninChartColors.accent.indigo,
+          color: colors.get(name) ?? (dark ? burninChartColors.accent.dark : burninChartColors.accent.light),
         },
         data: dates.map((date) => byDate.get(date)?.get(name) ?? 0),
       })),

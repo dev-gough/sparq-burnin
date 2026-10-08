@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { dashboardRangeContextLabel, type DashboardRange } from "@/lib/dashboard-range";
 import { cn } from "@/lib/utils";
 
-export const HEADER_BAR_CLASS = "mobile-page-header z-20 flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background px-3 py-2 sm:px-4 lg:px-6";
+export const HEADER_BAR_CLASS = "brand-header mobile-page-header z-20 flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b bg-background px-3 py-2 sm:px-4 lg:px-6";
 export const HEADER_TITLE_CLASS = "truncate text-sm font-semibold tracking-tight sm:text-base lg:text-lg";
 export const HEADER_CONTROLS_CLASS = "mobile-header-controls flex flex-1 flex-wrap items-center justify-end gap-2 sm:justify-center sm:gap-3";
 export const HEADER_TOGGLE_CLASS = "h-10 min-h-10 px-3 text-sm focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring data-[state=on]:bg-primary data-[state=on]:text-primary-foreground";

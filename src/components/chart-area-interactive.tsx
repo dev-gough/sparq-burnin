@@ -221,7 +221,7 @@ export function ChartAreaInteractive({
         symbolSize: failSymbolSize(failed, total),
         itemStyle: {
           color: colors.failed.base,
-          borderColor: isDarkMode ? "#18181b" : "#ffffff",
+          borderColor: isDarkMode ? burninChartColors.surface.dark : burninChartColors.surface.light,
           borderWidth: highRate ? 3 : 2,
         },
       };
@@ -419,7 +419,7 @@ export function ChartAreaInteractive({
           },
           itemStyle: {
             color: colors.failed.base,
-            borderColor: isDarkMode ? "#18181b" : "#ffffff",
+            borderColor: isDarkMode ? burninChartColors.surface.dark : burninChartColors.surface.light,
             borderWidth: 2,
           },
           areaStyle:
@@ -455,8 +455,8 @@ export function ChartAreaInteractive({
           },
         },
         backgroundColor: isDarkMode
-          ? "rgba(24, 24, 27, 0.92)"
-          : "rgba(255, 255, 255, 0.95)",
+          ? burninChartColors.surface.dark
+          : burninChartColors.surface.light,
         borderColor: isDarkMode
           ? "rgba(148, 163, 184, 0.25)"
           : "rgba(100, 116, 139, 0.2)",

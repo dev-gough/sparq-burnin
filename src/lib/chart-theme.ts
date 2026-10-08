@@ -131,14 +131,15 @@ export const burninChartColors = {
     soft: (alpha: number) => `rgba(244, 63, 94, ${alpha})`,
   },
   /** Neutral / activity accent (volume bars, MA lines) — not pass/fail */
-  accent: { indigo: "#6366f1" },
+  accent: { light: "#8c334d", dark: "#fcb900" },
   grid: {
     light: "rgba(100, 116, 139, 0.14)",
     // O29: slightly brighter gridlines in dark mode for readability
     dark: "rgba(148, 163, 184, 0.22)",
   },
-  text: { light: "#4b5563", dark: "#e5e7eb" },
-  muted: { light: "#9ca3af", dark: "#9ca3af" },
+  surface: { light: "#f2f1ef", dark: "#18181b" },
+  text: { light: "#494349", dark: "#e5e7eb" },
+  muted: { light: "#665f66", dark: "#9ca3af" },
 } as const;
 
 /**

@@ -299,7 +299,7 @@ export function HoverSidebar() {
 
   return (
     <>
-      <div className="mobile-app-header sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background px-4 md:hidden">
+      <div className="brand-header mobile-app-header sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background px-4 md:hidden">
         <div className="flex items-center gap-2">
           <SidebarDrawer open={mobileOpen} onOpenChange={setMobileOpen}
             title="BurnIn" description="Navigation and preferences" className="mobile-navigation md:hidden"

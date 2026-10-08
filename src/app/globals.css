@@ -4,6 +4,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --color-brand-maroon: var(--brand-maroon);
+  --color-brand-yellow: var(--brand-yellow);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
@@ -53,25 +55,28 @@
 }
 
 :root {
+  /* SPARQ company colours from sparqsys/src/app/globals.css. */
+  --brand-maroon: #8c334d;
+  --brand-yellow: #fcb900;
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --background: #e9e8e6;
+  --foreground: #292629;
+  --card: #f2f1ef;
+  --card-foreground: #292629;
+  --popover: #f2f1ef;
+  --popover-foreground: #292629;
+  --primary: var(--brand-maroon);
+  --primary-foreground: #faf7f4;
+  --secondary: #e2dfdc;
+  --secondary-foreground: #393237;
+  --muted: #e2dfdc;
+  --muted-foreground: #665f66;
+  --accent: color-mix(in srgb, var(--brand-yellow) 12%, var(--card));
+  --accent-foreground: #49371b;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: #cec8c5;
+  --input: #cec8c5;
+  --ring: var(--brand-maroon);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -86,24 +91,44 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --primary: var(--brand-yellow);
+  --primary-foreground: #241a0a;
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
   /* O29: slightly higher muted/border contrast in dark mode */
   --muted-foreground: oklch(0.76 0 0);
-  --accent: oklch(0.269 0 0);
+  --accent: color-mix(in srgb, var(--brand-yellow) 9%, var(--card));
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 14%);
   --input: oklch(1 0 0 / 18%);
-  --ring: oklch(0.62 0 0);
+  --ring: var(--brand-yellow);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
+}
+
+/* Small brand washes keep the large reading surfaces neutral. */
+.brand-header {
+  background-color: var(--background);
+  background-image: linear-gradient(110deg,
+    color-mix(in srgb, var(--brand-maroon) 6%, transparent),
+    transparent 55%,
+    color-mix(in srgb, var(--brand-yellow) 5%, transparent));
+}
+
+.brand-section-index {
+  color: var(--brand-maroon);
+  border-color: color-mix(in srgb, var(--brand-maroon) 25%, var(--border));
+  background: color-mix(in srgb, var(--brand-yellow) 8%, var(--card));
+}
+.dark .brand-section-index {
+  color: var(--brand-yellow);
+  border-color: color-mix(in srgb, var(--brand-yellow) 25%, var(--border));
+  background: color-mix(in srgb, var(--brand-maroon) 20%, var(--card));
 }
 
 @layer base {

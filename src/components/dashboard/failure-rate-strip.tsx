@@ -274,7 +274,7 @@ export function FailureRateStrip({
           },
           itemStyle: {
             color: fail,
-            borderColor: isDarkMode ? "#18181b" : "#ffffff",
+            borderColor: isDarkMode ? burninChartColors.surface.dark : burninChartColors.surface.light,
             borderWidth: 1.5,
           },
           areaStyle: {
@@ -295,8 +295,8 @@ export function FailureRateStrip({
       tooltip: {
         trigger: "axis",
         backgroundColor: isDarkMode
-          ? "rgba(24, 24, 27, 0.92)"
-          : "rgba(255, 255, 255, 0.95)",
+          ? burninChartColors.surface.dark
+          : burninChartColors.surface.light,
         borderColor: isDarkMode
           ? "rgba(148, 163, 184, 0.25)"
           : "rgba(100, 116, 139, 0.2)",

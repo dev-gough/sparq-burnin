@@ -29,7 +29,7 @@ type TooltipPoint = { axisValue?: string; value: number | string | null; marker:
 function axisTooltip(dark: boolean, gridColor: string, textColor: string) {
   return {
     trigger: "axis" as const, confine: true,
-    backgroundColor: dark ? "#18181b" : "#ffffff", borderColor: gridColor,
+    backgroundColor: dark ? burninChartColors.surface.dark : burninChartColors.surface.light, borderColor: gridColor,
     textStyle: { color: textColor }, padding: [10, 14] as [number, number],
     extraCssText: "border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15)",
   };
@@ -61,7 +61,7 @@ function SectionLabel({ number: index, title, description, children }: {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border bg-card text-xs font-medium tabular-nums text-muted-foreground">{index}</span>
+        <span className="brand-section-index mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border bg-card text-xs font-medium tabular-nums text-muted-foreground">{index}</span>
         <div>
           <h2 className="text-base font-semibold tracking-tight">{title}</h2>
           <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{description}</p>
@@ -173,7 +173,7 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
     legend: { top: 4, right: 16, textStyle: { color: muted, fontSize: 12 } },
     series: [
       { name: "Failure rate", type: "line" as const, data: rates, symbol: "circle", symbolSize: 5, itemStyle: { color: burninChartColors.failed.base }, lineStyle: { width: 2 }, areaStyle: { opacity: 0.06 } },
-      { name: `${averageWindow}-period moving average`, type: "line" as const, data: weightedFailureAverage(totals, failedCounts, averageWindow), symbol: "none", smooth: true, itemStyle: { color: burninChartColors.accent.indigo }, lineStyle: { width: 2, type: "dashed" as const } },
+      { name: `${averageWindow}-period moving average`, type: "line" as const, data: weightedFailureAverage(totals, failedCounts, averageWindow), symbol: "none", smooth: true, itemStyle: { color: (dark ? burninChartColors.accent.dark : burninChartColors.accent.light) }, lineStyle: { width: 2, type: "dashed" as const } },
     ],
   }), [ratePoints, rates, totals, failedCounts, averageWindow, grouping, muted, grid, dark, text]);
   const rollingPoints = useMemo(() => rollingTestFailureRates(data.testOutcomes, testWindow), [data.testOutcomes, testWindow]);
