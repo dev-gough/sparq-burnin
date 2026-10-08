@@ -1,5 +1,10 @@
 "use client";
 
+import * as React from "react";
+import { createPortal } from "react-dom";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { MobilePeriodControls } from "@/components/dashboard/mobile-period-controls";
+import { cn } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { type DashboardRange, tableDatesForPill } from "@/lib/dashboard-range";
@@ -10,7 +15,7 @@ import {
 
 export type AnalyticsRange = DashboardRange;
 
-export function FailureAnalyticsHeader({ range, onRangeChange, chartMode, onChartModeChange, percentageMode, onPercentageModeChange, ready, updatedAt }: {
+export function FailureAnalyticsHeader({ range, onRangeChange, chartMode, onChartModeChange, percentageMode, onPercentageModeChange, ready, updatedAt, scrollContainerRef }: {
   range: AnalyticsRange;
   onRangeChange: (range: AnalyticsRange) => void;
   chartMode: string;
@@ -19,11 +24,25 @@ export function FailureAnalyticsHeader({ range, onRangeChange, chartMode, onChar
   onPercentageModeChange: (mode: "all" | "failed") => void;
   ready: boolean;
   updatedAt: Date | null;
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }) {
+  const isMobile = useIsMobile();
+  const [mobileTarget, setMobileTarget] = React.useState<HTMLElement | null>(null);
+  React.useEffect(() => { setMobileTarget(document.getElementById("mobile-header-periods")); }, []);
+  const mobilePeriods = isMobile && mobileTarget;
   const dates = range.kind === "custom" ? range : tableDatesForPill(range.kind);
+  const periodProps = {
+    period: range.kind,
+    from: dates.from,
+    to: dates.to,
+    onPeriodChange: (period: string) => onRangeChange({ kind: period as Exclude<DashboardRange["kind"], "custom"> }),
+    onCustomRange: (from: string, to: string) => onRangeChange({ kind: "custom", from, to }),
+    ready,
+  };
   return (
-    <header className={HEADER_BAR_CLASS}>
-      <div className="flex min-w-0 items-center gap-1.5">
+    <header data-mobile-periods={Boolean(mobilePeriods)} className={cn(HEADER_BAR_CLASS, "folding-page-header")}>
+
+      <div className="folding-header-title flex min-w-0 items-center gap-1.5">
         <h1 className={HEADER_TITLE_CLASS}>Failure Analytics</h1>
         <InfoTooltip side="bottom" content={
           <div className="space-y-2 text-left text-xs leading-relaxed">
@@ -34,14 +53,11 @@ export function FailureAnalyticsHeader({ range, onRangeChange, chartMode, onChar
         } />
       </div>
       <div className={HEADER_CONTROLS_CLASS}>
-        <HeaderPeriodControls
-          period={range.kind}
-          from={dates.from}
-          to={dates.to}
-          onPeriodChange={(period) => onRangeChange({ kind: period as Exclude<DashboardRange["kind"], "custom"> })}
-          onCustomRange={(from, to) => onRangeChange({ kind: "custom", from, to })}
-          ready={ready}
-        />
+        {mobilePeriods
+          ? createPortal(<MobilePeriodControls {...periodProps} mode={chartMode} onModeChange={onChartModeChange}
+              percentageMode={percentageMode} onPercentageModeChange={onPercentageModeChange} scrollContainerRef={scrollContainerRef} />, mobilePeriods)
+          : <HeaderPeriodControls {...periodProps} />}
+        {!mobilePeriods && <>
         <HeaderResultModeControls mode={chartMode} onModeChange={onChartModeChange} ready={ready} />
         <ToggleGroup
           type="single"
@@ -59,6 +75,7 @@ export function FailureAnalyticsHeader({ range, onRangeChange, chartMode, onChar
             % of All
           </ToggleGroupItem>
         </ToggleGroup>
+        </>}
       </div>
       <HeaderRangeMeta range={range} updatedAt={updatedAt} ready={ready} />
     </header>

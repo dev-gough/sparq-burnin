@@ -240,7 +240,7 @@ export function DashboardHeader({
           justify-center cannot reflow when those strings mount. */}
       <div className={HEADER_CONTROLS_CLASS}>
         {mobilePeriods
-          ? createPortal(<MobilePeriodControls {...periodProps} scrollContainerRef={scrollContainerRef} />, mobilePeriods)
+          ? createPortal(<MobilePeriodControls {...periodProps} scrollContainerRef={scrollContainerRef} mode={chartMode} onModeChange={onChartModeChange} />, mobilePeriods)
           : <HeaderPeriodControls {...periodProps} />}
         <HeaderResultModeControls mode={chartMode} onModeChange={onChartModeChange} ready={prefsReady} />
       </div>

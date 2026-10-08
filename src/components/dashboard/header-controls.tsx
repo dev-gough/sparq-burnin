@@ -99,28 +99,34 @@ export function HeaderResultModeControls({
   mode,
   onModeChange,
   ready = true,
+  mobileInline = false,
 }: {
   mode: string;
   onModeChange: (mode: string) => void;
   ready?: boolean;
+  mobileInline?: boolean;
 }) {
-  return (
-    <>
+  const toggle = (
       <ToggleGroup
         type="single"
         value={mode}
         onValueChange={(value) => { if (value) onModeChange(value); }}
         variant="outline"
-        className={cn("hidden md:flex", !ready && "pointer-events-none opacity-50")}
+        className={cn("header-result-controls", mobileInline ? "flex" : "hidden md:flex", !ready && "pointer-events-none opacity-50")}
         aria-label="Result mode"
       >
-        <ToggleGroupItem value="recent" className={HEADER_TOGGLE_CLASS} title="Latest PASS or FAIL per inverter. Invalid and retest are skipped.">
-          Latest
+        <ToggleGroupItem value="recent" className={cn(HEADER_TOGGLE_CLASS, mobileInline && "mobile-mode-button")} title="Latest PASS or FAIL per inverter. Invalid and retest are skipped.">
+          <span className="header-mode-label">Latest</span>
         </ToggleGroupItem>
-        <ToggleGroupItem value="all" className={HEADER_TOGGLE_CLASS} title="Every PASS and FAIL. Invalid and retest are left out of the totals.">
-          All tests
+        <ToggleGroupItem value="all" className={cn(HEADER_TOGGLE_CLASS, mobileInline && "mobile-mode-button")} title="Every PASS and FAIL. Invalid and retest are left out of the totals.">
+          <span className="header-mode-label">All tests</span>
         </ToggleGroupItem>
       </ToggleGroup>
+  );
+  if (mobileInline) return toggle;
+  return (
+    <>
+      {toggle}
       <Select value={ready ? mode : undefined} onValueChange={onModeChange} disabled={!ready}>
         <SelectTrigger className="h-10 min-h-10 w-[6.75rem] md:hidden" aria-label="Result mode">
           <SelectValue placeholder="Mode…" />

@@ -276,16 +276,16 @@
   }
   .mobile-app-header .dashboard-header-actions span { display: none; }
   .dashboard-header-title [data-slot="tooltip-trigger"] { display: none; }
-  .dashboard-home {
+  .dashboard-home, .failure-analytics-home {
     display: block;
     overflow-y: auto;
   }
-  .dashboard-scroll { overflow-y: visible; }
+  .dashboard-scroll, .failure-analytics-scroll { overflow-y: visible; }
   .dashboard-page-header {
     display: block;
     padding: 0.5rem 1rem;
   }
-  .dashboard-header-title {
+  .dashboard-header-title, .folding-page-header[data-mobile-periods="true"] .folding-header-title {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -305,17 +305,21 @@
   }
   .hero-comparison-note p { white-space: nowrap; }
 
-  .dashboard-page-header[data-mobile-periods="true"] {
-    height: 61px;
-    min-height: 61px;
+  .dashboard-page-header[data-mobile-periods="true"], .folding-page-header[data-mobile-periods="true"] {
+    display: block;
+    height: 111px;
+    min-height: 111px;
     padding: 0;
     border: 0;
   }
   .mobile-app-header .mobile-period-summary {
-    width: auto;
-    min-width: 5.25rem;
+    min-width: 6.5rem;
     max-width: 100%;
-    padding-inline: 1rem;
+    width: 6.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
     font-size: 1rem;
     color: transparent;
     background: transparent;
@@ -325,7 +329,15 @@
   .mobile-period-summary[data-collapsed="true"] {
     pointer-events: auto;
   }
-  .mobile-period-summary > span { visibility: hidden; }
+  .mobile-period-summary > span { visibility: hidden; width: 100%; flex-shrink: 0; }
+  .mobile-summary-period { height: 27px; }
+  .mobile-summary-mode { height: 17px; }
+  .mobile-population-row { position: relative; display: flex; gap: 6px; margin-top: 6px; }
+  .mobile-population-row[data-percentage="true"] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mobile-population-row .header-result-controls { width: 100%; }
+  .mobile-population-row .mobile-mode-button { height: 44px; min-height: 44px; padding-inline: 0.25rem; font-size: 12px; }
+  .mobile-population-row .mobile-percentage-trigger { width: 100%; min-width: 0; height: 44px; padding-inline: 0.5rem; font-size: 12px; transition: transform 380ms ease, opacity 180ms ease; }
+  .mobile-period-panel[data-collapsed="true"] .mobile-percentage-trigger { opacity: 0; transform: translateY(-24px) scale(0.9); }
   .mobile-period-summary:hover { background: transparent; }
   .table-filter-row {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -364,7 +376,7 @@
     position: absolute;
     inset-inline: 0;
     top: 100%;
-    height: 61px;
+    height: 111px;
     display: block;
     padding: 0.5rem 1rem;
   }
@@ -382,40 +394,52 @@
     opacity: 0;
   }
   .mobile-period-panel[data-collapsed="true"] { pointer-events: none; }
-  .mobile-period-panel .header-period-controls { position: relative; }
-  .mobile-period-panel .header-period-button {
+  .mobile-period-panel .header-period-controls, .mobile-period-panel .header-result-controls { position: relative; }
+  .mobile-period-panel .header-period-button, .mobile-period-panel .mobile-mode-button {
     width: 100%;
     transform-origin: center;
     transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1), border-radius 380ms ease,
       opacity 180ms ease 100ms;
   }
-  .mobile-period-panel .header-period-label {
+  .mobile-period-panel .header-period-label, .mobile-period-panel .header-mode-label {
     display: inline-block;
     transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1);
   }
-  .mobile-period-panel[data-collapsed="true"] .header-period-button {
-    transform: translate3d(var(--fold-x, 0px), var(--fold-y, -58px), 0) scaleX(var(--fold-scale, 1));
+  .mobile-period-panel[data-collapsed="true"] .header-period-button, .mobile-period-panel[data-collapsed="true"] .mobile-mode-button {
+    transform: translate3d(var(--fold-x, 0px), var(--fold-y, -58px), 0) scale(var(--fold-scale, 1), var(--fold-scale-y, 1));
     border-radius: 999px;
     opacity: 0;
     transition-delay: 0ms;
   }
-  .mobile-period-panel[data-collapsed="true"] .header-period-label {
-    transform: scale(calc(1.142857 / var(--fold-scale, 1)), 1.142857);
+  .mobile-period-panel[data-collapsed="true"] .header-period-label, .mobile-period-panel[data-collapsed="true"] .header-mode-label {
+    transform: scale(var(--fold-label-x, 1), var(--fold-label-y, 1));
   }
-  .mobile-period-panel .header-period-button[aria-checked="true"] {
+  .mobile-period-panel .header-period-button[aria-checked="true"], .mobile-period-panel .mobile-mode-button[aria-checked="true"] {
     transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1), border-radius 380ms ease,
       opacity 80ms ease;
   }
-  .mobile-period-panel[data-collapsed="true"] .header-period-button[aria-checked="true"] {
+  .mobile-period-panel[data-collapsed="true"] .header-period-button[aria-checked="true"], .mobile-period-panel[data-collapsed="true"] .mobile-mode-button[aria-checked="true"] {
     border: 1px solid var(--primary);
     opacity: 1;
     transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1), border-radius 380ms ease;
   }
+  .mobile-period-panel[data-collapsed="true"] .header-period-button[aria-checked="true"] {
+    border-radius: calc(12px / var(--fold-scale)) calc(12px / var(--fold-scale)) 0 0 / calc(12px / var(--fold-scale-y)) calc(12px / var(--fold-scale-y)) 0 0;
+    border-bottom: 0;
+  }
+  .mobile-period-panel[data-collapsed="true"] .mobile-mode-button[aria-checked="true"] {
+    border-radius: 0 0 calc(12px / var(--fold-scale)) calc(12px / var(--fold-scale)) / 0 0 calc(12px / var(--fold-scale-y)) calc(12px / var(--fold-scale-y));
+    border-top: 0;
+  }
+  .mobile-period-panel[data-collapsed="true"] [data-slot="toggle-group"] { box-shadow: none; }
   @media (prefers-reduced-motion: reduce) {
     .mobile-app-header .mobile-period-summary,
     .mobile-period-panel::before,
     .mobile-period-panel .header-period-button,
-    .mobile-period-panel .header-period-label { transition: none; }
+    .mobile-period-panel .header-period-label,
+    .mobile-period-panel .mobile-mode-button,
+    .mobile-period-panel .header-mode-label,
+    .mobile-percentage-trigger { transition: none !important; }
   }
 }
 

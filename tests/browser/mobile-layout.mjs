@@ -169,7 +169,7 @@ const station = {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.addInitScript(() => localStorage.setItem("theme", "dark"));
+  await page.addInitScript(theme => localStorage.setItem("theme", theme), process.env.REVIEW_THEME || "dark");
   let releaseLoading;
   let loadingGate;
   let delayedPath;
@@ -341,6 +341,91 @@ const station = {
     await browser.close();
     return;
   }
+  if (process.env.MOBILE_CONTROLS_REVIEW) {
+    for (const width of [320, 412]) {
+      await page.setViewportSize({ width, height: 844 });
+      for (const path of ["/", "/failure-analytics"]) {
+        await page.goto(base + path);
+        await page.waitForTimeout(1600);
+        const scroll = page.locator(path === "/" ? ".dashboard-home" : ".failure-analytics-home");
+        const panel = page.locator(".mobile-period-panel");
+        const summary = page.locator(".mobile-period-summary");
+        const shot = async suffix => page.screenshot({ path: `${out}/${width}-${path === "/" ? "dashboard" : "analytics"}-${suffix}.png` });
+        assert.equal(await panel.getAttribute("data-collapsed"), "false");
+        await panel.getByRole("radio", { name: "30 days", exact: true }).click();
+        await panel.getByRole("radio", { name: "All tests", exact: true }).click();
+        assert.equal(await panel.getByRole("radio", { name: "All tests", exact: true }).getAttribute("aria-checked"), "true");
+        await shot("expanded");
+        await scroll.evaluate(e => { e.scrollTop = 240; });
+        await page.waitForTimeout(450);
+        assert.equal(await panel.getAttribute("data-collapsed"), "true");
+        const badge = await summary.boundingBox();
+        assert(badge.width >= 104 && badge.height === 44 && badge.y >= 0 && badge.y + badge.height <= 56);
+        assert.equal(await summary.locator(".mobile-summary-mode").textContent(), "All tests");
+        for (const [source, target] of [[".header-period-controls", ".mobile-summary-period"], [".header-result-controls", ".mobile-summary-mode"]]) {
+          const painted = panel.locator(`${source} [aria-checked="true"]`);
+          const box = await painted.boundingBox(), expected = await summary.locator(target).boundingBox();
+          for (const key of ["x", "y", "width", "height"]) assert(Math.abs(box[key] - expected[key]) < 1, `${width} ${path} ${source}: ${key} misaligned`);
+          assert.equal(await painted.evaluate(e => getComputedStyle(e).opacity), "1");
+        }
+        await shot("folded");
+        const top = await scroll.evaluate(e => e.scrollTop);
+        await summary.click(); await page.waitForTimeout(450);
+        assert.equal(await scroll.evaluate(e => e.scrollTop), top);
+        await panel.getByRole("radio", { name: "Latest", exact: true }).click();
+        await page.waitForTimeout(450);
+        assert.equal(await summary.locator(".mobile-summary-mode").textContent(), "Latest");
+        await summary.click(); await page.waitForTimeout(450);
+        if (path === "/failure-analytics") {
+          const denominator = panel.getByRole("combobox", { name: "Cause ranking percentage" });
+          assert((await denominator.boundingBox()).width >= 130, "Percentage label should have room on narrow phones");
+          await denominator.click();
+          await scroll.evaluate(e => { e.scrollTop += 100; });
+          await page.waitForTimeout(100);
+          assert.equal(await panel.getAttribute("data-collapsed"), "false", "Percentage picker must keep its anchor open");
+          await page.getByRole("option", { name: "% of All", exact: true }).click();
+          await page.waitForTimeout(450);
+          assert.equal(await panel.getAttribute("data-collapsed"), "true");
+          assert.equal(await page.getByText("Causes can overlap. Counts represent annotations; percentages use all tests as the denominator.", { exact: true }).count(), 1);
+          await summary.click(); await page.waitForTimeout(450);
+          assert((await denominator.textContent()).includes("% of All"));
+          await denominator.click();
+          await page.getByRole("option", { name: "% of Failed", exact: true }).click();
+          await page.waitForTimeout(450);
+          await summary.click(); await page.waitForTimeout(450);
+          await shot("percentage");
+        }
+        await panel.getByRole("radio", { name: "Custom date range", exact: true }).click();
+        await page.locator("[data-slot=popover-content]").getByRole("button", { name: "6 months", exact: true }).click();
+        await page.waitForTimeout(1000);
+        assert.equal(await panel.getAttribute("data-collapsed"), "true");
+        assert.equal(await summary.locator(".mobile-summary-period").textContent(), "Custom");
+        await shot("custom");
+        await summary.focus(); await page.keyboard.press("Enter"); await page.waitForTimeout(450);
+        assert.equal(await panel.getAttribute("data-collapsed"), "false");
+        await page.keyboard.press("Escape"); await page.waitForTimeout(450);
+        assert.equal(await panel.getAttribute("data-collapsed"), "true");
+        assert(await summary.evaluate(e => document.activeElement === e));
+        await scroll.evaluate(e => { e.scrollTop = 0; }); await page.waitForTimeout(450);
+        assert.equal(await panel.getAttribute("data-collapsed"), "false");
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await scroll.evaluate(e => { e.scrollTop = 240; }); await page.waitForTimeout(100);
+        assert.equal(await panel.locator(".mobile-mode-button").first().evaluate(e => getComputedStyle(e).transitionDuration), "0s");
+        await page.emulateMedia({ reducedMotion: "no-preference" });
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+        await page.setViewportSize({ width: 1440, height: 1000 }); await page.waitForTimeout(350);
+        assert.equal(await panel.count(), 0);
+        assert(await page.getByRole("radio", { name: "All tests", exact: true }).isVisible());
+        if (path === "/failure-analytics") assert(await page.getByRole("radio", { name: "% of All", exact: true }).isVisible());
+        await shot("desktop");
+        await page.setViewportSize({ width, height: 844 });
+        console.log(`Mobile controls passed: ${path} at ${width}px`);
+      }
+    }
+    assert.deepEqual(errors, []);
+    await browser.close();
+    return;
+  }
   const routes = [
     "/",
     "/contributors",
@@ -409,6 +494,13 @@ const station = {
       console.log(path, width, dims.scroll);
       assert(dims.scroll <= width, `${path} overflows at ${width}: ${dims.scroll}`);
     }
+  }
+  if (process.env.LAYOUT_ONLY) {
+    fs.writeFileSync(`${out}/layout-report.json`, JSON.stringify({ report, errors }, null, 2));
+    assert.deepEqual(errors, []);
+    console.log(`Passed ${report.length} route/viewport checks.`);
+    await browser.close();
+    return;
   }
   async function shot(name) {
     await page.waitForTimeout(600);
@@ -513,7 +605,7 @@ const station = {
     const pill = await summary.boundingBox();
     assert(pill && pill.y >= 0 && pill.y + pill.height <= 56, "Selected range should fit in the fixed header");
     assert(pill.width >= 84, "Header badge should have a generous width");
-    const painted = panel.locator('[aria-checked="true"]');
+    const painted = panel.locator('.header-period-controls [aria-checked="true"]');
     const paintedBox = await painted.boundingBox();
     assert(Math.abs(paintedBox.x - pill.x) < 1 && Math.abs(paintedBox.width - pill.width) < 1,
       "The animated pill should remain aligned with its header tap target");
@@ -544,7 +636,7 @@ const station = {
       await page.getByRole("radio", { name: label, exact: true }).click();
       await page.locator('.mobile-period-panel[data-collapsed="true"]').waitFor({ state: "attached" });
       await page.waitForTimeout(420);
-      assert.equal((await summary.textContent()).trim(), short, "Header should retain the selected period");
+      assert.equal((await summary.locator('.mobile-summary-period').textContent()).trim(), short, "Header should retain the selected period");
     }
     await summary.click();
     await page.waitForTimeout(420);
@@ -556,7 +648,7 @@ const station = {
     await page.locator("[data-slot=popover-content]").getByRole("button", { name: "6 months", exact: true }).click();
     await page.waitForTimeout(1000);
     assert.equal(await panel.getAttribute("data-collapsed"), "true");
-    assert.equal((await summary.textContent()).trim(), "Custom");
+    assert.equal((await summary.locator('.mobile-summary-period').textContent()).trim(), "Custom");
     assert((await summary.getAttribute("aria-label")).includes("Custom date range:"));
     await shot(`${width}-dates-custom-folded`);
     await summary.focus();
@@ -789,7 +881,7 @@ const station = {
         }),
       };
     });
-    assert(chrome.bottom <= 120, `Dashboard chrome uses ${chrome.bottom}px at ${width}px`);
+    assert(chrome.bottom <= 168, `Dashboard chrome uses ${chrome.bottom}px at ${width}px`);
     assert.equal(chrome.buttons.length, 5);
     for (const button of chrome.buttons) {
       assert.equal(button.height, 44);
@@ -941,7 +1033,7 @@ const station = {
   await page.locator(".dashboard-home").evaluate((e) => { e.scrollTop = 220; });
   await page.locator('.mobile-period-panel[data-collapsed="true"]').waitFor({ state: "attached" });
   await page.waitForTimeout(420);
-  const lightPill = page.locator('.mobile-period-panel [aria-checked="true"]');
+  const lightPill = page.locator('.mobile-period-panel .header-period-controls [aria-checked="true"]');
   assert.equal(await lightPill.evaluate((e) => getComputedStyle(e).opacity), "1");
   await shot("390-dates-folded-light");
   await page.getByRole("button", { name: "Open navigation" }).click();

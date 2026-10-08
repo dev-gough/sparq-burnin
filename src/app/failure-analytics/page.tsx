@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FailureAnalyticsHeader, type AnalyticsRange } from "@/components/dashboard/failure-analytics-header";
 import { tableDatesForPill } from "@/lib/dashboard-range";
 import { loadDashboardPrefs, patchDashboardPrefs, resolveDashboardInitState } from "@/lib/dashboard-prefs";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 type PercentageMode = "all" | "failed";
 
 export default function FailureAnalyticsPage() {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<FailureAnalyticsData | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [refetching, setRefetching] = useState(false);
@@ -93,6 +94,7 @@ export default function FailureAnalyticsPage() {
 
   const header = (
     <FailureAnalyticsHeader
+      scrollContainerRef={scrollContainerRef}
       range={range}
       onRangeChange={changeRange}
       chartMode={chartMode}
@@ -108,9 +110,9 @@ export default function FailureAnalyticsPage() {
   );
 
   return (
-    <div className="ml-0 md:ml-10 flex h-[calc(100dvh-3.5rem)] md:h-dvh flex-col overflow-hidden">
+    <div ref={scrollContainerRef} className="failure-analytics-home ml-0 md:ml-10 flex h-[calc(100dvh-3.5rem)] md:h-dvh flex-col overflow-hidden">
       {header}
-      <div className="flex-1 overflow-y-auto" aria-busy={initialLoading || refetching}>
+      <div className="failure-analytics-scroll flex-1 overflow-y-auto" aria-busy={initialLoading || refetching}>
         {fetchError && (
           <div role="alert" className="mx-4 mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm lg:mx-6">
             <p>{data ? "Couldn’t refresh this period. Showing the last loaded results." : "Couldn’t load failure analytics."}</p>
