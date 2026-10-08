@@ -64,6 +64,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 
+import { useExclusiveMenus } from "@/components/dashboard/exclusive-menus";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { loadDashboardPrefs, patchDashboardPrefs } from "@/lib/dashboard-prefs";
 import { cn } from "@/lib/utils";
@@ -520,6 +521,13 @@ export function DataTable({
   const [firmwareFilter, setFirmwareFilter] = React.useState(() => {
     return loadDashboardPrefs().firmwareFilter || "all";
   });
+  const menus = useExclusiveMenus();
+  const menuPrefix = React.useId();
+  const moreRef = React.useRef<HTMLButtonElement>(null);
+  const menuProps = (name: string) => ({
+    open: menus.active === `${menuPrefix}:${name}`,
+    onOpenChange: (open: boolean) => menus.setOpen(`${menuPrefix}:${name}`, open),
+  });
   /** Mirrors header Result mode — not an independent filter. */
   const latestOnly = chartMode === "recent";
   const [firmwareVersions, setFirmwareVersions] = React.useState<string[]>([]);
@@ -836,23 +844,20 @@ export function DataTable({
     return null;
   })();
 
-  const datePicker = (
-    <div className="sm:col-span-2">
-      <DateRangePicker
-        from={dateFromFilter}
-        to={dateToFilter}
-        onRangeChange={(from, to) => {
-          if (onDateRangeChange) {
-            onDateRangeChange(from, to);
-            return;
-          }
-          onDateFromFilterChange(from);
-          onDateToFilterChange(to);
-        }}
-      />
-    </div>
-  );
-  const tableDates = showDateRangeFilter ? datePicker : null;
+  const datePickerProps = {
+    from: dateFromFilter,
+    to: dateToFilter,
+    onRangeChange: (from: string, to: string) => {
+      if (onDateRangeChange) {
+        onDateRangeChange(from, to);
+        return;
+      }
+      onDateFromFilterChange(from);
+      onDateToFilterChange(to);
+    },
+  };
+  const datePicker = <DateRangePicker {...datePickerProps} />;
+  const tableDates = showDateRangeFilter ? <div className="sm:col-span-2">{datePicker}</div> : null;
   const modeControls = (
     <div className="flex flex-wrap items-center gap-2">
       <button
@@ -1100,16 +1105,16 @@ export function DataTable({
                 stationOptions.length > 0 ? "mobile-five-filters xl:grid-cols-5" : "xl:grid-cols-4",
               )}
             >
-              <Select value={statusFilter} onValueChange={onStatusFilterChange}>
+              <Select {...menuProps("result")} value={statusFilter} onValueChange={onStatusFilterChange}>
                 <SelectTrigger className="mobile-filter-trigger md:hidden" aria-label="Filter by result"
                   data-active={statusFilter !== "all"} title={statusMeta.label}>
                   <span>{statusFilter === "all" ? "Result" : statusFilter === "valid" ? "Valid" : statusMeta.short}</span>
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent data-exclusive-menu={`${menuPrefix}:result`} onCloseAutoFocus={menus.onCloseAutoFocus}>
                   {STATUS_OPTIONS.map((opt) => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <Select
+              <Select {...menuProps("category")}
                 value={annotationFilter}
                 onValueChange={onAnnotationFilterChange}
               >
@@ -1120,7 +1125,8 @@ export function DataTable({
                   <span className="mobile-filter-label md:hidden" aria-hidden>Tag</span>
                   <SelectValue className="hidden md:flex" placeholder="All categories" />
                 </SelectTrigger>
-                <SelectContent
+                <SelectContent data-exclusive-menu={`${menuPrefix}:category`}
+                  onCloseAutoFocus={menus.onCloseAutoFocus}
                   className="max-h-[400px] overflow-y-auto [&>*[data-slot=select-scroll-up-button]]:hidden [&>*[data-slot=select-scroll-down-button]]:hidden"
                   position="popper"
                   sideOffset={4}
@@ -1176,7 +1182,7 @@ export function DataTable({
                 </SelectContent>
               </Select>
 
-              <Select value={firmwareFilter} onValueChange={setFirmwareFilter}>
+              <Select {...menuProps("firmware")} value={firmwareFilter} onValueChange={setFirmwareFilter}>
                 <SelectTrigger
                   className="h-9 min-h-9 w-full min-w-0 bg-background shadow-xs"
                   aria-label="Firmware version" data-active={firmwareFilter !== "all"}
@@ -1184,7 +1190,7 @@ export function DataTable({
                   <span className="mobile-filter-label md:hidden" aria-hidden>FW</span>
                   <SelectValue className="hidden md:flex" placeholder="All versions" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent data-exclusive-menu={`${menuPrefix}:firmware`} onCloseAutoFocus={menus.onCloseAutoFocus}>
                   <SelectItem value="all">All versions</SelectItem>
                   {firmwareVersions.map((version) => (
                     <SelectItem key={version} value={version}>
@@ -1195,7 +1201,7 @@ export function DataTable({
               </Select>
 
               {stationOptions.length > 0 && (
-                <Select
+                <Select {...menuProps("station")}
                   value={stationFilter}
                   onValueChange={onStationFilterChange}
                 >
@@ -1206,7 +1212,7 @@ export function DataTable({
                     <span className="mobile-filter-label md:hidden" aria-hidden>Station</span>
                     <SelectValue className="hidden md:flex" placeholder="All stations" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent data-exclusive-menu={`${menuPrefix}:station`} onCloseAutoFocus={menus.onCloseAutoFocus}>
                     <SelectItem value="all">All stations</SelectItem>
                     {stationOptions.map((station) => (
                       <SelectItem key={station} value={station} title={station}>
@@ -1217,19 +1223,36 @@ export function DataTable({
                 </Select>
               )}
 
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="mobile-filter-trigger md:hidden" aria-label="Table options"
-                    data-active={!latestOnly || !filterLinked}>
-                    <span>More</span><ChevronDown className="size-3 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="mobile-table-options w-[min(340px,calc(100vw-32px))] space-y-3 p-3">
-                  <p className="text-sm font-semibold">Table options</p>
-                  {modeControls}
-                  {(!filterLinked || showDateRangeFilter) && datePicker}
-                </PopoverContent>
-              </Popover>
+              <div className="relative min-w-0 md:hidden">
+                <Popover {...menuProps("options")}>
+                  <PopoverTrigger asChild>
+                    <Button ref={moreRef} variant="outline" className="mobile-filter-trigger md:hidden" aria-label="Table options"
+                      data-active={!latestOnly || !filterLinked}>
+                      <span>More</span><ChevronDown className="size-3 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent data-exclusive-menu={`${menuPrefix}:options`} onCloseAutoFocus={menus.onCloseAutoFocus} align="end" className="mobile-table-options exclusive-menu-content w-[min(340px,calc(100vw-32px))] space-y-3 p-3">
+                    <p className="text-sm font-semibold">Table options</p>
+                    {modeControls}
+                    {(!filterLinked || showDateRangeFilter) && (
+                      <Button variant="outline" className="w-full justify-start text-sm" aria-label="Set table date range"
+                        onClick={() => menus.setOpen(`${menuPrefix}:dates`, true)}>
+                        <CalendarRange className="size-4" />{dateRangeLabel || "All dates"}
+                      </Button>
+                    )}
+                  </PopoverContent>
+                </Popover>
+                <DateRangePicker {...datePickerProps} {...menuProps("dates")} menuId={`${menuPrefix}:dates`}
+                  trigger={<span aria-hidden className="pointer-events-none absolute inset-0 opacity-0" />}
+                  onCloseAutoFocus={(event) => {
+                    event.preventDefault();
+                    if (!menus.hasDestination()) moreRef.current?.focus({ preventScroll: true });
+                  }}
+                  onOpenAutoFocus={(event) => {
+                    event.preventDefault();
+                    (event.target as HTMLElement).querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+                  }} />
+              </div>
               <div className="hidden md:contents">{tableDates}</div>
             </div>
 
@@ -1410,7 +1433,7 @@ export function DataTable({
               <Label htmlFor="rows-per-page" className="text-sm font-medium">
                 Rows per page
               </Label>
-              <Select
+              <Select {...menuProps("page-size")}
                 value={`${table.getState().pagination.pageSize}`}
                 onValueChange={(value) => {
                   table.setPageSize(Number(value));
@@ -1421,7 +1444,7 @@ export function DataTable({
                     placeholder={table.getState().pagination.pageSize}
                   />
                 </SelectTrigger>
-                <SelectContent side="top">
+                <SelectContent data-exclusive-menu={`${menuPrefix}:page-size`} onCloseAutoFocus={menus.onCloseAutoFocus} side="top">
                   {[10, 20, 30, 40, 50, 75, 100].map((pageSize) => (
                     <SelectItem key={pageSize} value={`${pageSize}`}>
                       {pageSize}

@@ -4,6 +4,7 @@ import * as React from "react";
 import { ChartAreaInteractive } from "@/components/chart-area-interactive";
 import { DataTable, DataTableSkeleton } from "@/components/data-table";
 import { AnnotationInsights } from "@/components/dashboard/annotation-insights";
+import { DashboardMenusProvider } from "@/components/dashboard/exclusive-menus";
 import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-state";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { FailureRateStrip } from "@/components/dashboard/failure-rate-strip";
@@ -482,7 +483,8 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
   }, [showDashboardShell, showEmpty]);
 
   return (
-    // Desktop keeps its fixed header; mobile dates fold into the shared top bar.
+    <DashboardMenusProvider>
+    {/* Desktop keeps its fixed header; mobile dates fold into the shared top bar. */}
     <div ref={scrollContainerRef} className="dashboard-home ml-0 md:ml-10 flex h-[calc(100dvh-3.5rem)] md:h-dvh flex-col overflow-hidden">
       <DashboardHeader
         scrollContainerRef={scrollContainerRef}
@@ -644,5 +646,6 @@ export function DashboardHome({ boot = {} }: DashboardHomeProps) {
         </div>
       </div>
     </div>
+    </DashboardMenusProvider>
   );
 }

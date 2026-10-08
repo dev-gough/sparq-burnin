@@ -318,6 +318,9 @@ const station = {
     for (const path of routes) {
       await page.goto(base + path);
       await page.waitForTimeout(3000);
+      await page.waitForFunction(() => [...document.querySelectorAll(".echarts-for-react")].every(e =>
+        e.clientWidth > 0 && parseFloat(e.querySelector("canvas")?.style.width) === e.clientWidth),
+        undefined, { timeout: 5000 });
       await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
       const name = path === "/" ? "dashboard" : path.split("?")[0].slice(1).replaceAll("/", "-");
       const dims = await page.evaluate(() => ({
@@ -595,9 +598,10 @@ const station = {
     assert.notEqual(await link.getAttribute("aria-checked"), linked);
     if (await link.getAttribute("aria-checked") === "true") await link.click();
     await shot(`${width}-table-options`);
-    await options.getByRole("button", { name: /date range/i }).click();
+    await options.getByRole("button", { name: "Set table date range", exact: true }).click();
+    await page.locator("[data-slot=popover-content][data-exclusive-menu]:not(.mobile-table-options)").waitFor();
+    assert.equal(await page.locator(".mobile-table-options:visible").count(), 0, "Date picker must replace More");
     await fits("[data-slot=popover-content]:not(.mobile-table-options)");
-    await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Clear all", exact: true }).click();
     await page.locator("#serial-search").fill("SPARQ*");
@@ -605,6 +609,91 @@ const station = {
     await page.getByRole("button", { name: "Clear serial search" }).click();
   }
   await page.unroute("**/api/stations/options", stationFixture);
+  // Switching dropdowns finishes the old exit before the next entrance.
+  await page.setViewportSize({ width: 412, height: 844 });
+  await page.goto(base + "/");
+  await page.waitForTimeout(1600);
+  await page.locator("#serial-search").scrollIntoViewIfNeeded();
+  const visibleMenus = "[data-slot=select-content]:visible,[data-slot=popover-content]:visible,[data-slot=dropdown-menu-content]:visible";
+  await page.getByRole("button", { name: "Table options", exact: true }).click();
+  await page.waitForTimeout(200);
+  const firmwareMenu = page.locator(".table-filter-row").getByRole("combobox", { name: "Firmware version" });
+  await page.evaluate(() => {
+    window.menuSamples = [];
+    window.menuSamplingFinished = false;
+    const until = performance.now() + 800;
+    const sample = () => {
+      window.menuSamples.push([...document.querySelectorAll("[data-exclusive-menu]")].filter(e => {
+        const style = getComputedStyle(e);
+        return e.getBoundingClientRect().width > 0 && style.visibility !== "hidden" && Number(style.opacity) > 0.01;
+      }).length);
+      if (performance.now() < until) requestAnimationFrame(sample);
+      else window.menuSamplingFinished = true;
+    };
+    requestAnimationFrame(sample);
+  });
+  await firmwareMenu.click();
+  assert.equal(await page.locator('[data-slot=select-content][data-state=open]').count(), 0,
+    "The next menu should wait for the old menu to close");
+  await page.locator("[data-slot=select-content][data-state=open]").waitFor();
+  assert.equal(await page.locator(visibleMenus).count(), 1);
+  assert.equal(await page.locator(".mobile-table-options:visible").count(), 0);
+  await page.waitForFunction(() => window.menuSamplingFinished);
+  assert(await page.evaluate(() => Math.max(...window.menuSamples) <= 1), "Menus must not overlap during the transition");
+  await shot("412-exclusive-firmware-menu");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(180);
+  await page.getByRole("button", { name: "Table options", exact: true }).click();
+  await page.waitForTimeout(200);
+  await page.locator(".table-filter-row").getByRole("combobox", { name: "Category or note" }).click();
+  await page.locator("[data-slot=select-content][data-state=open]").waitFor();
+  assert.equal(await page.locator(visibleMenus).count(), 1);
+  await page.keyboard.press("Escape");
+  for (const width of [320, 412]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(base + "/");
+    await page.waitForTimeout(1600);
+    const causes = page.locator(".failure-causes-card");
+    await causes.scrollIntoViewIfNeeded();
+    const box = await causes.boundingBox();
+    assert(box.height <= 70, "Failure causes should occupy a single compact row");
+    const group = causes.getByRole("button", { name: "Filter all Electrical causes", exact: true });
+    await group.click();
+    assert.equal(await group.getAttribute("aria-pressed"), "true");
+    await causes.getByRole("button", { name: "Choose a Electrical cause", exact: true }).click();
+    await page.waitForTimeout(220);
+    await fits("[data-slot=dropdown-menu-content]");
+    await shot(`${width}-compact-failure-causes`);
+    await page.getByRole("menuitem", { name: /Grid undervoltage/ }).click();
+    assert.equal(await group.getAttribute("aria-pressed"), "false");
+    await causes.getByRole("button", { name: "Choose a Electrical cause", exact: true }).click();
+    await page.waitForTimeout(220);
+    await page.getByRole("menuitem", { name: "All Electrical causes", exact: true }).click();
+    assert.equal(await group.getAttribute("aria-pressed"), "true");
+    await group.click();
+    assert.equal(await group.getAttribute("aria-pressed"), "false");
+    await causes.getByRole("button", { name: /Tagging coverage:/ }).click();
+    await page.waitForTimeout(220);
+    await page.getByRole("menuitem", { name: /Tagged failures/ }).click();
+    await page.waitForTimeout(180);
+    await causes.getByRole("button", { name: /Tagging coverage:/ }).click();
+    await page.waitForTimeout(220);
+    await page.getByRole("menuitem", { name: "Clear cause filter", exact: true }).click();
+    await page.waitForTimeout(200);
+    await causes.getByRole("button", { name: "Choose a Electrical cause", exact: true }).click();
+    await page.waitForTimeout(200);
+    await causes.getByRole("button", { name: /Tagging coverage:/ }).click();
+    await causes.getByRole("button", { name: "Choose a Thermal cause", exact: true }).click();
+    await page.locator("[data-slot=dropdown-menu-content][data-state=open]").filter({ hasText: "All Thermal causes" }).waitFor();
+    assert.equal(await page.locator(visibleMenus).count(), 1, "Rapid switches should show only the last requested menu");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.keyboard.press("Escape");
+    await causes.getByRole("button", { name: "Choose a Electrical cause", exact: true }).click();
+    await page.locator("[data-slot=dropdown-menu-content][data-state=open]").waitFor();
+    assert.equal(await page.locator("[data-slot=dropdown-menu-content][data-state=open]").evaluate(e => getComputedStyle(e).animationDuration), "0s");
+    await page.keyboard.press("Escape");
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+  }
   // The clock stays icon-only while its accessible label follows the chosen timezone.
   await page.setViewportSize({ width: 412, height: 915 });
   await page.goto(base + "/");

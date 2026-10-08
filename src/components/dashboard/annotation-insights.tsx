@@ -4,6 +4,9 @@ import * as React from "react";
 import Link from "next/link";
 import { IconAlertTriangle, IconTag } from "@tabler/icons-react";
 
+import { ChevronDown, Check } from "lucide-react";
+import { useExclusiveMenus } from "@/components/dashboard/exclusive-menus";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -130,6 +133,8 @@ export function AnnotationInsights({
   enabled = true,
 }: AnnotationInsightsProps) {
   const { displayName } = useStationAliases();
+  const menus = useExclusiveMenus();
+  const menuPrefix = React.useId();
   const [data, setData] = React.useState<AnnotationSummary | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
@@ -227,8 +232,72 @@ export function AnnotationInsights({
   const chipBase =
     "inline-flex min-h-8 items-center gap-1 rounded-md border px-2 py-1.5 text-[11px] font-medium leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:py-1";
 
+  const mobileGroups = data && hasTags ? (
+    <div className="mobile-cause-row flex min-w-0 items-center gap-2 md:hidden">
+      <span className="shrink-0 text-xs font-semibold">Causes</span>
+      <div className="mobile-cause-groups flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
+        {groups.map(group => {
+          const groupOptions = options.filter(option => option.group_name === group.name);
+          const value = `group:${group.name}`;
+          const active = annotationFilter === value;
+          const childActive = groupOptions.some(option => annotationFilter === option.name);
+          const id = `${menuPrefix}:group:${group.name}`;
+          return (
+            <div key={group.name} className={cn("flex shrink-0 overflow-hidden rounded-md border",
+              active || childActive ? "border-primary bg-primary/10" : "border-border bg-muted/30")}>
+              <button type="button" onClick={() => toggleFilter(value)} aria-pressed={active}
+                aria-label={`Filter all ${group.name} causes`} title={tagCountTitle(group.count, group.percentageOfFailed)}
+                className={cn("min-h-11 px-2 text-[11px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                  active && "bg-primary text-primary-foreground")}>
+                {group.name}<span className="ml-1 opacity-70">{group.count}</span>
+              </button>
+              <DropdownMenu modal={false} open={menus.active === id} onOpenChange={open => menus.setOpen(id, open)}>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" aria-label={`Choose a ${group.name} cause`}
+                    className="flex min-h-11 w-8 items-center justify-center border-l focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+                    <ChevronDown className="size-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent data-exclusive-menu={id} onCloseAutoFocus={menus.onCloseAutoFocus} align="start" className="exclusive-menu-content max-w-[calc(100vw-24px)]">
+                  <DropdownMenuLabel>{group.name}</DropdownMenuLabel>
+                  <DropdownMenuItem onSelect={() => onAnnotationFilterChange(value)}>
+                    <Check className={cn("size-3", !active && "invisible")} />All {group.name} causes
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  {groupOptions.map(option => (
+                    <DropdownMenuItem key={option.name} onSelect={() => onAnnotationFilterChange(option.name)}>
+                      <Check className={cn("size-3", annotationFilter !== option.name && "invisible")} />
+                      <span className="min-w-0 flex-1 whitespace-normal">{option.name}</span>
+                      <span className="text-xs text-muted-foreground">{option.count}</span>
+                    </DropdownMenuItem>
+                  ))}
+                  {groupOptions.length === 0 && <DropdownMenuItem disabled>No individual causes in this period</DropdownMenuItem>}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          );
+        })}
+      </div>
+      <DropdownMenu modal={false} open={menus.active === `${menuPrefix}:coverage`}
+        onOpenChange={open => menus.setOpen(`${menuPrefix}:coverage`, open)}>
+        <DropdownMenuTrigger asChild>
+          <button type="button" aria-label={`Tagging coverage: ${data.untaggedFailed} untagged failures`}
+            className="flex size-11 shrink-0 items-center justify-center rounded-md border border-amber-500/40 text-amber-600 dark:text-amber-300">
+            <IconTag className="size-4" /><ChevronDown className="size-3" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent data-exclusive-menu={`${menuPrefix}:coverage`} onCloseAutoFocus={menus.onCloseAutoFocus} align="end" className="exclusive-menu-content">
+          <DropdownMenuLabel>Tagging coverage</DropdownMenuLabel>
+          <DropdownMenuItem asChild><Link href={todoHref}>Untagged {data.untaggedFailed} / {data.totalFailed}</Link></DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => toggleFilter("tagged")}>Tagged failures {data.totalFailed - data.untaggedFailed}</DropdownMenuItem>
+          {annotationFilter !== "all" && <DropdownMenuItem onSelect={() => onAnnotationFilterChange("all")}>Clear cause filter</DropdownMenuItem>}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  ) : null;
+
   return (
-    <Card className="@container/card">
+    <Card className="failure-causes-card @container/card" data-compact={Boolean(data && hasTags)} aria-label="Failure causes">
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 px-6 py-2">
         <CardTitle className="text-sm font-semibold">Failure causes</CardTitle>
         <span className="text-[11px] text-muted-foreground">
@@ -278,9 +347,11 @@ export function AnnotationInsights({
             </Button>
           </div>
         ) : data ? (
+          <>
+          {mobileGroups}
           <div
             className={cn(
-              "flex flex-col gap-1.5 transition-opacity duration-200",
+              "hidden md:flex flex-col gap-1.5 transition-opacity duration-200",
               refreshing && "opacity-55",
             )}
           >
@@ -399,6 +470,7 @@ export function AnnotationInsights({
               </button>
             </div>
           </div>
+          </>
         ) : (
           <p className="py-1 text-sm text-muted-foreground" role="status">
             Could not load failure causes.

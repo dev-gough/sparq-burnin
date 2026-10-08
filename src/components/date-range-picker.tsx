@@ -131,6 +131,9 @@ export type DateRangePickerProps = {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   disabled?: boolean;
+  menuId?: string;
+  onCloseAutoFocus?: React.ComponentProps<typeof PopoverContent>["onCloseAutoFocus"];
+  onOpenAutoFocus?: React.ComponentProps<typeof PopoverContent>["onOpenAutoFocus"];
 };
 
 export function DateRangePicker({
@@ -145,6 +148,9 @@ export function DateRangePicker({
   open: controlledOpen,
   onOpenChange: onControlledOpenChange,
   disabled = false,
+  menuId,
+  onCloseAutoFocus,
+  onOpenAutoFocus,
 }: DateRangePickerProps) {
   const [internalOpen, setInternalOpen] = React.useState(false);
   const open = controlledOpen ?? internalOpen;
@@ -516,12 +522,14 @@ export function DateRangePicker({
       </PopoverTrigger>
 
       <PopoverContent
+        data-exclusive-menu={menuId}
         align="end"
+        onCloseAutoFocus={onCloseAutoFocus}
         className={cn(
           "w-[min(100vw-1.5rem,36rem)] overflow-hidden p-0 transition-[box-shadow] duration-300",
           settling && "ring-2 ring-primary/30",
         )}
-        onOpenAutoFocus={(e) => e.preventDefault()}
+        onOpenAutoFocus={onOpenAutoFocus ?? ((e) => e.preventDefault())}
       >
         {/* Ambient header */}
         <div className="relative border-b bg-gradient-to-br from-primary/10 via-muted/40 to-transparent px-4 pt-3.5 pb-3">

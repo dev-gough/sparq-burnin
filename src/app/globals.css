@@ -178,6 +178,16 @@
 
 /* Phone layouts are scoped below the existing desktop navigation breakpoint. */
 @media (max-width: 767px) {
+  .failure-causes-card[data-compact="true"] { gap: 0; padding-block: 0.5rem; }
+  .failure-causes-card[data-compact="true"] > [data-slot="card-header"] { display: none; }
+  .failure-causes-card[data-compact="true"] > [data-slot="card-content"] { padding: 0 0.5rem; }
+  .mobile-cause-groups { scrollbar-width: none; }
+  .mobile-cause-groups::-webkit-scrollbar { display: none; }
+  @media (max-width: 359px) {
+    .mobile-cause-row > span { display: none; }
+    .mobile-cause-groups button[aria-pressed] { padding-inline: 0.375rem; }
+    .mobile-cause-groups [data-slot="dropdown-menu-trigger"] { width: 1.5rem; }
+  }
   .mobile-page-header {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -383,6 +393,10 @@
 }
 
 /* Navigation and exports share a responsive left drawer. */
+.exclusive-menu-content, [data-exclusive-menu] { animation-duration: 150ms; }
+@media (prefers-reduced-motion: reduce) {
+  .exclusive-menu-content, [data-exclusive-menu] { animation-duration: 0ms; }
+}
 .sidebar-drawer[data-slot="sheet-content"] {
   width: min(22.5rem, calc(100vw - 2rem));
   max-width: none;
