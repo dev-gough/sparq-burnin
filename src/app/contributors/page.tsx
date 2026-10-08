@@ -489,17 +489,49 @@ export default function ContributorsPage() {
             </div>
           )}
           {loading && !data ? (
-            <div className="space-y-6" aria-label="Loading contributors">
+            <div className="space-y-7" aria-label="Loading contributors">
               <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-                {Array.from({ length: 4 }, (_, index) => (
-                  <Skeleton key={index} className="h-36 rounded-xl" />
+                {[
+                  ["Failure coverage", "Failed tests with at least one annotation"],
+                  ["Failures annotated", "Of 000 failed tests · all time"],
+                  ["Annotations", "Across all contributors and linked tests · all time"],
+                  ["Active this week", "0 contributors active in the last 30 days"],
+                ].map(([label, detail]) => (
+                  <Card key={label} className="gap-3 p-4 shadow-none sm:p-5" aria-hidden>
+                    <div className="flex items-center justify-between gap-2 text-sm font-medium text-muted-foreground"><span>{label}</span><Skeleton className="size-4 shrink-0" /></div>
+                    <Skeleton className="h-9 w-20 sm:h-10" />
+                    <div className="relative text-sm leading-relaxed"><p className="invisible">{detail}</p><Skeleton className="absolute inset-0" /></div>
+                  </Card>
                 ))}
               </div>
-              <div className="grid gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-                <Skeleton className="h-[360px] rounded-xl" />
-                <Skeleton className="h-[360px] rounded-xl" />
-              </div>
-              <Skeleton className="h-96 rounded-xl" />
+              <section className="space-y-3">
+                <Section index="01" title="Team activity" description="The last 30 days of annotations, alongside all-time failure coverage." />
+                <div className="grid gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+                  <Card className="gap-0 overflow-hidden py-0 shadow-none">
+                    <div className="flex flex-wrap items-start justify-between gap-2 px-4 pt-4 sm:px-5 sm:pt-5">
+                      <div><h3 className="text-sm font-semibold">Annotation activity</h3><p className="mt-1 text-sm text-muted-foreground">Daily contributions by team member</p></div>
+                      <Skeleton className="h-[26px] w-36" />
+                    </div>
+                    <Skeleton className="h-[290px] rounded-none" />
+                  </Card>
+                  <Card className="justify-between gap-6 p-4 shadow-none sm:p-5">
+                    <div><h3 className="text-sm font-semibold">Failure coverage</h3><p className="mt-1 text-sm text-muted-foreground">A test counts once, regardless of how many annotations it has.</p></div>
+                    <div className="flex items-center gap-5"><Skeleton className="size-28 shrink-0 rounded-full" /><div className="min-w-0 flex-1 space-y-3"><Skeleton className="h-7 w-full" /><Skeleton className="h-7 w-full" /></div></div>
+                    <Skeleton className="h-9 w-full" />
+                  </Card>
+                </div>
+              </section>
+              <section className="space-y-3">
+                <Section index="02" title="Contributors" description="Select a contributor to explore their groups and annotation categories."><Skeleton className="h-9 w-full sm:w-64" /></Section>
+                <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+                  <Card className="gap-0 overflow-hidden py-0 shadow-none">
+                    <div className="flex items-center justify-between border-b px-4 py-4 sm:px-5"><h3 className="text-sm font-semibold">Team contributions</h3><Skeleton className="h-5 w-24" /></div>
+                    <div className="space-y-3 p-4 md:hidden"><div className="flex gap-2"><Skeleton className="h-11 w-28" /><Skeleton className="h-11 w-20" /></div>{Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className="h-40 w-full" />)}</div>
+                    <div className="hidden md:block"><div className="border-b p-4"><Skeleton className="h-4 w-full" /></div>{Array.from({ length: 3 }, (_, index) => <div key={index} className="border-b p-4"><Skeleton className="h-10 w-full" /></div>)}</div>
+                  </Card>
+                  <Card className="gap-4 p-4 shadow-none sm:p-5"><Skeleton className="h-12 w-full" /><Skeleton className="h-24 w-full" /><Skeleton className="h-40 w-full" /></Card>
+                </div>
+              </section>
             </div>
           ) : data && stats ? (
             <div

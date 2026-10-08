@@ -348,6 +348,22 @@ interface DataTableProps {
 /** Default page size — skeleton rows match the loaded table footprint. */
 const TABLE_PAGE_SIZE = 30;
 
+function MobileTestSkeleton() {
+  return (
+    <div className="space-y-3 rounded-xl border bg-card p-4" aria-hidden>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1.5"><Skeleton className="h-6 w-40 max-w-full" /><Skeleton className="h-4 w-28" /></div>
+        <Skeleton className="h-6 w-12 rounded-full" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1"><Skeleton className="h-4 w-12" /><Skeleton className="h-5 w-full" /></div>
+        <div className="space-y-1"><Skeleton className="h-4 w-14" /><Skeleton className="h-5 w-16" /></div>
+        <div className="col-span-2 space-y-1"><Skeleton className="h-4 w-16" /><Skeleton className="h-4 w-40 max-w-full" /></div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Full-height skeleton matching the filter bar + table + pagination layout.
  * Used for both in-table loading and the pre-hydrate page placeholder.
@@ -370,16 +386,16 @@ export function DataTableSkeleton({
         {/* Filters — compact card matching loaded layout */}
         <div className="overflow-hidden rounded-xl border bg-card shadow-xs">
           <div className="flex flex-wrap items-center gap-2 border-b bg-muted/40 px-3 py-2 sm:px-4">
-            <Skeleton className="h-4 w-20" />
-            <div className="ml-auto flex gap-1.5">
+            <Skeleton className="h-5 w-20" />
+            <div className="ml-auto hidden gap-1.5 md:flex">
               <Skeleton className="h-7 w-24 rounded-full" />
               <Skeleton className="h-7 w-28 rounded-full" />
             </div>
           </div>
           <div className="space-y-3 p-3 sm:p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-              <Skeleton className="h-10 w-full max-w-md" />
-              <div className="flex flex-wrap gap-1.5">
+              <Skeleton className="h-11 w-full md:h-10 lg:max-w-md" />
+              <div className="hidden flex-wrap gap-1.5 md:flex">
                 <Skeleton className="h-9 w-14 rounded-full" />
                 <Skeleton className="h-9 w-28 rounded-full" />
                 <Skeleton className="h-9 w-16 rounded-full" />
@@ -387,12 +403,15 @@ export function DataTableSkeleton({
                 <Skeleton className="h-9 w-16 rounded-full" />
               </div>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-4 gap-1.5 md:hidden" aria-label="Loading mobile filters">
+              {Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-11 min-w-0" />)}
+            </div>
+            <div className="hidden gap-2 md:grid md:grid-cols-2 xl:grid-cols-4">
               <Skeleton className="h-9 w-full" />
               <Skeleton className="h-9 w-full" />
               <Skeleton className="h-9 w-full sm:col-span-2" />
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="hidden flex-wrap gap-2 md:flex">
               <Skeleton className="h-9 w-40 rounded-md" />
               <Skeleton className="h-9 w-44 rounded-md" />
             </div>
@@ -401,7 +420,7 @@ export function DataTableSkeleton({
 
         <div className="space-y-3 md:hidden">
           {Array.from({ length: rowCount }, (_, index) => (
-            <Skeleton key={index} className="h-36 rounded-xl" />
+            <MobileTestSkeleton key={index} />
           ))}
         </div>
         <div className="hidden md:block overflow-hidden rounded-lg border">
@@ -1264,7 +1283,7 @@ export function DataTable({
         <div className="space-y-3 md:hidden" aria-label="Tests">
           {tablePending ? (
             Array.from({ length: 5 }, (_, index) => (
-              <Skeleton key={index} className="h-36 rounded-lg" />
+              <MobileTestSkeleton key={index} />
             ))
           ) : table.getRowModel().rows.length ? (
             table.getRowModel().rows.map(({ original: test }) => (

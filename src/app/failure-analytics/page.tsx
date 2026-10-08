@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
 import { FailureAnalyticsHeader, type AnalyticsRange } from "@/components/dashboard/failure-analytics-header";
 import { tableDatesForPill } from "@/lib/dashboard-range";
 import { loadDashboardPrefs, patchDashboardPrefs, resolveDashboardInitState } from "@/lib/dashboard-prefs";
-import { FailureAnalyticsContent } from "@/components/dashboard/failure-analytics-content";
+import { FailureAnalyticsContent, FailureAnalyticsSkeleton } from "@/components/dashboard/failure-analytics-content";
 import type { FailureAnalyticsData } from "@/lib/failure-analytics";
 import { Button } from "@/components/ui/button";
 
@@ -119,12 +118,7 @@ export default function FailureAnalyticsPage() {
           </div>
         )}
         {initialLoading ? (
-          <div className="w-full space-y-6 px-4 py-5 lg:px-6 lg:py-6" aria-label="Loading failure analytics">
-            <Skeleton className="h-12 w-64" />
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-36 rounded-xl" />)}</div>
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]"><Skeleton className="h-[360px] rounded-xl" /><Skeleton className="h-[360px] rounded-xl" /></div>
-            <div className="grid gap-3 xl:grid-cols-2"><Skeleton className="h-80 rounded-xl" /><Skeleton className="h-80 rounded-xl" /></div>
-          </div>
+          <FailureAnalyticsSkeleton range={range} chartMode={chartMode} percentageMode={percentageMode} />
         ) : data ? (
           <div className={`transition-opacity duration-200 ${refetching ? "pointer-events-none opacity-50" : "opacity-100"}`}>
             <FailureAnalyticsContent data={data} range={range} chartMode={chartMode} percentageMode={percentageMode} expandedGroup={expandedGroup} onGroupChange={setExpandedGroup} />

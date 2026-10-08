@@ -6,6 +6,7 @@ import { useTheme } from "next-themes";
 import ReactECharts from "echarts-for-react";
 import { ArrowLeft, ArrowUpRight, BarChart3, CheckCheck, CircleX, ClipboardList, Tags } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
@@ -71,16 +72,17 @@ function SectionLabel({ number: index, title, description, children }: {
   );
 }
 
-function Metric({ label, value, detail, icon, tone }: {
-  label: string; value: string; detail: ReactNode; icon: ReactNode; tone?: string;
+function Metric({ label, value, detail, icon, tone, loading }: {
+  label: string; value: string; detail: ReactNode; icon: ReactNode; tone?: string; loading?: boolean;
 }) {
   return (
     <Card className="gap-3 p-4 shadow-none sm:p-5">
       <div className="flex items-center justify-between gap-2 text-sm font-medium text-muted-foreground">
         <span>{label}</span><span aria-hidden>{icon}</span>
       </div>
-      <p className={cn("text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl", tone)}>{value}</p>
-      <div className="text-sm leading-relaxed text-muted-foreground">{detail}</div>
+      {loading ? <Skeleton className="h-9 w-20 sm:h-10" /> : <p className={cn("text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl", tone)}>{value}</p>}
+      {/* Keep detail wrapping while its values are still loading. */}
+      <div className="relative text-sm leading-relaxed text-muted-foreground"><div className={loading ? "invisible" : undefined}>{detail}</div>{loading && <Skeleton className="absolute inset-0" />}</div>
     </Card>
   );
 }
@@ -124,7 +126,8 @@ function CauseRanking({ rows, percentageMode, selectedGroup, onGroupSelect, colo
   );
 }
 
-export function FailureAnalyticsContent({ data, range, chartMode, percentageMode, expandedGroup, onGroupChange }: {
+export function FailureAnalyticsContent({ data, range, chartMode, percentageMode, expandedGroup, onGroupChange, loading = false }: {
+  loading?: boolean;
   data: FailureAnalyticsData;
   range: DashboardRange;
   chartMode: string;
@@ -211,7 +214,7 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
   const categoryHistoryOption = useMemo(() => historyChartOption(categories, data.categoryTimeline, categoryColors, grouping, dark, text, muted, grid), [categories, data.categoryTimeline, categoryColors, grouping, dark, text, muted, grid]);
   const groupHistoryOption = useMemo(() => historyChartOption(groups, data.groupTimeline, groupColors, grouping, dark, text, muted, grid), [groups, data.groupTimeline, groupColors, grouping, dark, text, muted, grid]);
   const chart = (title: string, option: object, breakdown: "category" | "group" | "rate", hasData: boolean, height: number) => (
-    <FailureChartPanel title={title} emptyState={empty(breakdown, hasData)} height={height} showTitle={false}>
+    loading ? <Skeleton style={{ height }} className="rounded-none" /> : <FailureChartPanel title={title} emptyState={empty(breakdown, hasData)} height={height} showTitle={false}>
       <ReactECharts option={option} replaceMerge={["series"]} style={{ height }} />
     </FailureChartPanel>
   );
@@ -229,10 +232,10 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
         <span className="rounded-full border bg-card px-3 py-1 text-sm text-muted-foreground">{dashboardRangeContextLabel(range)} · UTC</span>
       </div>
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Metric label="Failure rate" value={data.totalTests ? percentage(failureRate) : "—"} detail={<><span className="block">{number(data.totalFailedTests)} failed of {number(data.totalTests)} tested</span><span className="mt-1 block text-xs">{dateLabel}</span></>} icon={<BarChart3 className="size-4" />} tone={!data.totalTests ? "text-muted-foreground" : data.totalFailedTests ? "text-rose-500" : "text-emerald-500"} />
-        <Metric label={chartMode === "recent" ? "Unique inverters" : "Total tests"} value={number(data.totalTests)} detail={<span className="inline-flex items-center gap-1"><CheckCheck className="size-3 text-emerald-500" />{number(data.totalTests - data.totalFailedTests)} passed</span>} icon={<ClipboardList className="size-4" />} />
-        <Metric label={chartMode === "recent" ? "Failed · latest per inverter" : "Failed tests"} value={number(data.totalFailedTests)} detail={chartMode === "recent" ? "Inverters whose latest PASS or FAIL is FAIL" : "Every FAIL in the period. Invalid and retest are left out."} icon={<CircleX className="size-4" />} tone={data.totalFailedTests ? "text-rose-500" : undefined} />
-        <Metric label="Annotated failures" value={number(tagged)} detail={<><span className="block">{coverage === null ? "No failed tests to annotate" : `${coverage.toFixed(0)}% annotation coverage · ${number(data.totalFailedTests)} failures`}</span><span className="mt-1 block text-xs">Period total; each failed test counted once.</span>{data.untaggedFailed > 0 && <Link href={todoHrefFromDashboardRange(range)} className="mt-1 flex items-center gap-1 font-medium text-amber-500 hover:underline">{number(data.untaggedFailed)} untagged · review <ArrowUpRight className="size-3" /></Link>}</>} icon={<Tags className="size-4" />} tone={data.untaggedFailed ? "text-amber-500" : undefined} />
+        <Metric loading={loading} label="Failure rate" value={data.totalTests ? percentage(failureRate) : "—"} detail={<><span className="block">{loading ? "000" : number(data.totalFailedTests)} failed of {loading ? "0,000" : number(data.totalTests)} tested</span><span className="mt-1 block text-xs">{dateLabel}</span></>} icon={<BarChart3 className="size-4" />} tone={!data.totalTests ? "text-muted-foreground" : data.totalFailedTests ? "text-rose-500" : "text-emerald-500"} />
+        <Metric loading={loading} label={chartMode === "recent" ? "Unique inverters" : "Total tests"} value={number(data.totalTests)} detail={<span className="inline-flex items-center gap-1"><CheckCheck className="size-3 text-emerald-500" />{number(data.totalTests - data.totalFailedTests)} passed</span>} icon={<ClipboardList className="size-4" />} />
+        <Metric loading={loading} label={chartMode === "recent" ? "Failed · latest per inverter" : "Failed tests"} value={number(data.totalFailedTests)} detail={chartMode === "recent" ? "Inverters whose latest PASS or FAIL is FAIL" : "Every FAIL in the period. Invalid and retest are left out."} icon={<CircleX className="size-4" />} tone={data.totalFailedTests ? "text-rose-500" : undefined} />
+        <Metric loading={loading} label="Annotated failures" value={number(tagged)} detail={<><span className="block">{coverage === null && !loading ? "No failed tests to annotate" : `${coverage?.toFixed(0) ?? "—"}% annotation coverage · ${number(data.totalFailedTests)} failures`}</span><span className="mt-1 block text-xs">Period total; each failed test counted once.</span>{(loading || data.untaggedFailed > 0) && <Link href={todoHrefFromDashboardRange(range)} className="mt-1 flex items-center gap-1 font-medium text-amber-500 hover:underline">{number(data.untaggedFailed)} untagged · review <ArrowUpRight className="size-3" /></Link>}</>} icon={<Tags className="size-4" />} tone={data.untaggedFailed ? "text-amber-500" : undefined} />
       </div>
 
       <section className="space-y-3" aria-label="Failure trend and test volume">
@@ -261,8 +264,8 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
             {cardHeading("Test volume", chartMode === "recent" ? "Latest outcomes by test date" : "Pass and fail counts by test date")}
             <div className="relative min-h-[280px] flex-1">
               <div className="absolute inset-0">
-                <FailureChartPanel title="Test volume" emptyState={empty("rate", ratePoints.length > 0)} height={280} showTitle={false}>
-                  <ReactECharts option={volumeOption} replaceMerge={["series"]} style={{ height: "100%" }} />
+                <FailureChartPanel title="Test volume" emptyState={loading ? null : empty("rate", ratePoints.length > 0)} height={280} showTitle={false}>
+                  {loading ? <Skeleton className="h-full rounded-none" /> : <ReactECharts option={volumeOption} replaceMerge={["series"]} style={{ height: "100%" }} />}
                 </FailureChartPanel>
               </div>
             </div>
@@ -276,12 +279,12 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
         </SectionLabel>
         <div className="grid gap-3 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
           <Card className="min-w-0 gap-3 overflow-hidden py-0 pb-3 shadow-none">
-            {cardHeading("Failures by group", "Select a group to inspect its categories", <span className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">{groups.length} groups</span>)}
-            <FailureChartPanel title="Failures by group" emptyState={empty("group", groups.length > 0)} height={280} showTitle={false}><CauseRanking rows={groups} percentageMode={percentageMode} selectedGroup={expandedGroup} onGroupSelect={group => onGroupChange(group === expandedGroup ? null : group)} colors={groupColors} /></FailureChartPanel>
+            {cardHeading("Failures by group", "Select a group to inspect its categories", <span className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">{loading ? <Skeleton className="h-4 w-14" /> : `${groups.length} groups`}</span>)}
+            {loading ? <Skeleton className="mx-4 h-48 sm:mx-5" /> : <FailureChartPanel title="Failures by group" emptyState={empty("group", groups.length > 0)} height={280} showTitle={false}><CauseRanking rows={groups} percentageMode={percentageMode} selectedGroup={expandedGroup} onGroupSelect={group => onGroupChange(group === expandedGroup ? null : group)} colors={groupColors} /></FailureChartPanel>}
           </Card>
           <Card className="min-w-0 gap-3 overflow-hidden py-0 pb-3 shadow-none">
-            {cardHeading("Failures by category", expandedGroup ? `Showing ${expandedGroup}` : "All categories · highest count first", <span className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">{categories.length} categories</span>)}
-            <FailureChartPanel title="Failures by category" emptyState={empty("category", categories.length > 0)} height={280} showTitle={false}><CauseRanking rows={categories} percentageMode={percentageMode} colors={categoryColors} /></FailureChartPanel>
+            {cardHeading("Failures by category", expandedGroup ? `Showing ${expandedGroup}` : "All categories · highest count first", <span className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">{loading ? <Skeleton className="h-4 w-20" /> : `${categories.length} categories`}</span>)}
+            {loading ? <Skeleton className="mx-4 h-48 sm:mx-5" /> : <FailureChartPanel title="Failures by category" emptyState={empty("category", categories.length > 0)} height={280} showTitle={false}><CauseRanking rows={categories} percentageMode={percentageMode} colors={categoryColors} /></FailureChartPanel>}
           </Card>
         </div>
         <p className="flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground"><InfoTooltip content="Each count is an annotation on a failed test. One test can carry several, including inside the same group, so the percentages do not have to add up to 100%. Free-text notes are included under Other in the group ranking. The category ranking uses the configured category names." /><span>Causes can overlap. Counts represent annotations; percentages use {percentageMode === "all" ? "all tests" : "failed tests"} as the denominator.</span></p>
@@ -296,4 +299,13 @@ export function FailureAnalyticsContent({ data, range, chartMode, percentageMode
       </section>
     </div>
   );
+}
+
+// Use the live layout so section headings, wrapping and chart heights stay in sync.
+export function FailureAnalyticsSkeleton({ range, chartMode, percentageMode }: {
+  range: DashboardRange; chartMode: string; percentageMode: "all" | "failed";
+}) {
+  return <div aria-label="Loading failure analytics" className="pointer-events-none" inert>
+    <FailureAnalyticsContent loading data={{ totalTests: 0, totalFailedTests: 0, untaggedFailed: 0, testOutcomes: "", groups: [], categories: [], groupTimeline: [], categoryTimeline: [], failureRateTimeline: [] }} range={range} chartMode={chartMode} percentageMode={percentageMode} expandedGroup={null} onGroupChange={() => {}} />
+  </div>;
 }

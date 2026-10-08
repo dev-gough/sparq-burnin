@@ -170,7 +170,12 @@ const station = {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.addInitScript(() => localStorage.setItem("theme", "dark"));
-  await page.route("**/api/**", (r) => {
+  let releaseLoading;
+  let loadingGate;
+  let delayedPath;
+  let heldLoading;
+  let noteHeld;
+  await page.route("**/api/**", async (r) => {
     const u = new URL(r.request().url());
     let body = [];
     if (u.pathname === "/api/auth/session")
@@ -297,8 +302,45 @@ const station = {
       else if (view === "tests") body = u.searchParams.get("cursor") ? [] : tests;
       else body = points;
     }
+    if (loadingGate && (u.pathname === delayedPath || (delayedPath === "/api/test-stats" && u.pathname === "/api/dashboard"))) { noteHeld(); await loadingGate; }
     return r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
   });
+  if (process.env.SKELETON_REVIEW) {
+    const geometry = async () => page.evaluate(() => {
+      const card = [...document.querySelectorAll('[data-slot="card"]')].find(e => e.querySelector('h3')?.textContent === 'Annotation activity' || e.querySelector('h3')?.textContent === 'Failure rate over time');
+      return card ? { top: card.getBoundingClientRect().top, height: card.getBoundingClientRect().height } : null;
+    });
+    for (const width of [320, 412, 1440]) {
+      await page.setViewportSize({ width, height: width >= 768 ? 1000 : 844 });
+      for (const [path, api] of [["/contributors", "/api/contributors"], ["/failure-analytics", "/api/failure-analytics"], ["/", "/api/test-stats"]]) {
+        delayedPath = api;
+        heldLoading = new Promise(resolve => { noteHeld = resolve; });
+        loadingGate = new Promise(resolve => { releaseLoading = resolve; });
+        await page.goto(base + path, { waitUntil: "domcontentloaded" });
+        if (path !== "/") await page.getByLabel(path === "/contributors" ? "Loading contributors" : "Loading failure analytics").waitFor();
+        else await page.locator('.failure-causes-card[data-compact="true"]').waitFor();
+        await heldLoading;
+        await page.waitForTimeout(300);
+        await page.screenshot({ path: `${out}/${width}-${path === "/" ? "dashboard" : path.slice(1)}-loading.png`, fullPage: true });
+        if (path === "/") {
+          await page.locator("#test-table [data-slot=tabs-content] > div").first().scrollIntoViewIfNeeded();
+          await page.screenshot({ path: `${out}/${width}-dashboard-table-loading.png`, fullPage: true });
+        }
+        const before = await geometry();
+        releaseLoading();
+        loadingGate = null;
+        if (path !== "/") await page.getByLabel(path === "/contributors" ? "Loading contributors" : "Loading failure analytics").waitFor({ state: "detached" });
+        await page.waitForTimeout(1500);
+        const after = await geometry();
+        if (before && after) assert(Math.abs(before.top - after.top) <= 1, `${width} ${path}: chart shifted ${after.top - before.top}px`);
+        await page.screenshot({ path: `${out}/${width}-${path === "/" ? "dashboard" : path.slice(1)}-loaded.png`, fullPage: true });
+        console.log(JSON.stringify({ width, path, before, after }));
+      }
+    }
+    assert.deepEqual(errors, []);
+    await browser.close();
+    return;
+  }
   const routes = [
     "/",
     "/contributors",

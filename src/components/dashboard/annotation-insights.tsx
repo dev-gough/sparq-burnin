@@ -297,7 +297,7 @@ export function AnnotationInsights({
   ) : null;
 
   return (
-    <Card className="failure-causes-card @container/card" data-compact={Boolean(data && hasTags)} aria-label="Failure causes">
+    <Card className="failure-causes-card @container/card" data-compact={Boolean((loading && !data) || (data && hasTags))} aria-label="Failure causes">
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 px-6 py-2">
         <CardTitle className="text-sm font-semibold">Failure causes</CardTitle>
         <span className="text-[11px] text-muted-foreground">
@@ -308,8 +308,13 @@ export function AnnotationInsights({
       </CardHeader>
       <CardContent className="px-6 pb-3 pt-0">
         {loading && !data ? (
-          <div className="flex flex-col gap-1.5" aria-hidden>
-            <div className="h-8 w-full animate-pulse rounded-md bg-muted" />
+          <div aria-hidden>
+            <div className="flex h-11 items-center gap-2 md:hidden">
+              <div className="h-11 flex-1 animate-pulse rounded-md bg-muted" />
+              <div className="h-11 flex-1 animate-pulse rounded-md bg-muted" />
+              <div className="size-11 animate-pulse rounded-md bg-muted" />
+            </div>
+            <div className="hidden h-8 w-full animate-pulse rounded-md bg-muted md:block" />
           </div>
         ) : noFailures ? (
           <p className="py-1 text-sm leading-5 text-muted-foreground" role="status">
