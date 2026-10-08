@@ -734,9 +734,10 @@ export default function ContributorsPage() {
                               ?.scrollIntoView({ behavior: "smooth", block: "start" });
                           }}
                           className={cn(
-                            "block w-full space-y-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            selected?.contributor_name === person.contributor_name &&
-                              "border-primary/40 bg-primary/5",
+                            "block w-full space-y-3 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            selected?.contributor_name === person.contributor_name
+                              ? "border-primary/40 bg-primary/5"
+                              : "hover:bg-black/5 dark:hover:bg-black/20",
                           )}
                         >
                           <div>
@@ -801,10 +802,15 @@ export default function ContributorsPage() {
                           {contributors.map((person) => (
                             <tr
                               key={person.contributor_name}
+                              onClick={() => {
+                                setSelectedName(person.contributor_name);
+                                setSelectedGroup(null);
+                              }}
                               className={cn(
-                                "border-t transition-colors hover:bg-muted/30",
-                                selected?.contributor_name ===
-                                  person.contributor_name && "bg-primary/5",
+                                "cursor-pointer border-t transition-colors",
+                                selected?.contributor_name === person.contributor_name
+                                  ? "bg-primary/5"
+                                  : "hover:bg-black/5 dark:hover:bg-black/20",
                               )}
                             >
                               <td className="px-4 py-3">
@@ -814,10 +820,6 @@ export default function ContributorsPage() {
                                     selected?.contributor_name ===
                                     person.contributor_name
                                   }
-                                  onClick={() => {
-                                    setSelectedName(person.contributor_name);
-                                    setSelectedGroup(null);
-                                  }}
                                   className="flex w-full items-center gap-2.5 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                 >
                                   <span
