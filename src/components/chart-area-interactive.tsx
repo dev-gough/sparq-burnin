@@ -114,11 +114,50 @@ export function ChartAreaInteractive({
   );
   const chartRef = React.useRef<ReactECharts>(null);
   const [chartInstance, setChartInstance] = React.useState<EChartsType | null>(null);
-  React.useEffect(() => {
-    if (!chartInstance || chartInstance.isDisposed() || !onDateClick) return;
-    return bindCategoryPlotClick(chartInstance, onDateClick);
-  }, [chartInstance, onDateClick]);
   const isMobile = useIsMobile();
+  React.useEffect(() => {
+    if (!chartInstance || chartInstance.isDisposed() || (!onDateClick && !isMobile)) return;
+    return bindCategoryPlotClick(chartInstance, category => {
+      if (!isMobile) return onDateClick?.(category);
+      const axes = chartInstance.getOption().xAxis as { data?: string[] }[];
+      const dataIndex = axes[0]?.data?.indexOf(category) ?? -1;
+      if (dataIndex >= 0) {
+        chartInstance.setOption({ tooltip: { alwaysShowContent: true, enterable: true } });
+        chartInstance.dispatchAction({ type: "showTip", seriesIndex: 0, dataIndex });
+      }
+    });
+  }, [chartInstance, onDateClick, isMobile]);
+  React.useEffect(() => {
+    if (!chartInstance || chartInstance.isDisposed() || !isMobile) return;
+    const chartDom = chartInstance.getDom();
+    const hide = () => {
+      const action = chartDom.querySelector("[data-chart-tooltip-action]");
+      if (chartInstance.isDisposed() || !action || getComputedStyle(action).visibility === "hidden") return;
+      // ECharts suppresses hideTip while alwaysShowContent or pointer entry is active.
+      chartInstance.setOption({ tooltip: { alwaysShowContent: false, enterable: false } });
+      chartInstance.dispatchAction({ type: "hideTip" });
+    };
+    const click = (event: MouseEvent) => {
+      const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button[data-chart-tooltip-action]") : null;
+      if (!button || !chartDom.contains(button)) return;
+      event.stopPropagation();
+      hide();
+      if (button.dataset.chartTooltipAction === "filter" && button.dataset.date) {
+        const category = decodeURIComponent(button.dataset.date);
+        const axes = chartInstance.getOption().xAxis as { data?: string[] }[];
+        if (axes[0]?.data?.includes(category)) onDateClick?.(category);
+      }
+    };
+    const outside = (event: PointerEvent) => {
+      if (!chartDom.contains(event.target as Node)) hide();
+    };
+    chartDom.addEventListener("click", click);
+    document.addEventListener("pointerdown", outside);
+    return () => {
+      chartDom.removeEventListener("click", click);
+      document.removeEventListener("pointerdown", outside);
+    };
+  }, [chartInstance, isMobile, onDateClick]);
   const chartHeightPx = isMobile ? 360 : 320;
   const { settings } = useSettings();
   const hideEmptyChartDays = settings.hideEmptyChartDays;
@@ -442,6 +481,11 @@ export function ChartAreaInteractive({
       ],
       tooltip: {
         trigger: "axis",
+        triggerOn: isMobile ? "none" : undefined,
+        enterable: isMobile,
+        alwaysShowContent: isMobile,
+        confine: isMobile,
+        hideDelay: isMobile ? 0 : 100,
         // Line (not shadow) — shadow paints a full-width column band that
         // reads as a faint white/gray outline around the day.
         axisPointer: {
@@ -510,12 +554,14 @@ export function ChartAreaInteractive({
 
           // O21: drill affordance in tooltip
           const drillHint = onDateClick
-            ? `<div style="margin-top:8px; font-size:11px; opacity:0.75;">Click to filter table to ${heading}</div>`
+            ? isMobile
+              ? `<button type="button" data-chart-tooltip-action="filter" data-date="${encodeURIComponent(dateValue)}" style="display:block;width:100%;min-height:44px;margin-top:10px;padding:8px 12px;border:0;border-radius:8px;background:var(--primary);color:var(--primary-foreground);font:inherit;font-weight:600;cursor:pointer;">Filter this ${bucket}</button>`
+              : `<div style="margin-top:8px; font-size:11px; opacity:0.75;">Click to filter table to ${heading}</div>`
             : "";
 
           return (
-            `<div style="min-width: 170px;">` +
-            `<div style="font-weight:700; margin-bottom:6px;">${heading}</div>` +
+            `<div style="min-width:${isMobile ? 190 : 170}px;${isMobile ? "white-space:normal;" : ""}">` +
+            `<div style="display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:6px;"><span style="flex:1;">${heading}</span>${isMobile ? '<button type="button" data-chart-tooltip-action="close" aria-label="Close chart details" style="width:44px;height:44px;border:0;border-radius:8px;background:var(--muted);color:var(--foreground);font-size:22px;cursor:pointer;">×</button>' : ""}</div>` +
             row(dot(colors.passed.base), "Passed", String(passed)) +
             row(dot(colors.failed.base), "Failed", String(failed)) +
             `<div style="border-top:1px solid ${isDarkMode ? "rgba(148,163,184,0.25)" : "rgba(100,116,139,0.2)"}; margin:6px 0;"></div>` +
@@ -566,13 +612,13 @@ export function ChartAreaInteractive({
         if (
           params.componentType === "xAxis" &&
           params.name &&
-          onDateClick
+          onDateClick && !isMobile
         ) {
           onDateClick(params.name);
         }
       },
     }),
-    [onDateClick],
+    [onDateClick, isMobile],
   );
 
   // One short subtitle (O5); methodology lives in header help + Fails badge tooltip.
@@ -643,7 +689,7 @@ export function ChartAreaInteractive({
             {/* Mobile: wrap instead of mid-word truncate (O12) */}
             <CardDescription className="text-pretty sm:truncate">
               {subtitle}
-              {onDateClick ? " · click anywhere in the plot to filter the table" : ""}
+              {onDateClick ? isMobile ? " · tap the plot for details and filtering" : " · click anywhere in the plot to filter the table" : ""}
             </CardDescription>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">

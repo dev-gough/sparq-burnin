@@ -310,6 +310,103 @@ const station = {
     if (loadingGate && (u.pathname === delayedPath || (delayedPath === "/api/test-stats" && u.pathname === "/api/dashboard"))) { noteHeld(); await loadingGate; }
     return r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
   });
+  if (process.env.CHART_TOOLTIP_REVIEW) {
+    await page.addInitScript(() => {
+      localStorage.removeItem("burnin-dashboard-prefs");
+      document.cookie = "burnin-data-table-filters=; Max-Age=0; path=/";
+    });
+    const touch = await page.context().newCDPSession(page);
+    const tap = async (x, y) => {
+      await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+      await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    };
+    for (const width of [320, 412, 1440]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.context().clearCookies();
+      await page.goto(`${base}/`, { waitUntil: "domcontentloaded" });
+      const card = page.locator('[data-slot="card"]').filter({ has: page.getByText("Test volume", { exact: true }) });
+      const chart = card.locator(".echarts-for-react");
+      await chart.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(500);
+      assert.equal(await page.getByText(/Filtered to \d{4}-\d{2}-\d{2}/).count(), 0);
+      const box = await chart.boundingBox();
+      const before = page.url();
+      if (width >= 768) {
+        await page.mouse.click(box.x + box.width / 2, box.y + 100);
+        await page.getByText(/Filtered to \d{4}-\d{2}-\d{2}/).first().waitFor();
+        assert.equal(await page.locator('button[data-chart-tooltip-action="filter"]').count(), 0);
+        continue;
+      }
+      await tap(box.x + box.width / 2, box.y + 100);
+      const filter = page.getByRole("button", { name: "Filter this day", exact: true });
+      await filter.waitFor();
+      const first = await filter.getAttribute("data-date");
+      await page.waitForTimeout(800);
+      assert(await filter.isVisible(), "Tooltip must remain after lifting the finger");
+      assert.equal(page.url(), before, "Inspection must not change filters");
+      assert.equal(await page.getByText(/Filtered to \d{4}-\d{2}-\d{2}/).count(), 0);
+      const tooltipBox = await filter.evaluate(button => {
+        const rect = button.parentElement.parentElement.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+      });
+      const candidates = [40, 100, 250, 320].flatMap(y => [45, box.width - 45].map(x => ({ x: box.x + x, y: box.y + y })));
+      const nextPoint = candidates.find(point => point.x < tooltipBox.left || point.x > tooltipBox.right || point.y < tooltipBox.top || point.y > tooltipBox.bottom);
+      assert(nextPoint, "There must be exposed plot space for selecting another point");
+      await tap(nextPoint.x, nextPoint.y);
+      await page.waitForTimeout(300);
+      const selected = await filter.getAttribute("data-date");
+      assert.notEqual(selected, first, "Tapping another point updates the inspected date");
+      const fit = await filter.evaluate(button => {
+        const tooltip = button.parentElement.parentElement.getBoundingClientRect();
+        const chart = button.closest('.echarts-for-react').getBoundingClientRect();
+        return { width: tooltip.width, height: tooltip.height, left: tooltip.left, right: tooltip.right, chartLeft: chart.left, chartRight: chart.right, buttonHeight: button.getBoundingClientRect().height };
+      });
+      assert(fit.left >= fit.chartLeft - 1 && fit.right <= fit.chartRight + 1 && fit.buttonHeight >= 44 && fit.height < 300, JSON.stringify(fit));
+      await page.screenshot({ path: `${out}/chart-tooltip-${width}.png` });
+      const closeButton = await page.getByRole("button", { name: "Close chart details" }).boundingBox();
+      await tap(closeButton.x + closeButton.width / 2, closeButton.y + closeButton.height / 2);
+      await filter.waitFor({ state: "hidden" });
+      assert.equal(page.url(), before, "Closing details must not filter");
+      await page.waitForTimeout(400);
+      await tap(box.x + box.width / 2, box.y + 100);
+      await filter.waitFor();
+      const date = decodeURIComponent(await filter.getAttribute("data-date"));
+      const button = await filter.boundingBox();
+      await tap(button.x + button.width / 2, button.y + button.height / 2);
+      await page.getByText(`Filtered to ${date}`, { exact: false }).first().waitFor();
+      await filter.waitFor({ state: "hidden" });
+    }
+    for (const bucket of ["week", "month"]) {
+      await page.setViewportSize({ width: 320, height: 844 });
+      await page.context().clearCookies();
+      await page.goto(`${base}/`, { waitUntil: "domcontentloaded" });
+      const card = page.locator('[data-slot="card"]').filter({ has: page.getByText("Test volume", { exact: true }) });
+      await card.getByRole("radio", { name: bucket === "week" ? "Week" : "Month", exact: true }).click();
+      const chart = card.locator(".echarts-for-react");
+      await chart.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(700);
+      const box = await chart.boundingBox();
+      await tap(box.x + box.width / 2, box.y + 100);
+      const filter = page.getByRole("button", { name: `Filter this ${bucket}`, exact: true });
+      await filter.waitFor();
+      const from = decodeURIComponent(await filter.getAttribute("data-date"));
+      const end = new Date(`${from}T00:00:00Z`);
+      if (bucket === "week") end.setUTCDate(end.getUTCDate() + 6);
+      else { end.setUTCMonth(end.getUTCMonth() + 1, 0); }
+      const to = end.toISOString().slice(0, 10);
+      const button = await filter.boundingBox();
+      await tap(button.x + button.width / 2, button.y + button.height / 2);
+      await page.waitForFunction(({ from, to }) => {
+        const prefs = JSON.parse(localStorage.getItem("burnin-dashboard-prefs") || "{}");
+        return prefs.dateFromFilter === from && prefs.dateToFilter === to;
+      }, { from, to });
+      await filter.waitFor({ state: "hidden" });
+    }
+    if (errors.length) throw new Error(errors.join("\n"));
+    console.log("Persistent mobile tooltip, deliberate touch filtering, dismissal and desktop clicks passed");
+    await browser.close();
+    return;
+  }
   if (process.env.CHART_CONTROLS_REVIEW) {
     for (const width of [320, 412, 1440]) {
       await page.setViewportSize({ width, height: 844 });
