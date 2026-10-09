@@ -117,15 +117,22 @@ export function ChartAreaInteractive({
   const isMobile = useIsMobile();
   React.useEffect(() => {
     if (!chartInstance || chartInstance.isDisposed() || (!onDateClick && !isMobile)) return;
-    return bindCategoryPlotClick(chartInstance, category => {
-      if (!isMobile) return onDateClick?.(category);
-      const axes = chartInstance.getOption().xAxis as { data?: string[] }[];
+    const inspect = (category: string) => {
+      const option = chartInstance.getOption();
+      const axes = option.xAxis as { data?: string[] }[];
       const dataIndex = axes[0]?.data?.indexOf(category) ?? -1;
       if (dataIndex >= 0) {
-        chartInstance.setOption({ tooltip: { alwaysShowContent: true, enterable: true } });
+        const tooltip = option.tooltip as { alwaysShowContent?: boolean; enterable?: boolean }[];
+        if (!tooltip[0]?.alwaysShowContent || !tooltip[0]?.enterable) {
+          chartInstance.setOption({ tooltip: { alwaysShowContent: true, enterable: true } });
+        }
         chartInstance.dispatchAction({ type: "showTip", seriesIndex: 0, dataIndex });
       }
-    });
+    };
+    return bindCategoryPlotClick(chartInstance,
+      isMobile ? inspect : category => onDateClick?.(category),
+      isMobile ? inspect : undefined,
+    );
   }, [chartInstance, onDateClick, isMobile]);
   React.useEffect(() => {
     if (!chartInstance || chartInstance.isDisposed() || !isMobile) return;
@@ -481,7 +488,7 @@ export function ChartAreaInteractive({
       ],
       tooltip: {
         trigger: "axis",
-        triggerOn: isMobile ? "none" : undefined,
+        triggerOn: isMobile ? "none" : "mousemove|click|mousewheel",
         enterable: isMobile,
         alwaysShowContent: isMobile,
         confine: isMobile,
@@ -689,7 +696,7 @@ export function ChartAreaInteractive({
             {/* Mobile: wrap instead of mid-word truncate (O12) */}
             <CardDescription className="text-pretty sm:truncate">
               {subtitle}
-              {onDateClick ? isMobile ? " · tap the plot for details and filtering" : " · click anywhere in the plot to filter the table" : ""}
+              {onDateClick ? isMobile ? " · tap or drag for details and filtering" : " · click anywhere in the plot to filter the table" : ""}
             </CardDescription>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">

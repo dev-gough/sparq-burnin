@@ -332,14 +332,31 @@ const station = {
       const box = await chart.boundingBox();
       const before = page.url();
       if (width >= 768) {
+        await page.mouse.move(box.x + box.width / 2, box.y + 100);
+        await card.getByText("Total tests", { exact: true }).waitFor();
+        assert.equal(await page.getByText(/Filtered to \d{4}-\d{2}-\d{2}/).count(), 0, "Desktop hover must inspect without filtering");
         await page.mouse.click(box.x + box.width / 2, box.y + 100);
         await page.getByText(/Filtered to \d{4}-\d{2}-\d{2}/).first().waitFor();
         assert.equal(await page.locator('button[data-chart-tooltip-action="filter"]').count(), 0);
         continue;
       }
-      await tap(box.x + box.width / 2, box.y + 100);
       const filter = page.getByRole("button", { name: "Filter this day", exact: true });
+      await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + 45, y: box.y + 40 }] });
+      await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: box.x + 60, y: box.y + 40 }] });
       await filter.waitFor();
+      const dragStart = await filter.getAttribute("data-date");
+      const scrollBeforeDrag = await page.locator(".dashboard-home").evaluate(el => el.scrollTop);
+      for (let step = 1; step <= 8; step++) {
+        const x = box.x + 45 + (box.width - 90) * step / 8;
+        await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: box.y + 40 }] });
+        await page.waitForTimeout(40);
+      }
+      const dragEnd = await filter.getAttribute("data-date");
+      assert.notEqual(dragEnd, dragStart, "Dragging must inspect different dates before lifting the finger");
+      await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await filter.waitFor();
+      assert.equal(await filter.getAttribute("data-date"), dragEnd, "Finger lift must retain the last inspected date");
+      assert.equal(await page.locator(".dashboard-home").evaluate(el => el.scrollTop), scrollBeforeDrag, "Horizontal chart dragging must not scroll the page");
       const first = await filter.getAttribute("data-date");
       await page.waitForTimeout(800);
       assert(await filter.isVisible(), "Tooltip must remain after lifting the finger");

@@ -3,22 +3,40 @@ import type { EChartsType } from "echarts";
 import { bindCategoryPlotClick } from "@/lib/chart-plot-click";
 
 function fixture() {
-  let click: ((event: { offsetX: number; offsetY: number }) => void) | undefined;
+  const handlers = new Map<string, (event: { offsetX: number; offsetY: number }) => void>();
   const renderer = {
-    on: vi.fn((_name, handler) => { click = handler; }),
-    off: vi.fn((_name, handler) => { if (click === handler) click = undefined; }),
+    on: vi.fn((name, handler) => { handlers.set(name, handler); }),
+    off: vi.fn((name, handler) => { if (handlers.get(name) === handler) handlers.delete(name); }),
   };
   const option = { xAxis: [{ data: ["2026-09-24", "2026-09-25", "2026-09-26"] }] };
   const chart = {
+    getDom: () => ({ addEventListener: vi.fn(), removeEventListener: vi.fn() }),
     getZr: () => renderer,
     containPixel: vi.fn((_finder, [x, y]) => x >= 10 && x <= 310 && y >= 20 && y <= 220),
     convertFromPixel: vi.fn((_finder, x: number) => Math.floor((x - 10) / 100)),
     getOption: () => option,
   };
-  return { chart: chart as unknown as EChartsType, renderer, option, emit: (x: number, y: number) => click?.({ offsetX: x, offsetY: y }) };
+  return { chart: chart as unknown as EChartsType, renderer, option, emit: (x: number, y: number, type = "click") => handlers.get(type)?.({ offsetX: x, offsetY: y }) };
 }
 
 describe("category plot click", () => {
+  it("inspects moving across painted categories separately from clicking and cleans up both listeners", () => {
+    const f = fixture();
+    const select = vi.fn(), inspect = vi.fn();
+    const cleanup = bindCategoryPlotClick(f.chart, select, inspect);
+    f.emit(60, 100, "mousemove");
+    f.emit(160, 100, "mousemove");
+    f.emit(160, 0, "mousemove");
+    expect(inspect.mock.calls).toEqual([["2026-09-24"], ["2026-09-25"]]);
+    expect(select).not.toHaveBeenCalled();
+    f.emit(160, 100);
+    expect(select).toHaveBeenCalledWith("2026-09-25");
+    cleanup();
+    f.emit(260, 100, "mousemove");
+    f.emit(260, 100);
+    expect(inspect).toHaveBeenCalledTimes(2);
+    expect(select).toHaveBeenCalledTimes(1);
+  });
   it("selects the same day above, below, or on a series using only horizontal position", () => {
     const f = fixture();
     const select = vi.fn();
