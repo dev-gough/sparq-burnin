@@ -59,6 +59,11 @@ const analytics = {
     failureRate: (p.failed / (p.passed + p.failed)) * 100,
   })),
 };
+if (process.env.CHART_CONTROLS_REVIEW) {
+  analytics.categories = Array.from({ length: 24 }, (_, index) => ({
+    ...categories[index % categories.length], name: `Cause ${index + 1}`,
+  }));
+}
 const names = ["alex.chen@sparqsys.com", "sam.patel@sparqsys.com", "jordan.lee@sparqsys.com"];
 const people = names.map((name, i) => ({
   contributor_name: name,
@@ -305,6 +310,55 @@ const station = {
     if (loadingGate && (u.pathname === delayedPath || (delayedPath === "/api/test-stats" && u.pathname === "/api/dashboard"))) { noteHeld(); await loadingGate; }
     return r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
   });
+  if (process.env.CHART_CONTROLS_REVIEW) {
+    for (const width of [320, 412, 1440]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(`${base}/`, { waitUntil: "networkidle" });
+      const controls = page.locator(".failure-rate-controls");
+      await controls.getByRole("radio", { name: "By test count", exact: true }).click();
+      const windowSelect = controls.getByRole("combobox", { name: "Rolling test window" });
+      await windowSelect.click();
+      await page.getByRole("option", { name: "250 tests", exact: true }).click();
+      await page.getByRole("listbox").waitFor({ state: "hidden" });
+      await windowSelect.click();
+      await page.getByRole("option", { name: "1,000 tests", exact: true }).click();
+      await page.getByRole("listbox").waitFor({ state: "hidden" });
+      if (width < 768) {
+        const bounds = await controls.evaluate(el => {
+          const toggle = el.querySelector('[data-slot="toggle-group"]').getBoundingClientRect();
+          const select = el.querySelector('[data-slot="select-trigger"]').getBoundingClientRect();
+          const card = el.closest('[data-slot="card"]').getBoundingClientRect();
+          return { gap: select.left - toggle.right, topDifference: Math.abs(select.top - toggle.top), selectRight: select.right, cardRight: card.right, height: select.height, translate: getComputedStyle(el.querySelector('.failure-rate-window')).translate, position: getComputedStyle(el.querySelector('.failure-rate-window')).position, display: getComputedStyle(el).display };
+        });
+        assert(bounds.gap >= 7 && bounds.topDifference < 1 && bounds.selectRight < bounds.cardRight && bounds.height >= 44, JSON.stringify(bounds));
+      }
+      await controls.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${out}/failure-rate-controls-${width}.png` });
+      if (width >= 768) continue;
+      await page.goto(`${base}/failure-analytics`, { waitUntil: "networkidle" });
+      const card = page.locator('[data-slot="card"]').filter({ has: page.getByRole("heading", { name: "Failures by category", exact: true }) });
+      const ranking = card.locator('div.max-h-\\[400px\\]');
+      await ranking.scrollIntoViewIfNeeded();
+      const point = await ranking.boundingBox();
+      await page.mouse.move(point.x + point.width / 2, point.y + 120);
+      await page.mouse.wheel(0, 240);
+      await page.waitForTimeout(300);
+      assert(await ranking.evaluate(el => el.scrollTop > 0), "Category list must scroll internally");
+      await ranking.evaluate(el => { el.scrollTop = 0; });
+      const before = await page.locator(".failure-analytics-home").evaluate(el => el.scrollTop);
+      assert(before > 0, "Page must start below its top");
+      await page.mouse.wheel(0, -180);
+      await page.waitForTimeout(400);
+      const after = await page.locator(".failure-analytics-home").evaluate(el => el.scrollTop);
+      assert(after < before, `Category scroll must chain to the page: ${before} -> ${after}`);
+      assert.equal(await ranking.evaluate(el => getComputedStyle(el).overscrollBehaviorY), "auto");
+      await page.screenshot({ path: `${out}/category-scroll-${width}.png` });
+    }
+    if (errors.length) throw new Error(errors.join("\n"));
+    console.log("Chart controls and category scroll chaining passed at phone and desktop widths");
+    await browser.close();
+    return;
+  }
   if (process.env.SIDEBAR_REVIEW) {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(`${base}/`, { waitUntil: "networkidle" });

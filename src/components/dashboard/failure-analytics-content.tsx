@@ -94,7 +94,7 @@ function CauseRanking({ rows, percentageMode, selectedGroup, onGroupSelect, colo
 }) {
   const maximum = Math.max(1, ...rows.map(row => row.count));
   return (
-    <div className="max-h-[400px] overflow-y-auto overscroll-contain px-4 pb-2 sm:px-5">
+    <div className="max-h-[400px] overflow-y-auto px-4 pb-2 sm:px-5">
       <div className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_4rem_5rem] gap-3 bg-card pb-3 pt-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
         <span>{onGroupSelect ? "Group" : "Category"}</span><span className="text-right">Count</span><span className="text-right">{percentageMode === "all" ? "% of all" : "% of failed"}</span>
       </div>

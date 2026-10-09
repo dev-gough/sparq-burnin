@@ -236,6 +236,36 @@
     padding-inline: 0.5rem;
   }
   [data-slot="card"] { min-width: 0; }
+  .failure-rate-strip-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .failure-rate-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-width: 0;
+    padding-bottom: 0;
+  }
+  .failure-rate-controls [data-slot="toggle-group"] {
+    flex: 1;
+    min-width: 0;
+  }
+  .failure-rate-controls [data-slot="toggle-group-item"] {
+    flex: 1;
+    min-width: 0;
+    padding-inline: 0.375rem;
+  }
+  .failure-rate-controls .failure-rate-window {
+    position: static;
+    flex: 0 0 6.75rem;
+    margin-left: 0;
+  }
+  .failure-rate-window [data-slot="select-trigger"] {
+    width: 100%;
+    gap: 0.25rem;
+    padding-inline: 0.5rem;
+  }
   [data-slot="card-header"], [data-slot="card-content"], [data-slot="card-footer"] {
     padding-inline: 1rem;
   }
