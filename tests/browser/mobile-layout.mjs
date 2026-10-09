@@ -305,6 +305,70 @@ const station = {
     if (loadingGate && (u.pathname === delayedPath || (delayedPath === "/api/test-stats" && u.pathname === "/api/dashboard"))) { noteHeld(); await loadingGate; }
     return r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
   });
+  if (process.env.SIDEBAR_REVIEW) {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(`${base}/`, { waitUntil: "networkidle" });
+    const sidebar = page.locator("#hover-sidebar");
+    const expectWidth = async (expanded) => {
+      await page.waitForFunction(({ expanded }) => {
+        const width = document.querySelector("#hover-sidebar").getBoundingClientRect().width;
+        return expanded ? width > 250 : width < 45;
+      }, { expanded }, { timeout: 3000 });
+    };
+    const enter = async () => { await page.mouse.move(15, 200); await expectWidth(true); };
+    const leave = async () => { await page.mouse.move(700, 200); await expectWidth(false); };
+    for (const theme of ["Light mode", "Dark mode", "System theme"]) {
+      await enter();
+      await sidebar.getByTitle(theme, { exact: true }).click();
+      await leave();
+    }
+    await enter();
+    await sidebar.getByTitle("Light mode", { exact: true }).hover();
+    await leave();
+    await enter();
+    await sidebar.getByRole("combobox").click();
+    await page.mouse.move(700, 200);
+    await page.waitForTimeout(650);
+    await expectWidth(true);
+    await page.getByRole("option").last().click();
+    await expectWidth(false);
+    await enter();
+    await sidebar.getByRole("combobox").click();
+    await page.mouse.move(700, 200);
+    await page.keyboard.press("Escape");
+    await expectWidth(false);
+    await enter();
+    await sidebar.getByRole("combobox").click();
+    await page.mouse.move(700, 200);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expectWidth(false);
+    await enter();
+    await page.mouse.move(700, 200);
+    await page.mouse.move(15, 200);
+    await page.waitForTimeout(400);
+    await expectWidth(true);
+    await leave();
+    await page.evaluate(() => localStorage.setItem("burnin-user-settings", JSON.stringify({ sidebarTrigger: "click" })));
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await sidebar.click({ position: { x: 15, y: 200 } });
+    await expectWidth(true);
+    await sidebar.getByTitle("Dark mode", { exact: true }).click();
+    await page.mouse.move(700, 200);
+    await page.waitForTimeout(400);
+    await expectWidth(true);
+    await sidebar.getByRole("combobox").click();
+    await page.getByRole("option").first().click();
+    await expectWidth(true);
+    await page.screenshot({ path: `${out}/sidebar-click-mode.png` });
+    await sidebar.getByRole("combobox").click();
+    await page.mouse.click(700, 200);
+    await expectWidth(false);
+    if (errors.length) throw new Error(errors.join("\n"));
+    console.log("Sidebar hover/button/dropdown and click-mode regression checks passed");
+    await browser.close();
+    return;
+  }
   if (process.env.SKELETON_REVIEW) {
     const geometry = async () => page.evaluate(() => {
       const card = [...document.querySelectorAll('[data-slot="card"]')].find(e => e.querySelector('h3')?.textContent === 'Annotation activity' || e.querySelector('h3')?.textContent === 'Failure rate over time');

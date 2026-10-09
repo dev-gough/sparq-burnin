@@ -22,7 +22,7 @@ export function HoverSidebar() {
   const isMobile = useIsMobile();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
-  const [isInteracting, setIsInteracting] = useState(false);
+  const timezoneOpenRef = useRef(false);
   const [todoCount, setTodoCount] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
   const [isStationAdmin, setIsStationAdmin] = useState(false);
@@ -43,6 +43,11 @@ export function HoverSidebar() {
   ];
 
   useEffect(() => {
+    timezoneOpenRef.current = false;
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
     setMobileOpen(false);
     setIsOpen(false);
   }, [pathname, isMobile]);
@@ -89,9 +94,11 @@ export function HoverSidebar() {
     };
   }, [session?.user?.email, sessionStatus]);
 
-  const handleMouseEnter = () => {
+  const handleMouseEnter = (event: React.MouseEvent<HTMLDivElement>) => {
     // Only open on hover if the setting is "hover"
     if (settings.sidebarTrigger !== "hover") return;
+    // Select content is portaled outside the sidebar, but its React events bubble here.
+    if (!event.currentTarget.contains(event.target as Node)) return;
 
     if (closeTimeoutRef.current) {
       clearTimeout(closeTimeoutRef.current);
@@ -100,16 +107,19 @@ export function HoverSidebar() {
     setIsOpen(true);
   };
 
-  const handleMouseLeave = () => {
+  const closeIfOutside = () => {
     // Only close on mouse leave if the setting is "hover"
     if (settings.sidebarTrigger !== "hover") return;
 
-    // Don't close if user is interacting with a dropdown or button
-    if (isInteracting) return;
+    if (timezoneOpenRef.current || document.getElementById("hover-sidebar")?.matches(":hover")) return;
 
     // Add a small delay before closing
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
     closeTimeoutRef.current = setTimeout(() => {
-      setIsOpen(false);
+      closeTimeoutRef.current = null;
+      if (!timezoneOpenRef.current && !document.getElementById("hover-sidebar")?.matches(":hover")) {
+        setIsOpen(false);
+      }
     }, 50);
   };
 
@@ -119,19 +129,14 @@ export function HoverSidebar() {
     setIsOpen(!isOpen);
   };
 
-  const handleInteractionStart = () => {
-    setIsInteracting(true);
-    if (closeTimeoutRef.current) {
+  const handleTimezoneOpenChange = (open: boolean) => {
+    timezoneOpenRef.current = open;
+    if (open && closeTimeoutRef.current) {
       clearTimeout(closeTimeoutRef.current);
       closeTimeoutRef.current = null;
     }
-  };
-
-  const handleInteractionEnd = () => {
-    // Add delay before ending interaction to allow for dropdown clicks
-    setTimeout(() => {
-      setIsInteracting(false);
-    }, 500);
+    // A menu can finish after the pointer has already left the sidebar.
+    if (!open) closeIfOutside();
   };
 
   // Cleanup timeout on unmount
@@ -149,7 +154,9 @@ export function HoverSidebar() {
 
     const handleClickOutside = (event: MouseEvent) => {
       const sidebar = document.getElementById("hover-sidebar");
-      if (sidebar && !sidebar.contains(event.target as Node)) {
+      const inTimezoneMenu = timezoneOpenRef.current && event.target instanceof Element &&
+        event.target.closest('[data-slot="select-content"]');
+      if (sidebar && !sidebar.contains(event.target as Node) && !inTimezoneMenu) {
         setIsOpen(false);
       }
     };
@@ -223,12 +230,7 @@ export function HoverSidebar() {
       </div>
 
       {/* Bottom section - Theme, Timezone & Auth */}
-      <div
-        className="space-y-2 pt-4 border-t"
-        onMouseEnter={handleInteractionStart}
-        onMouseLeave={handleInteractionEnd}
-        onClick={handleInteractionStart}
-      >
+      <div className="space-y-2 pt-4 border-t">
         {/* Theme Toggle */}
         {mounted && (
           <div className="space-y-1">
@@ -266,7 +268,7 @@ export function HoverSidebar() {
             </div>
           </div>
         )}
-        <TimezoneSelector />
+        <TimezoneSelector onOpenChange={handleTimezoneOpenChange} />
         {session?.user ? (
           <Button
             variant="ghost"
@@ -369,7 +371,7 @@ export function HoverSidebar() {
       id="hover-sidebar"
       className="hidden md:block fixed left-0 top-0 h-screen z-50 transition-all duration-300 ease-in-out"
       onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      onMouseLeave={closeIfOutside}
     >
       {/* Collapsed state - thin bar */}
       <div

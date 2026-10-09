@@ -5,12 +5,12 @@ import { useTimezone, timezoneOptions } from "@/contexts/TimezoneContext"
 import { Clock } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-export function TimezoneSelector({ compact = false, iconOnly = false }: { compact?: boolean; iconOnly?: boolean }) {
+export function TimezoneSelector({ compact = false, iconOnly = false, onOpenChange }: { compact?: boolean; iconOnly?: boolean; onOpenChange?: (open: boolean) => void }) {
   const { selectedTimezone, setTimezone } = useTimezone()
   const selectedLabel = timezoneOptions.find(tz => tz.value === selectedTimezone)?.label
 
   return (
-    <Select value={selectedTimezone} onValueChange={setTimezone}>
+    <Select value={selectedTimezone} onValueChange={setTimezone} onOpenChange={onOpenChange}>
       <SelectTrigger
         className={cn("[&>svg]:hidden", iconOnly ? "timezone-icon justify-center rounded-full border-0 bg-transparent p-0 shadow-none dark:bg-transparent" : "w-48")}
         aria-label={iconOnly ? `Display timezone: ${selectedLabel}` : undefined}
