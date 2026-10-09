@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HeaderPeriodControls, HEADER_BAR_CLASS, HEADER_TITLE_CLASS } from "@/components/dashboard/header-controls";
-import { appendDashboardRangeParams, tableDatesForPill, type DashboardRange } from "@/lib/dashboard-range";
+import { appendDashboardRangeParams, tableDatesForPill, dashboardRangeLabel, type DashboardRange } from "@/lib/dashboard-range";
 import { loadDashboardPrefs, resolveDashboardInitState } from "@/lib/dashboard-prefs";
 import { yieldPercent, type YieldData, type YieldScope } from "@/lib/yield-retest";
 import { useTimezone } from "@/contexts/TimezoneContext";
@@ -27,7 +27,8 @@ const scopes: { value: YieldScope; label: string }[] = [
 export default function YieldRetestPage() {
   const [range, setRange] = useState<DashboardRange>({ kind: "30d" });
   const [ready, setReady] = useState(false);
-  const [data, setData] = useState<YieldData | null>(null);
+  const [snapshot, setSnapshot] = useState<{ data: YieldData; range: DashboardRange; listKey: string } | null>(null);
+  const data = snapshot?.data ?? null;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -36,6 +37,12 @@ export default function YieldRetestPage() {
   const [search, setSearch] = useState("");
   const [serial, setSerial] = useState("");
   const { formatInTimezone } = useTimezone();
+  const rangeKey = JSON.stringify(range);
+  const listKey = JSON.stringify({ scope, page, serial });
+  const periodChanged = snapshot !== null && JSON.stringify(snapshot.range) !== rangeKey;
+  const listChanged = snapshot !== null && snapshot.listKey !== listKey;
+  const updating = loading || (!error && (periodChanged || listChanged));
+  const paginationBlocked = updating || periodChanged || listChanged;
   useEffect(() => {
     setRange(resolveDashboardInitState(loadDashboardPrefs()).dashboardRange);
     setReady(true);
@@ -55,12 +62,12 @@ export default function YieldRetestPage() {
       .then(async response => {
         if (!response.ok) throw new Error("Unable to load yield data");
         const result: YieldData = await response.json();
-        if (!controller.signal.aborted) setData(result);
+        if (!controller.signal.aborted) setSnapshot({ data: result, range, listKey });
       })
       .catch(() => { if (!controller.signal.aborted) setError(true); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [range, ready, scope, page, serial, retry]);
+  }, [range, ready, scope, page, serial, retry, listKey]);
   const changeRange = (next: DashboardRange) => { setRange(next); setPage(1); };
   const changeScope = (next: YieldScope) => { setScope(next); setPage(1); };
   const dates = range.kind === "custom" ? range : tableDatesForPill(range.kind);
@@ -76,20 +83,21 @@ export default function YieldRetestPage() {
             onCustomRange={(from, to) => changeRange({ kind: "custom", from, to })} />
         </div>
       </header>
-      <main className="flex-1 overflow-y-auto" aria-busy={loading}>
-        <div className="mx-auto w-full max-w-[1600px] space-y-5 p-4 lg:space-y-6 lg:p-6">
+      <main className="flex-1 overflow-y-auto" aria-busy={loading && (!data || periodChanged)}>
+        <div className="yield-content mx-auto w-full space-y-5 p-4 lg:space-y-6 lg:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><h2 className="text-xl font-semibold tracking-tight sm:text-2xl">What does it take to get a unit through burn-in?</h2>
               <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">Units are grouped by their first recorded attempt in the selected UTC period. Follow-up results include all later recorded runs, through the latest data.</p></div>
             <Button variant="outline" size="sm" disabled={loading} onClick={() => setRetry(n => n + 1)}>Refresh</Button>
           </div>
           {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
-            <p>Couldn’t load this view. {data ? "The previous results are hidden to avoid mixing periods." : "Please try again."}</p>
+            <p>Couldn’t {data ? "update" : "load"} this view. {snapshot ? `Showing the last loaded results for ${dashboardRangeLabel(snapshot.range)}${listChanged ? ", with the previous unit list" : ""}.` : "Please try again."}</p>
             <Button variant="outline" onClick={() => setRetry(n => n + 1)}>Try again</Button>
           </div>}
-          {loading ? <div role="status" aria-label="Loading yield and retest" className="space-y-5"><div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[0, 1, 2, 3].map(n => <Skeleton key={n} className="h-40 rounded-xl" />)}</div><Skeleton className="h-64 rounded-xl" /><Skeleton className="h-80 rounded-xl" /></div>
-            : !error && data && summary ? <>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {!data && loading ? <div role="status" aria-label="Loading yield and retest" className="space-y-5"><div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[0, 1, 2, 3].map(n => <Skeleton key={n} className="h-40 rounded-xl" />)}</div><Skeleton className="h-64 rounded-xl" /><Skeleton className="h-80 rounded-xl" /></div>
+            : data && summary ? <>
+              {snapshot && periodChanged && !error && <p role="status" className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">Updating the period… Showing {dashboardRangeLabel(snapshot.range)} until the new results arrive.</p>}
+              <div data-yield-overview className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <Metric icon={<Target className="size-4" />} label="First-pass yield" value={yieldPercent(summary.firstPass, summary.units)} detail={`${number(summary.firstPass)} of ${number(summary.units)} units passed their first recorded attempt`} />
                 <Metric icon={<CheckCheck className="size-4" />} label="Latest-result yield" value={yieldPercent(summary.latestPass, summary.units)} detail={`${number(summary.recovered)} units passed after a first attempt that did not pass`} />
                 <Metric icon={<RotateCcw className="size-4" />} label="Units tested again" value={yieldPercent(summary.repeated, summary.units)} detail={`${number(summary.repeated)} units · ${number(summary.repeatRuns)} extra runs`} />
@@ -122,13 +130,14 @@ export default function YieldRetestPage() {
                     </div>)}</div>
                   </section>
                 </div>
-                <section className="overflow-hidden rounded-xl border bg-card">
+                <section data-yield-units className="overflow-hidden rounded-xl border bg-card" aria-busy={updating}>
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4 sm:p-5">
                     <div><h3 className="font-semibold">Follow the unit</h3><p className="mt-1 text-xs text-muted-foreground">Largest repeat-test hours first. Expand a unit to open its recorded runs.</p></div>
                     <label className="sr-only" htmlFor="yield-serial">Search serial number</label><Input id="yield-serial" placeholder="Search serial number…" className="w-full sm:w-60" value={search} onChange={event => setSearch(event.target.value)} />
                     <div className="flex w-full flex-wrap gap-1" aria-label="Unit filter">{scopes.map(item => <Button key={item.value} variant={scope === item.value ? "default" : "ghost"} size="sm" aria-pressed={scope === item.value} onClick={() => changeScope(item.value)}>{item.label}</Button>)}</div>
                   </div>
-                  <div className="divide-y">{data.units.map(unit => <details key={unit.serial} className="group">
+                  <div role="status" aria-live="polite" className="flex min-h-9 items-center border-b px-4 text-xs text-muted-foreground sm:px-5">{loading ? "Updating unit results…" : error ? "Showing the last loaded unit results." : `${number(data.matchingUnits)} matching units`}</div>
+                  <div className={`divide-y transition-opacity duration-150 ${updating && !error ? "pointer-events-none opacity-60" : ""}`} inert={updating && !error}>{data.units.map(unit => <details key={unit.serial} className="group">
                     <summary className="flex min-h-20 cursor-pointer list-none flex-wrap items-center gap-3 p-4 hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-ring sm:px-5">
                       <div className="min-w-0 flex-1 basis-40"><div className="break-all font-mono text-sm font-semibold">{unit.serial}</div><div className="mt-1 text-xs text-muted-foreground">Entered {formatInTimezone(unit.firstDate)}</div></div>
                       <span className={`rounded-md px-2 py-1 text-xs font-medium ${unit.outcome === "unresolved" ? "bg-rose-500/10 text-rose-600 dark:text-rose-400" : unit.outcome === "pending" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400" : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}`}>{outcomes.find(o => o.key === unit.outcome)?.label}</span>
@@ -150,7 +159,7 @@ export default function YieldRetestPage() {
                   {!data.units.length && <p className="p-6 text-sm text-muted-foreground">No units match this filter.</p>}
                   <div className="flex flex-wrap items-center justify-between gap-3 border-t p-4 text-xs text-muted-foreground">
                     <span>{number(data.matchingUnits)} matching units · Page {data.page} of {Math.max(1, Math.ceil(data.matchingUnits / data.pageSize))}</span>
-                    <div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(n => n - 1)}>Previous</Button><Button variant="outline" size="sm" disabled={page * data.pageSize >= data.matchingUnits} onClick={() => setPage(n => n + 1)}>Next</Button></div>
+                    <div className="flex gap-2"><Button variant="outline" size="sm" disabled={paginationBlocked || page <= 1} onClick={() => setPage(n => n - 1)}>Previous</Button><Button variant="outline" size="sm" disabled={paginationBlocked || page * data.pageSize >= data.matchingUnits} onClick={() => setPage(n => n + 1)}>Next</Button></div>
                   </div>
                 </section>
               </>}

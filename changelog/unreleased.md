@@ -6,3 +6,4 @@ Added
 
 Fixed
 - Size short-screen navigation rows from the actual number of links so account and preference controls remain visible after adding Yield & Retest, including station-admin navigation.
+- Use the available desktop width on Yield & Retest. Keep the overview, search field, and expanded rows mounted during refreshes, with loading feedback confined to the unit list and previous-period results clearly labelled while changing dates.

@@ -20,7 +20,7 @@ const data = {
 };
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || "/usr/bin/chromium", args: ["--no-sandbox"] });
 try {
-  for (const [name, width, height, theme] of [["desktop-dark", 1440, 1000, "dark"], ["desktop-light", 1440, 1000, "light"], ["mobile", 390, 844, "light"], ["mobile-small", 320, 740, "dark"]]) {
+  for (const [name, width, height, theme] of [["desktop-dark", 2560, 1200, "dark"], ["desktop-light", 1440, 1000, "light"], ["mobile", 390, 844, "light"], ["mobile-small", 320, 740, "dark"]]) {
     const context = await browser.newContext({ viewport: { width, height }, colorScheme: theme });
     const page = await context.newPage();
     const errors = [];
@@ -28,10 +28,15 @@ try {
     await page.addInitScript(theme => localStorage.setItem("theme", theme), theme);
     let fail = false;
     let empty = false;
+    let hold = false;
+    let release;
+    let responseDelay = 0;
     const requests = [];
-    await page.route("**/api/yield-retest?*", route => {
+    await page.route("**/api/yield-retest?*", async route => {
       const params = new URL(route.request().url()).searchParams;
       requests.push(params);
+      if (hold) await new Promise(resolve => { release = resolve; });
+      if (responseDelay) await new Promise(resolve => setTimeout(resolve, responseDelay));
       const result = structuredClone(data);
       result.page = Number(params.get("page"));
       if (empty) {
@@ -50,6 +55,42 @@ try {
     await page.locator(".yield-home").evaluate(element => { element.scrollTop = 0; });
     await page.screenshot({ path: `${out}/${name}.png` });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, `${name} overflow`);
+    if (width > 1600) {
+      const content = await page.locator(".yield-content").boundingBox();
+      assert(content.width > 2400, "Yield content should use the available desktop width");
+    }
+    await page.locator('summary').filter({ hasText: "How to read these numbers" }).click();
+    await page.locator("[data-yield-overview]").evaluate(element => { window.__yieldOverview = element; });
+    await page.locator("#yield-serial").evaluate(element => { window.__yieldSearch = element; });
+    hold = true;
+    await Promise.all([page.waitForRequest(r => r.url().includes("scope=all")), page.getByRole("button", { name: "All units", exact: true }).click()]);
+    await page.getByText("Updating unit results…", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("status", { name: "Loading yield and retest" }).count(), 0);
+    assert(await page.locator("[data-yield-overview]").evaluate(element => element === window.__yieldOverview));
+    assert(await page.locator("#yield-serial").evaluate(element => element === window.__yieldSearch));
+    assert.equal(await page.locator("details").filter({ hasText: "How to read these numbers" }).getAttribute("open"), "");
+    assert.equal(await page.locator("details").filter({ has: page.locator('summary', { hasText: "SPARQ-190825180351" }) }).getAttribute("open"), "");
+    assert(await page.getByRole("button", { name: "Next", exact: true }).isDisabled());
+    const scrollSelector = width < 768 ? ".yield-home" : ".yield-home main";
+    const scrollBefore = await page.locator(scrollSelector).evaluate(element => element.scrollTop);
+    hold = false;
+    release();
+    await page.getByRole("button", { name: "Next", exact: true }).waitFor();
+    await page.waitForFunction(() => document.querySelector('[data-yield-units]')?.getAttribute('aria-busy') === 'false');
+    const scrollAfter = await page.locator(scrollSelector).evaluate(element => element.scrollTop);
+    assert(Math.abs(scrollAfter - scrollBefore) < 2, "Updating the unit list must preserve scroll position");
+    // Slow requests must leave typing focused; a superseded search must not
+    // overwrite the final search or collapse the existing overview.
+    responseDelay = 600;
+    await page.getByRole("textbox", { name: "Search serial number" }).fill("180");
+    await page.waitForRequest(r => r.url().includes("serial=180"));
+    assert(await page.locator("#yield-serial").evaluate(element => element === document.activeElement));
+    await Promise.all([page.waitForResponse(r => r.url().includes("serial=180351")), page.getByRole("textbox", { name: "Search serial number" }).fill("180351")]);
+    await page.waitForFunction(() => document.querySelector('[data-yield-units]')?.getAttribute('aria-busy') === 'false');
+    assert.equal(await page.locator("#yield-serial").inputValue(), "180351");
+    assert(await page.locator("#yield-serial").evaluate(element => element === document.activeElement));
+    responseDelay = 0;
+    await Promise.all([page.waitForResponse(r => r.url().includes("serial=&")), page.getByRole("textbox", { name: "Search serial number" }).fill("")]);
     await Promise.all([page.waitForResponse(r => r.url().includes("scope=recovered")), page.getByRole("button", { name: "Passed after repeat", exact: true }).click()]);
     await page.getByRole("button", { name: "Next", exact: true }).click();
     await page.getByText("Page 2 of 2", { exact: false }).waitFor();
@@ -57,11 +98,19 @@ try {
     assert.equal(requests.at(-1).get("page"), "1");
     fail = true;
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await page.getByRole("alert").filter({ hasText: "Couldn’t load this view" }).waitFor();
-    assert.equal(await page.getByText("85.0%", { exact: true }).count(), 0);
+    await page.getByRole("alert").filter({ hasText: "Couldn’t update this view" }).waitFor();
+    assert(await page.getByText("85.0%", { exact: true }).first().isVisible());
+    assert(await page.locator("[data-yield-overview]").evaluate(element => element === window.__yieldOverview));
     fail = false;
     await page.getByRole("button", { name: "Try again", exact: true }).click();
     await page.getByText("85.0%", { exact: true }).first().waitFor();
+    hold = true;
+    await Promise.all([page.waitForRequest(r => r.url().includes("timeRange=all")), page.getByRole("radio", { name: "All time", exact: true }).click()]);
+    await page.getByText("Updating the period…", { exact: false }).waitFor();
+    assert(await page.locator("[data-yield-overview]").evaluate(element => element === window.__yieldOverview));
+    hold = false;
+    release();
+    await page.waitForFunction(() => document.querySelector('[data-yield-units]')?.getAttribute('aria-busy') === 'false');
     empty = true;
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await page.getByText("No units entered burn-in in this period", { exact: true }).waitFor();
