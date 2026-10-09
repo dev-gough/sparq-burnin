@@ -69,4 +69,26 @@ try {
     await context.close();
     console.log(`${name}: layout, histories, filters, pagination, search, retry and empty state passed`);
   }
+  const context = await browser.newContext({ viewport: { width: 320, height: 568 } });
+  const page = await context.newPage();
+  await page.route("**/api/yield-retest?*", route => route.fulfill({ json: data }));
+  await page.route("**/api/stations/admin-status", route => route.fulfill({ json: { isStationAdmin: true } }));
+  await page.route("**/api/todo/count", route => route.fulfill({ json: { count: 5 } }));
+  await page.goto(`${base}/yield-retest`);
+  await page.getByText("85.0%", { exact: true }).first().waitFor();
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByRole("link", { name: "Stations", exact: true }).waitFor();
+  for (const [width, height] of [[320,568], [320,468], [320,380], [568,320], [667,375], [740,360]]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(200);
+    const fits = await page.locator(".mobile-navigation").evaluate(element => {
+      return element.scrollHeight <= element.clientHeight + 1 && [...element.querySelectorAll("a,button,[role=combobox]")].every(control => {
+        const box = control.getBoundingClientRect();
+        return box.top >= -1 && box.bottom <= innerHeight + 1 && box.left >= -1 && box.right <= innerWidth + 1;
+      });
+    });
+    assert(fits, `Navigation must fit at ${width}x${height}`);
+  }
+  await context.close();
+  console.log("Short portrait and landscape navigation passed with station-admin links");
 } finally { await browser.close(); }

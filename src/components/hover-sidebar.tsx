@@ -2,7 +2,7 @@
 
 import { useSession, signOut, signIn } from "next-auth/react";
 import { Menu, User, LogOut, Users, LayoutDashboard, ListTodo, LogIn, BarChart3, Settings, Monitor, Moon, Sun, Server, ScrollText } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type CSSProperties } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -307,7 +307,8 @@ export function HoverSidebar() {
           <SidebarDrawer open={mobileOpen} onOpenChange={setMobileOpen}
             title="BurnIn" description="Navigation and preferences" className="mobile-navigation md:hidden"
             trigger={<Button variant="outline" size="icon" className="size-11" aria-label="Open navigation"><Menu className="size-5" /></Button>}>
-              <div className="mobile-navigation-body drawer-body flex min-h-0 flex-1 flex-col gap-3 p-4">
+              <div className="mobile-navigation-body drawer-body flex min-h-0 flex-1 flex-col gap-3 p-4"
+                style={{ "--drawer-link-count": navItems.length + 1 } as CSSProperties}>
                 <nav aria-label="Main navigation" className="drawer-navigation grid gap-1">
                   {[...navItems, { href: "/changelog", label: "Changelog", icon: ScrollText }].map((item) => {
                     const Icon = item.icon;
