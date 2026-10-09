@@ -48,6 +48,20 @@ Same period and latest-versus-all choice as the dashboard. Buckets are UTC.
 - Stacked history by annotation category and by group. Grouping is daily, weekly, biweekly, monthly, or quarterly, and it applies to the rate chart and both histories.
 - Pie labels can be a share of all tests or of failed tests. The slice sizes stay the same.
 
+## Yield and retest (`/yield-retest`)
+
+A dedicated cohort view, reached from dashboard navigation and the desktop header. The selected UTC period includes units whose **first recorded attempt** falls in that period; summaries and histories include their later recorded runs through the current data, even beyond the selected end date. The initial period follows the dashboard preference, but changing it here does not change dashboard preferences. Station and annotation filters do not apply.
+
+- First-pass yield: first-attempt PASS divided by all units entering the cohort. INVALID and RETEST count as attempts, without being labelled failures.
+- Latest-result yield: latest decisive PASS divided by the same cohort, including units still awaiting a decisive result in the denominator.
+- Repeat frequency, extra runs, and recorded repeat-test hours. Hours include INVALID/RETEST runs after the first attempt; missing or negative durations are excluded and counted. These are unit test hours, not station occupancy, labor, or financial cost.
+- Current outcome breakdown and first-versus-latest yield by UTC entry month.
+- Searchable, paginated unit histories, with filters for repeats, later passes, latest failures, pending results, or first-pass units still passing. Each run links to its test record. Histories show up to the latest 100 runs per unit; metrics use the full recorded history.
+
+A later INVALID/RETEST does not replace an earlier PASS/FAIL. Timestamp ties are ordered by test id. Missing historical runs and verdict overrides affect the metrics; recent cohorts have had less follow-up time. No electrical samples are fetched for this view.
+
+Checks: `node tests/browser/yield-retest.mjs` against a local SKIP_AUTH dev server (default port 3100). Real SQL fixture checks use temporary tables and rollback: `YIELD_TEST_DATABASE=postgres npm test -- tests/yield-retest-db.test.ts`, with local connection credentials from `config.json` and an explicitly selected database.
+
 ## Review queue and contributors
 
 `/todo` is the list of failed tests with no annotation. It filters by serial, firmware, and date, and opens the test record.

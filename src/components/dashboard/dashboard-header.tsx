@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MobilePeriodControls } from "@/components/dashboard/mobile-period-controls";
@@ -181,6 +182,7 @@ export function DashboardHeader({
 
   const headerActions = (
     <div className="dashboard-header-actions flex shrink-0 items-center gap-1.5 sm:gap-2">
+      <Link href="/yield-retest" className="hidden rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring md:inline-flex">Yield & Retest</Link>
       <SidebarDrawer
         title="Download"
         description="Export dashboard data"

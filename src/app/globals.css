@@ -604,3 +604,12 @@
 @media (prefers-reduced-motion: reduce) {
   .sidebar-drawer[data-slot="sheet-content"] { animation: none; }
 }
+
+/* Yield has cohort controls without a Latest/All population switch. */
+@media (max-width: 767px) {
+  .yield-home { display: block; overflow-y: auto; }
+  .yield-home main { overflow-y: visible; }
+  .yield-header { display: block; }
+  .yield-header > div:last-child { margin-top: 0.5rem; }
+  .yield-header .header-period-controls { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}

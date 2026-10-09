@@ -35,6 +35,7 @@ export function HoverSidebar() {
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/contributors", label: "Contributors", icon: Users },
     { href: "/failure-analytics", label: "Failure Analytics", icon: BarChart3 },
+    { href: "/yield-retest", label: "Yield & Retest", icon: BarChart3 },
     { href: "/todo", label: "Todo", icon: ListTodo, badge: todoCount },
     ...(isStationAdmin
       ? [{ href: "/stations", label: "Stations", icon: Server }]
