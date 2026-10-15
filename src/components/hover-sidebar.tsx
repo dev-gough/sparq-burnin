@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession, signOut, signIn } from "next-auth/react";
-import { Menu, User, LogOut, Users, LayoutDashboard, ListTodo, LogIn, BarChart3, Settings, Monitor, Moon, Sun, Server, ScrollText } from "lucide-react";
+import { Menu, User, LogOut, Users, LayoutDashboard, ListTodo, LogIn, BarChart3, Settings, Monitor, Moon, Sun, Server, ScrollText, ClipboardCheck } from "lucide-react";
 import { useState, useRef, useEffect, type CSSProperties } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -36,6 +36,7 @@ export function HoverSidebar() {
     { href: "/contributors", label: "Contributors", icon: Users },
     { href: "/failure-analytics", label: "Failure Analytics", icon: BarChart3 },
     { href: "/yield-retest", label: "Yield & Retest", icon: BarChart3 },
+    { href: "/ft3", label: "FT3 Results", icon: ClipboardCheck },
     { href: "/todo", label: "Todo", icon: ListTodo, badge: todoCount },
     ...(isStationAdmin
       ? [{ href: "/stations", label: "Stations", icon: Server }]
@@ -193,7 +194,7 @@ export function HoverSidebar() {
         <div className="space-y-1">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = pathname === item.href;
+          const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
           return (
             <Link
               key={item.href}
@@ -312,7 +313,7 @@ export function HoverSidebar() {
                 <nav aria-label="Main navigation" className="drawer-navigation grid gap-1">
                   {[...navItems, { href: "/changelog", label: "Changelog", icon: ScrollText }].map((item) => {
                     const Icon = item.icon;
-                    const active = pathname === item.href;
+                    const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
                     return (
                       <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}
                         aria-current={active ? "page" : undefined}

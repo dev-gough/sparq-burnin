@@ -17,6 +17,7 @@ import ReactECharts from "echarts-for-react"
 import type { EChartsOption } from "echarts"
 import TestAnnotations from "@/components/TestAnnotations"
 import { TestStatusHistory } from "@/components/test-status-history"
+import { Ft3Chip } from "@/components/ft3/ft3-chip"
 
 interface FailureInfo {
   test_id: number
@@ -1802,6 +1803,7 @@ export default function TestPage() {
                 refreshKey={statusHistoryKey}
               />
               {updatingStatus && <span className="text-sm text-muted-foreground">Updating...</span>}
+              <Ft3Chip serial={testData.serial_number} />
             </div>
             <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
               <MetaItem label="Test" value={`#${testData.test_id}`} />

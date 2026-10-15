@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "ingest": "tsx scripts/ingest.ts",
+    "ingest:ft3": "tsx scripts/ingest-ft3.ts",
     "ingest-csv-annotations": "tsx scripts/ingest-csv-annotations.ts",
     "backup-annotations": "tsx scripts/backup-annotations.ts",
     "reprocess": "tsx scripts/reprocess.ts",

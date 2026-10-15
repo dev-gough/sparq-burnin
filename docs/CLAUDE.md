@@ -144,6 +144,7 @@ All API endpoints require authentication:
 - `/api/failed-test-data` (GET)
 - `/api/test-stats` (GET)
 - `/api/room-temp` (POST)
+- `/api/ft3` (GET), `/api/ft3/[id]` (GET), `/api/ft3/serial/[serial]` (GET), `/api/ft3/problems` (GET), `/api/ft3/upload` (POST, multipart `files`) — FT3 functional test results; strict parser in `src/lib/ft3.ts`
 
 ### How Authentication Works
 

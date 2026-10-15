@@ -12,6 +12,12 @@
         "data_dir": "/path/to/pCloudDrive/BurnInTest2/data"
       }
     ],
+    "ft3_directories": [
+      {
+        "name": "FT3",
+        "dir": "/path/to/pCloudDrive/FT3/results"
+      }
+    ],
     "local": {
       "main_dir": "/path/to/burnin/data",
       "dashboard_dir": "/path/to/burnin",

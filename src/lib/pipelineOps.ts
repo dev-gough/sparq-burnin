@@ -273,6 +273,18 @@ export async function snapshotSources(): Promise<SourcesSnapshot> {
       })
     }
 
+    // FT3 folders are a single directory; report them through the results slot.
+    for (const src of config.paths.ft3_directories ?? []) {
+      const dir = await readableDirectory(src.dir)
+      sources.push({
+        name: `FT3 ${src.name}`,
+        resultsOk: dir.ok,
+        dataOk: true,
+        ok: dir.ok,
+        resultsError: dir.error,
+      })
+    }
+
     const reachable = sources.filter((s) => s.ok).length
     const missing = sources
       .filter((s) => !s.ok)

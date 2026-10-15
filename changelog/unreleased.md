@@ -1,1 +1,11 @@
 Unreleased
+
+Added
+- Add an FT3 Results page for the factory functional test. It shows run pass rate, units passing now, passed and failed runs per day, failures by the subtest that stopped the run (select one to list those runs), and a searchable run list with each unit’s burn-in status.
+- Signed-in users can upload any number of `FT3_<serial>_<time>.csv` files. Uploads go in batches with progress. Runs already stored are skipped, and rejected files list every problem found.
+- Add an FT3 run view with the seven-subtest sequence, the MPPT condition × PV channel grid with voltage and current, AC maximum power, ABVF response times, other FT3 runs for the serial, and links to its burn-in runs. Burn-in test pages link to the unit’s latest FT3 result. Migration 021 adds the `FT3Tests` table.
+- Ingest FT3 results from pCloud. The watchdog scans the folders in `paths.ft3_directories`, including subfolders, and runs `npm run ingest:ft3` for new files.
+- FT3 parsing is strict. A file with an unknown or missing column, an unexpected value, a reading that is not a number, or a verdict that contradicts its subtests is rejected with every problem listed. Rejected pCloud files are quarantined, shown on the FT3 page, and reported by the health check until the parser is updated and `npm run ingest:ft3 -- --retry-quarantine` is run. The health check also reports an unreadable FT3 folder.
+
+Changed
+- Keep a navigation item highlighted on its detail pages, such as an individual FT3 run.

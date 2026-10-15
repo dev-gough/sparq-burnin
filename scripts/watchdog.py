@@ -27,6 +27,8 @@ config = load_config()
 
 # Extract configuration values
 source_directories = config['paths']['source_directories']
+# Optional: pCloud folders the FT3 stations write FT3_<serial>_<time>.csv into.
+ft3_directories = config['paths'].get('ft3_directories') or []
 main_dir = config['paths']['local']['main_dir']
 to_process_dir = os.path.join(main_dir, 'to_process')
 processed_dir = os.path.join(main_dir, 'processed')
@@ -43,10 +45,12 @@ def request_shutdown(signum, frame):
 # Define subdirectories for tests and results within to_process
 to_process_tests_dir = os.path.join(to_process_dir, 'tests')
 to_process_results_dir = os.path.join(to_process_dir, 'results')
+to_process_ft3_dir = os.path.join(to_process_dir, 'ft3')
 
 # Ensure to_process subdirectories exist
 os.makedirs(to_process_tests_dir, exist_ok=True)
 os.makedirs(to_process_results_dir, exist_ok=True)
+os.makedirs(to_process_ft3_dir, exist_ok=True)
 
 # Lock file for preventing concurrent ingestion
 LOCK_FILE = os.path.join(main_dir, '.ingestion.lock')
@@ -115,32 +119,21 @@ def already_tracked(filename, kind, quarantine_names, ingested_names=None):
     return None
 
 
-def load_ingested_names():
-    """Basenames already stored in Tests.source_file.
-
-    Lab often restores the prod DB without prod's processed/ tree. File-only
-    tracking then recopies every historical pCloud pair. Tests.source_file is
-    the results basename; we also add the matching inverter_* test name so
-    leftover extra results still see the test as ingested.
-
-    HTTPS rows use source_file 'https:…' and are ignored (they will not match
-    a CSV basename). Does not scan TestData — that table is huge.
-    """
-    names = set()
+def query_source_files(sql, label):
+    """Run a single-column psql query; None when the database is unavailable."""
     db = config.get('database') or {}
     host = str(db.get('host') or 'localhost')
     port = str(db.get('port') or 5432)
     name = db.get('name')
     user = db.get('user')
     if not name or not user:
-        logger.warning("database.name/user missing in config; cannot skip already-ingested files")
-        return names
+        logger.warning(f"database.name/user missing in config; cannot skip already-ingested {label} files")
+        return None
 
     env = os.environ.copy()
     if db.get('password') is not None:
         env['PGPASSWORD'] = str(db['password'])
 
-    sql = "SELECT source_file FROM Tests WHERE source_file IS NOT NULL"
     cmd = [
         'psql',
         '-h', host,
@@ -158,24 +151,42 @@ def load_ingested_names():
             timeout=30,
         )
     except FileNotFoundError:
-        logger.warning("psql not on PATH; cannot skip already-ingested pCloud files")
-        return names
+        logger.warning(f"psql not on PATH; cannot skip already-ingested {label} files")
+        return None
     except subprocess.TimeoutExpired:
-        logger.warning("psql timed out loading ingested filenames")
-        return names
+        logger.warning(f"psql timed out loading ingested {label} filenames")
+        return None
 
     if result.returncode != 0:
         err = (result.stderr or result.stdout or '').strip().splitlines()
         logger.warning(
-            "psql failed loading ingested filenames (exit %s): %s",
+            "psql failed loading ingested %s filenames (exit %s): %s",
+            label,
             result.returncode,
             err[-1] if err else 'no output',
         )
+        return None
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def load_ingested_names():
+    """Basenames already stored in Tests.source_file.
+
+    Lab often restores the prod DB without prod's processed/ tree. File-only
+    tracking then recopies every historical pCloud pair. Tests.source_file is
+    the results basename; we also add the matching inverter_* test name so
+    leftover extra results still see the test as ingested.
+
+    HTTPS rows use source_file 'https:…' and are ignored (they will not match
+    a CSV basename). Does not scan TestData — that table is huge.
+    """
+    names = set()
+    rows = query_source_files("SELECT source_file FROM Tests WHERE source_file IS NOT NULL", 'pCloud')
+    if rows is None:
         return names
 
-    for line in result.stdout.splitlines():
-        raw = line.strip()
-        if not raw or raw.startswith('https:'):
+    for raw in rows:
+        if raw.startswith('https:'):
             continue
         base = os.path.basename(raw)
         names.add(base)
@@ -184,6 +195,66 @@ def load_ingested_names():
 
     logger.info(f"Loaded {len(names)} ingested filenames from database")
     return names
+
+
+def load_ft3_ingested_names():
+    """Basenames already stored in FT3Tests.source_file (uploads and pCloud)."""
+    rows = query_source_files("SELECT DISTINCT source_file FROM FT3Tests WHERE source_file IS NOT NULL", 'FT3')
+    return {os.path.basename(r) for r in rows or []}
+
+
+def is_ft3_file(filename):
+    lower = filename.lower()
+    return lower.startswith('ft3_') and lower.endswith('.csv')
+
+
+def list_ft3_files(root):
+    """FT3 CSVs anywhere under root as (basename, path). Raises OSError if root is unreadable."""
+    os.listdir(root)  # surface FUSE/auth failures instead of walking nothing
+    found = []
+    for dirpath, _dirs, files in os.walk(root):
+        for name in files:
+            if is_ft3_file(name):
+                found.append((name, os.path.join(dirpath, name)))
+    return found
+
+
+def sync_ft3_sources(source_errors):
+    """Copy new FT3 CSVs into to_process/ft3. Returns (checked, copied)."""
+    if not ft3_directories:
+        return 0, 0
+    quarantined = load_parked_names('ft3')
+    ingested = load_ft3_ingested_names()
+    checked = 0
+    copied = 0
+    for source in ft3_directories:
+        source_name = source.get('name') or source['dir']
+        try:
+            files = list_ft3_files(source['dir'])
+        except OSError as e:
+            error = f"FT3 {source_name}: {e}"
+            source_errors.append(error)
+            logger.error(f"Source unreadable: {error}. Check pCloud authorization and mount.")
+            continue
+        checked += len(files)
+        for name, path in files:
+            if already_tracked(name, 'ft3', quarantined, ingested):
+                continue
+            try:
+                shutil.copy2(path, os.path.join(to_process_ft3_dir, name))
+            except OSError as e:
+                logger.error(f"[FT3 {source_name}] Could not copy {path}: {e}")
+                continue
+            copied += 1
+            logger.info(f"[FT3 {source_name}] Copied {name} to {to_process_ft3_dir}")
+    return checked, copied
+
+
+def ft3_queue_waiting():
+    try:
+        return any(is_ft3_file(n) for n in os.listdir(to_process_ft3_dir))
+    except OSError:
+        return False
 
 
 def index_test_files(data_dir, names=None):
@@ -446,8 +517,8 @@ def run_cleanup():
         logger.error(f"Error running cleanup: {e}")
         return False
 
-def run_ingestion():
-    """Run the npm ingest command to process new files."""
+def run_ingestion(npm_script='ingest'):
+    """Run an npm ingest command (burn-in or FT3) to process queued files."""
     try:
         logger.info("Starting ingestion process...")
 
@@ -480,7 +551,7 @@ def run_ingestion():
 
         # Use Popen to stream output in real-time
         process = subprocess.Popen(
-            ['npm', 'run', 'ingest'],
+            ['npm', 'run', npm_script],
             cwd=dashboard_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -492,7 +563,7 @@ def run_ingestion():
         # Stream output line by line
         if process.stdout:
             for line in process.stdout:
-                logger.info(f"[ingest] {line.rstrip()}")
+                logger.info(f"[{npm_script}] {line.rstrip()}")
         else:
             logger.info('no process.stdout??')
 
@@ -628,6 +699,10 @@ def main():
                             skipped_no_match += 1
                             logger.debug(f"[{source_name}] No matching test file found for {file}; skipping")
             
+            ft3_checked, ft3_copied = sync_ft3_sources(source_errors)
+            if ft3_copied:
+                logger.info(f"Cycle {cycle_count}: copied {ft3_copied} new FT3 files of {ft3_checked} checked")
+
             # Always log a summary (heartbeat every cycle, but less verbose when no files copied)
             skip_bits = []
             if skipped_ingested:
@@ -671,6 +746,16 @@ def main():
                     else:
                         logger.error("Ingestion failed - files remain in to_process directory")
 
+            # FT3 ingest also retries files a database error left in the queue.
+            ft3_ingest_success = None
+            if ft3_copied > 0 or ft3_queue_waiting():
+                if not acquire_lock():
+                    logger.warning("Skipping FT3 ingestion - another ingestion process is already running")
+                else:
+                    ft3_ingest_success = bool(run_ingestion('ingest:ft3'))
+                    if not ft3_ingest_success:
+                        logger.error("FT3 ingestion failed - files remain in to_process/ft3")
+
             cycle_finished = datetime.datetime.now(datetime.timezone.utc)
             next_cycle = cycle_finished + datetime.timedelta(seconds=check_interval)
             write_watchdog_status({
@@ -687,6 +772,9 @@ def main():
                 'lastSourcesReachable': sources_reachable,
                 'lastSourceErrors': source_errors,
                 'lastResultsFilesChecked': total_results_files,
+                'lastFt3FilesChecked': ft3_checked,
+                'lastFt3FilesCopied': ft3_copied,
+                'lastFt3IngestSuccess': ft3_ingest_success,
             })
                 
             shutdown_requested.wait(check_interval)

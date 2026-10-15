@@ -33,6 +33,7 @@ import {
   snapshotCapacity,
   type CapacitySnapshot,
 } from '@/lib/capacityOps'
+import { ft3Status, snapshotFt3 } from '@/lib/ft3Ops'
 import {
   snapshotStationFleet,
   type StationFleetSnapshot,
@@ -938,6 +939,26 @@ export async function GET(request: Request) {
       snapshotStationFleet(),
       snapshotCapacity(),
     ])
+  const ft3Snap = await snapshotFt3(1)
+  const ft3 = ft3Status(ft3Snap, checkIntervalSec)
+  const ft3Check: HealthCheck = { name: 'ft3', status: ft3.status, detail: ft3.detail, critical: false }
+  const ft3Metrics: HealthMetric[] = [
+    {
+      id: 'ft3.quarantined',
+      label: 'FT3 · unparsed files',
+      value: ft3Snap.quarantined,
+      unit: 'count',
+      status: ft3Snap.quarantined > 0 ? 'degraded' : 'ok',
+      detail: ft3Snap.quarantined > 0 ? 'update the parser, then retry quarantine' : 'none',
+    },
+    {
+      id: 'ft3.queued',
+      label: 'FT3 · queued files',
+      value: ft3Snap.queued,
+      unit: 'count',
+      status: ft3.status === 'degraded' && ft3Snap.quarantined === 0 ? 'degraded' : 'ok',
+    },
+  ]
 
   const sourcesCheck = pipelineOps.checks.find((c) => c.name === 'sources')
   const sourcesAllDown =
@@ -987,6 +1008,7 @@ export async function GET(request: Request) {
     stationFleetOps.check,
     todoOps.check,
     capacityOps.check,
+    ft3Check,
   ]
 
   // Deep-link to the in-app todo queue when base URL is known
@@ -1010,6 +1032,7 @@ export async function GET(request: Request) {
       ...stationFleetOps.metrics,
       ...todoOps.metrics,
       ...capacityOps.metrics,
+      ...ft3Metrics,
       ...ingestMetrics,
       ...processMetrics,
     ],

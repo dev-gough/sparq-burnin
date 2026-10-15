@@ -8,6 +8,11 @@ export interface Config {
       results_dir: string;
       data_dir: string;
     }>;
+    /** pCloud folders holding FT3_<serial>_<time>.csv files (subfolders are scanned). */
+    ft3_directories?: Array<{
+      name: string;
+      dir: string;
+    }>;
     local: {
       main_dir: string;
       dashboard_dir: string;

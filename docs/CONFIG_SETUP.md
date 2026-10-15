@@ -29,6 +29,16 @@ Edit `config.json` and update the following sections for your machine:
 }
 ```
 
+#### FT3 folders (optional)
+
+`paths.ft3_directories` lists pCloud folders where FT3 stations write `FT3_<serial>_<time>.csv`. The watchdog scans each folder and its subfolders, copies new files to `<main_dir>/to_process/ft3`, and runs `npm run ingest:ft3`. Stored runs move to `processed/ft3`. The parser is strict: files it does not fully understand move to `quarantine/ft3` with a `.reason.txt` listing every problem, are not copied again, and keep the `ft3` health check degraded. After updating `src/lib/ft3.ts`, run `npm run ingest:ft3 -- --retry-quarantine`. A file is skipped when its name is already in `FT3Tests.source_file`; the same serial and test time is stored only once.
+
+```json
+"ft3_directories": [
+  { "name": "FT3", "dir": "/mnt/pcloud/FT3/results" }
+]
+```
+
 #### Database Section
 ```json
 {
@@ -59,6 +69,7 @@ The following scripts now use the centralized configuration:
 - **watchdog.py** - File monitoring and ingestion automation
 - **cleanup-debug-firmware.ts** - Debug firmware file cleanup
 - **ingest.ts** - CSV data ingestion with database connection
+- **ingest-ft3.ts** - FT3 result ingestion from `to_process/ft3`
 - **copy_filtered_files.py** - Historical data migration
 
 ### 4. Benefits

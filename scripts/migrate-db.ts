@@ -779,6 +779,31 @@ const migrations: Migration[] = [
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `
+  },
+  {
+    id: '021',
+    name: 'ft3_tests',
+    sql: `
+      -- FT3 functional test results, one row per run. raw_headers/raw_values
+      -- keep the original CSV row because the station format is not final.
+      CREATE TABLE IF NOT EXISTS FT3Tests (
+        ft3_id          SERIAL PRIMARY KEY,
+        serial_number   VARCHAR(50) NOT NULL,
+        test_time_utc   TIMESTAMPTZ NOT NULL,
+        tester          TEXT,
+        overall_verdict TEXT NOT NULL,
+        failed_step     TEXT,
+        fpga_version    TEXT,
+        zigbee_version  TEXT,
+        raw_headers     TEXT[] NOT NULL,
+        raw_values      TEXT[] NOT NULL,
+        source_file     TEXT,
+        uploaded_by     TEXT,
+        uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (serial_number, test_time_utc)
+      );
+      CREATE INDEX IF NOT EXISTS idx_ft3tests_test_time ON FT3Tests (test_time_utc DESC);
+    `
   }
 ];
 
