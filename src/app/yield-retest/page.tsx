@@ -126,8 +126,9 @@ export default function YieldRetestPage() {
           </div>}
           {!data && loading ? <div role="status" aria-label="Loading yield and retest" className="space-y-5"><Skeleton className="h-96 rounded-xl" /><div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[0, 1, 2, 3].map(n => <Skeleton key={n} className="h-36 rounded-xl" />)}</div><Skeleton className="h-72 rounded-xl" /></div>
             : data && summary ? <>
-              {snapshot && periodChanged && !error && <p role="status" className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">Updating the period… Showing {dashboardRangeLabel(snapshot.range)} until the new results arrive.</p>}
-              <div data-yield-overview className="space-y-5 lg:space-y-6">
+              {/* Announced only to assistive tech: a visible banner here shifted the whole page. */}
+              <p role="status" className="sr-only">{snapshot && periodChanged && !error ? `Updating the period… Showing ${dashboardRangeLabel(snapshot.range)} until the new results arrive.` : ""}</p>
+              <div data-yield-overview className={`space-y-5 transition-opacity duration-150 lg:space-y-6 ${periodChanged && !error ? "opacity-60" : ""}`}>
                 <section className="rounded-xl border bg-card p-4 sm:p-5" aria-labelledby="yield-throughput">
                   <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
                     <div>

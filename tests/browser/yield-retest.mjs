@@ -115,9 +115,17 @@ try {
     fail = false;
     await page.getByRole("button", { name: "Try again", exact: true }).click();
     await page.getByText("85.0%", { exact: true }).first().waitFor();
+    // Position within the scrolled content, so scrolling itself does not count as a shift.
+    const overviewTop = async () => page.locator("[data-yield-overview]").evaluate(element => {
+      const content = element.closest(".yield-content");
+      return element.getBoundingClientRect().top - content.getBoundingClientRect().top;
+    });
+    const topBefore = await overviewTop();
     hold = true;
     await Promise.all([page.waitForRequest(r => r.url().includes("timeRange=all")), page.getByRole("radio", { name: "All time", exact: true }).click()]);
-    await page.getByText("Updating the period…", { exact: false }).waitFor();
+    await page.getByRole("status").filter({ hasText: "Updating the period…" }).waitFor({ state: "attached" });
+    // Changing the period must not push the overview down while results load.
+    assert(Math.abs(await overviewTop() - topBefore) < 1, "Changing the period must not shift the overview");
     assert(await page.locator("[data-yield-overview]").evaluate(element => element === window.__yieldOverview));
     hold = false;
     release();
