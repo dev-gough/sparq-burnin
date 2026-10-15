@@ -73,6 +73,12 @@ describe.skipIf(!enabled)("yield cohorts against PostgreSQL", () => {
     expect(d.matchingUnits).toBe(2);
     expect(d.units.map(u => u.serial).sort()).toEqual(["INVALID-RECOVER", "RECOVER"]);
   });
+  it("lists repeated units by their first result without changing the summary", async () => {
+    const d = await load("scope=repeat&first=FAIL");
+    expect(d.summary.units).toBe(8);
+    expect(d.units.map(u => u.serial).sort()).toEqual(["BAD-DURATION", "RECOVER", "STILL-FAIL", "TIE"]);
+    expect((await load("scope=repeat&first=PASS")).units.map(u => u.serial)).toEqual(["REGRESS"]);
+  });
   it("returns empty arrays and zero totals for empty cohorts", async () => {
     const q = buildYieldQuery(new URLSearchParams("timeRange=all&dateFrom=2030-01-01"));
     const d = (await client.query(q.sql, q.values)).rows[0].data as YieldData;

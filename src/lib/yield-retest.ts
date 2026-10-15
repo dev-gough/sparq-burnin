@@ -1,5 +1,7 @@
 import { getTimeRangeDays, validateDateRange, validateTimeRange } from "@/lib/validation";
 
+export const YIELD_FIRST_RESULTS = ["PASS", "RETEST", "FAIL", "INVALID"] as const;
+export type YieldFirstResult = (typeof YIELD_FIRST_RESULTS)[number];
 export type YieldScope = "held" | "repeat" | "all" | "passed" | "recovered" | "unresolved" | "pending";
 export interface YieldRun {
   id: number; status: string; start: string; hours: number | null;
@@ -53,6 +55,9 @@ export function buildYieldQuery(params: URLSearchParams): { sql: string; values:
   if (!["held", "repeat", "all", "passed", "recovered", "unresolved", "pending"].includes(scope)) throw new Error("Invalid scope");
   const search = (params.get("serial") || "").trim();
   if (search.length > 50) throw new Error("Serial search is too long");
+  // Narrows the list to repeated units whose first run had this result.
+  const first = params.get("first") || "";
+  if (first && !YIELD_FIRST_RESULTS.includes(first as YieldFirstResult)) throw new Error("Invalid first result");
   const values: (string | number)[] = [];
   const bind = (value: string | number) => { values.push(value); return `$${values.length}`; };
   // Period as UTC calendar days [lo, hi). Null bounds are open (all time).
@@ -77,6 +82,7 @@ export function buildYieldQuery(params: URLSearchParams): { sql: string; values:
     unresolved: "outcome = 'unresolved'", pending: "outcome = 'pending'",
   };
   const serialFilter = search ? `AND serial ILIKE ${bind(`%${search.replace(/[\\%_]/g, "\\$&")}%`)}` : "";
+  const firstFilter = first ? `AND attempts > 1 AND first_status = ${bind(first)}` : "";
   const offset = bind((page - 1) * 25);
   return { values, page, scope, sql: `
     WITH runs AS MATERIALIZED (
@@ -101,7 +107,7 @@ export function buildYieldQuery(params: URLSearchParams): { sql: string; values:
     ), period_runs AS MATERIALIZED (
       SELECT * FROM runs WHERE ${within("start_time_utc", lo, hi)}
     ), matching AS (
-      SELECT * FROM cohort WHERE ${scopes[scope]} ${serialFilter}
+      SELECT * FROM cohort WHERE ${scopes[scope]} ${serialFilter} ${firstFilter}
     ), page_units AS (
       SELECT * FROM matching ORDER BY repeat_hours DESC, attempts DESC, serial LIMIT 25 OFFSET ${offset}
     )

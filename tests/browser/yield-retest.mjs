@@ -101,6 +101,12 @@ try {
     await page.getByText("Page 2 of 2", { exact: false }).waitFor();
     await Promise.all([page.waitForResponse(r => r.url().includes("serial=180351")), page.getByRole("textbox", { name: "Search serial number" }).fill("180351")]);
     assert.equal(requests.at(-1).get("page"), "1");
+    // A reason under "Why units ran again" filters the unit list to those repeats.
+    await page.getByRole("textbox", { name: "Search serial number" }).fill("");
+    await Promise.all([page.waitForResponse(r => r.url().includes("first=RETEST") && r.url().includes("scope=repeat")), page.getByRole("button", { name: /^Marked RETEST/ }).click()]);
+    await page.getByRole("button", { name: "Clear filter: Marked RETEST" }).waitFor();
+    if (name === "desktop-light") await page.screenshot({ path: `${out}/${name}-reason-filter.png` });
+    await Promise.all([page.waitForResponse(r => r.url().includes("scope=repeat") && !r.url().includes("first=")), page.getByRole("button", { name: "Clear filter: Marked RETEST" }).click()]);
     fail = true;
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await page.getByRole("alert").filter({ hasText: "Couldn’t update this view" }).waitFor();

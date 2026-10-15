@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Factory, Hourglass, RotateCcw, ShieldCheck, Target } from "lucide-react";
+import { ArrowRight, Factory, Hourglass, RotateCcw, ShieldCheck, Target, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { HeaderPeriodControls, HeaderRangeMeta, HEADER_BAR_CLASS, HEADER_CONTROLS_CLASS, HEADER_TITLE_CLASS } from "@/components/dashboard/header-controls";
 import { appendDashboardRangeParams, tableDatesForPill, dashboardRangeLabel, type DashboardRange } from "@/lib/dashboard-range";
 import { loadDashboardPrefs, resolveDashboardInitState } from "@/lib/dashboard-prefs";
-import { yieldPercent, type YieldData, type YieldScope } from "@/lib/yield-retest";
+import { yieldPercent, type YieldData, type YieldFirstResult, type YieldScope } from "@/lib/yield-retest";
 import { utcDayMs } from "@/lib/day-buckets";
 import { useTimezone } from "@/contexts/TimezoneContext";
 import { ThroughputChart } from "@/components/yield/throughput-chart";
@@ -43,12 +43,13 @@ export default function YieldRetestPage() {
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
   const [scope, setScope] = useState<YieldScope>("held");
+  const [firstResult, setFirstResult] = useState<YieldFirstResult | null>(null);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [serial, setSerial] = useState("");
   const { formatInTimezone } = useTimezone();
   const rangeKey = JSON.stringify(range);
-  const listKey = JSON.stringify({ scope, page, serial });
+  const listKey = JSON.stringify({ scope, page, serial, firstResult });
   const periodChanged = snapshot !== null && JSON.stringify(snapshot.range) !== rangeKey;
   const listChanged = snapshot !== null && snapshot.listKey !== listKey;
   const updating = loading || (!error && (periodChanged || listChanged));
@@ -67,6 +68,7 @@ export default function YieldRetestPage() {
     setLoading(true);
     setError(false);
     const params = new URLSearchParams({ scope, page: String(page), serial });
+    if (firstResult) params.set("first", firstResult);
     appendDashboardRangeParams(params, range);
     fetch(`/api/yield-retest?${params}`, { signal: controller.signal })
       .then(async response => {
@@ -77,11 +79,12 @@ export default function YieldRetestPage() {
       .catch(() => { if (!controller.signal.aborted) setError(true); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [range, ready, scope, page, serial, retry, listKey]);
+  }, [range, ready, scope, page, serial, firstResult, retry, listKey]);
   const changeRange = (next: DashboardRange) => { setRange(next); setPage(1); };
-  const changeScope = (next: YieldScope) => { setScope(next); setPage(1); };
-  const showUnits = (next: YieldScope) => {
+  const changeScope = (next: YieldScope) => { setScope(next); setFirstResult(null); setPage(1); };
+  const showUnits = (next: YieldScope, first: YieldFirstResult | null = null) => {
     changeScope(next);
+    setFirstResult(first);
     document.querySelector("[data-yield-units]")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
   const dates = range.kind === "custom" ? range : tableDatesForPill(range.kind);
@@ -160,12 +163,18 @@ export default function YieldRetestPage() {
                 {summary.units > 0 && <div className="grid gap-5 lg:grid-cols-3">
                   <section className="rounded-xl border bg-card p-4 sm:p-5">
                     <h3 className="font-semibold">Why units ran again</h3>
-                    <p className="mt-1 text-xs text-muted-foreground">{whole(repeatedUnits)} units ({yieldPercent(repeatedUnits, summary.units)}) needed more than one run, by their first result.</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{whole(repeatedUnits)} units ({yieldPercent(repeatedUnits, summary.units)}) needed more than one run, by their first result. Select one to list those units.</p>
                     {passedAgain > 0 && <p className="mt-3 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-sm"><span className="font-semibold">{whole(passedAgain)} units had already passed</span> before they were run again. Those runs use test capacity without changing the result.</p>}
-                    <ul className="mt-4 space-y-3">{reasons.map(r => <li key={r.status}>
-                      <div className="mb-1 flex justify-between gap-2 text-sm"><span>{REASONS[r.status]?.label ?? r.status}</span><span className="font-medium tabular-nums">{whole(r.units)} <span className="font-normal text-muted-foreground">· {yieldPercent(r.units, repeatedUnits)}</span></span></div>
-                      <div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-cyan-600" style={{ width: `${r.units / maxReason * 100}%` }} /></div>
-                    </li>)}</ul>
+                    <ul className="mt-3 space-y-0.5">{reasons.map(r => {
+                      const active = scope === "repeat" && firstResult === r.status;
+                      return <li key={r.status}>
+                        <button type="button" aria-pressed={active} onClick={() => showUnits("repeat", r.status as YieldFirstResult)}
+                          className={`w-full rounded-lg px-2 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-ring hover:bg-muted ${active ? "bg-muted ring-1 ring-cyan-600/50" : ""}`}>
+                          <span className="mb-1 flex items-center justify-between gap-2 text-sm"><span>{REASONS[r.status]?.label ?? r.status}</span><span className="flex items-center gap-2 font-medium tabular-nums">{whole(r.units)} <span className="font-normal text-muted-foreground">· {yieldPercent(r.units, repeatedUnits)}</span><ArrowRight className="size-3 text-muted-foreground" /></span></span>
+                          <span className="block h-2 overflow-hidden rounded-full bg-muted"><span className="block h-full rounded-full bg-cyan-600" style={{ width: `${r.units / maxReason * 100}%` }} /></span>
+                        </button>
+                      </li>;
+                    })}</ul>
                     {!reasons.length && <p className="mt-4 text-sm text-muted-foreground">No unit needed a second run.</p>}
                   </section>
                   <section className="rounded-xl border bg-card p-4 sm:p-5">
@@ -200,7 +209,8 @@ export default function YieldRetestPage() {
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4 sm:px-5">
                   <div><h3 className="font-semibold">Follow the unit</h3><p className="mt-1 text-xs text-muted-foreground">Most repeat-test hours first. Expand a unit to open its recorded runs.</p></div>
                   <label className="sr-only" htmlFor="yield-serial">Search serial number</label><Input id="yield-serial" placeholder="Search serial number…" className="w-full sm:w-60" value={search} onChange={event => setSearch(event.target.value)} />
-                  <div className="flex w-full flex-wrap gap-1" aria-label="Unit filter">{scopes.map(item => <Button key={item.value} variant={scope === item.value ? "default" : "ghost"} size="sm" aria-pressed={scope === item.value} onClick={() => changeScope(item.value)}>{item.label}</Button>)}</div>
+                  <div className="flex w-full flex-wrap items-center gap-1" aria-label="Unit filter">{scopes.map(item => <Button key={item.value} variant={scope === item.value && !firstResult ? "default" : "ghost"} size="sm" aria-pressed={scope === item.value && !firstResult} onClick={() => changeScope(item.value)}>{item.label}</Button>)}
+                    {firstResult && <Button size="sm" onClick={() => changeScope("repeat")} aria-label={`Clear filter: ${REASONS[firstResult]?.label ?? firstResult}`}>{REASONS[firstResult]?.label ?? firstResult}<X className="size-3.5" /></Button>}</div>
                 </div>
                 <div role="status" aria-live="polite" className="flex min-h-9 items-center border-b px-4 text-xs text-muted-foreground sm:px-5">{loading ? "Updating unit results…" : error ? "Showing the last loaded unit results." : `${number(data.matchingUnits)} matching units`}</div>
                 <div className="hidden grid-cols-[minmax(10rem,1.2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_5rem_7rem_1.5rem] gap-3 border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground md:grid sm:px-5" aria-hidden="true">

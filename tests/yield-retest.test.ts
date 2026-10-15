@@ -17,6 +17,12 @@ describe("yield query validation", () => {
     expect(q.sql).toContain("'previous', (SELECT");
     expect(buildYieldQuery(new URLSearchParams("timeRange=all")).sql).toContain("'previous', NULL");
   });
+  it("filters repeated units by their first result", () => {
+    expect(() => buildYieldQuery(new URLSearchParams("first=MAYBE"))).toThrow(/first result/);
+    const q = buildYieldQuery(new URLSearchParams("timeRange=all&scope=repeat&first=RETEST"));
+    expect(q.values[0]).toBe("RETEST");
+    expect(q.sql).toContain("AND attempts > 1 AND first_status = $1");
+  });
   it("does not present empty populations as zero percent", () => {
     expect(yieldPercent(0, 0)).toBe("—");
     expect(yieldPercent(2, 3)).toBe("66.7%");
