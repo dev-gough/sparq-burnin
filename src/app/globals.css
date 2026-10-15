@@ -591,8 +591,9 @@
   background: currentColor;
 }
 @media (max-height: 550px) {
-  .mobile-navigation[data-slot="sheet-content"] {
-    --drawer-control-size: 2.25rem;
+  .mobile-navigation[data-slot="sheet-content"] { --drawer-control-size: 2.25rem; }
+  /* Declared where --drawer-link-count is set so the real link count is used. */
+  .mobile-navigation .mobile-navigation-body {
     --drawer-link-height: clamp(1.25rem, calc((100dvh - env(safe-area-inset-bottom) - 9rem) / var(--drawer-link-count, 8)), 2.75rem);
   }
   .mobile-navigation .drawer-header { min-height: 2.75rem; padding-block: 0.25rem; }
@@ -605,11 +606,8 @@
   .sidebar-drawer[data-slot="sheet-content"] { animation: none; }
 }
 
-/* Yield has cohort controls without a Latest/All population switch. */
+/* Yield scrolls as one page on phones; its header uses the shared mobile controls. */
 @media (max-width: 767px) {
   .yield-home { display: block; overflow-y: auto; }
   .yield-home main { overflow-y: visible; }
-  .yield-header { display: block; }
-  .yield-header > div:last-child { margin-top: 0.5rem; }
-  .yield-header .header-period-controls { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }

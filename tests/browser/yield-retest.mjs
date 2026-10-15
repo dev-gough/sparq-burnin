@@ -14,7 +14,11 @@ const data = {
   summary: { units: 1000, firstPass: 850, latestPass: 960, repeated: 180,
     recovered: 120, unresolved: 35, pending: 5, firstNondecisive: 10,
     repeatRuns: 220, repeatHours: 375.5, missingDurations: 2 },
-  timeline: Array.from({ length: 9 }, (_, i) => ({ month: `2026-0${i + 1}`, units: 100 + i * 2, firstPass: 85 + i, latestPass: 95 + i })),
+  previous: { units: 940, firstPass: 780 },
+  daily: Array.from({ length: 30 }, (_, i) => ({ day: `2026-09-${String(i + 1).padStart(2, "0")}`, newUnits: 30 + (i % 7) * 3, newPass: 26 + (i % 7) * 3, repeatRuns: i % 4, hours: 70, repeatHours: (i % 4) * 2 })),
+  period: { from: "2026-09-01", to: "2026-09-30" },
+  repeatReasons: [{ status: "PASS", units: 90 }, { status: "RETEST", units: 60 }, { status: "FAIL", units: 30 }],
+  clearing: { recoveredUnits: 120, recoveredMedianHours: 7.4, recoveredP90Hours: 80.1, firstPassMedianHours: 2, heldUp: 40, heldUpMedianAgeHours: 381 },
   units: [{ serial: "SPARQ-190825180351", firstDate: runs[0].start, firstStatus: "FAIL", latestStatus: "PASS", attempts: 3, repeatHours: 2.5, missingDurations: 0, outcome: "recovered", history: runs }],
   matchingUnits: 30, page: 1, pageSize: 25, asOf: "2026-10-09T12:00:00Z",
 };
@@ -41,7 +45,8 @@ try {
       result.page = Number(params.get("page"));
       if (empty) {
         result.summary = Object.fromEntries(Object.keys(result.summary).map(k => [k, 0]));
-        result.units = []; result.timeline = []; result.matchingUnits = 0;
+        result.units = []; result.daily = []; result.repeatReasons = []; result.matchingUnits = 0; result.previous = null;
+        result.clearing = { recoveredUnits: 0, recoveredMedianHours: null, recoveredP90Hours: null, firstPassMedianHours: null, heldUp: 0, heldUpMedianAgeHours: null };
       }
       return route.fulfill({ status: fail ? 500 : 200, contentType: "application/json", body: JSON.stringify(result) });
     });

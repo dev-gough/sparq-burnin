@@ -53,7 +53,19 @@ describe.skipIf(!enabled)("yield cohorts against PostgreSQL", () => {
     expect(d.units.find(u => u.serial === "RECOVER")?.history.map(r => r.status)).toEqual(["FAIL", "RETEST", "PASS"]);
     expect(d.units.find(u => u.serial === "TIE")?.latestStatus).toBe("PASS");
     expect(d.units.find(u => u.serial === "REGRESS")?.outcome).toBe("unresolved");
-    expect(d.timeline).toEqual([{ month: "2026-09", units: 8, firstPass: 2, latestPass: 4 }]);
+    expect(d.period).toEqual({ from: "2026-09-01", to: "2026-09-30" });
+    // OLD began on Aug 1, outside the 30 days before September.
+    expect(d.previous).toEqual({ units: 0, firstPass: 0 });
+    expect(d.repeatReasons).toEqual([{ status: "FAIL", units: 4 }, { status: "INVALID", units: 1 }, { status: "PASS", units: 1 }]);
+    expect(d.clearing).toMatchObject({ recoveredUnits: 3, recoveredMedianHours: 26, firstPassMedianHours: 2, heldUp: 4 });
+  });
+  it("counts runs by the day they started, splitting new units from repeats", async () => {
+    const d = await load("scope=all");
+    // REGRESS's first run and OLD's second run both started on Sep 5.
+    expect(d.daily.find(day => day.day === "2026-09-05")).toEqual({ day: "2026-09-05", newUnits: 1, newPass: 1, repeatRuns: 1, hours: 4, repeatHours: 2 });
+    // RECOVER's passing run on Oct 5 is outside the period's runs.
+    expect(d.daily.some(day => day.day === "2026-10-05")).toBe(false);
+    expect(d.daily.reduce((n, day) => n + day.newUnits, 0)).toBe(8);
   });
   it("filters drilldowns without changing summary denominators", async () => {
     const d = await load("scope=recovered&serial=RECOVER");
@@ -67,7 +79,8 @@ describe.skipIf(!enabled)("yield cohorts against PostgreSQL", () => {
     expect(d.summary.units).toBe(0);
     expect(d.summary.repeatHours).toBe(0);
     expect(d.units).toEqual([]);
-    expect(d.timeline).toEqual([]);
+    expect(d.daily).toEqual([]);
+    expect(d.repeatReasons).toEqual([]);
   });
   it("paginates without truncating cohort totals", async () => {
     await client.query(`INSERT INTO Inverters SELECT n, 'PAGE-' || n FROM generate_series(100,129) n;

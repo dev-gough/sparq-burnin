@@ -1,6 +1,6 @@
 import { getTimeRangeDays, validateDateRange, validateTimeRange } from "@/lib/validation";
 
-export type YieldScope = "repeat" | "all" | "passed" | "recovered" | "unresolved" | "pending";
+export type YieldScope = "held" | "repeat" | "all" | "passed" | "recovered" | "unresolved" | "pending";
 export interface YieldRun {
   id: number; status: string; start: string; hours: number | null;
   firmware: string | null; station: string | null;
@@ -16,9 +16,22 @@ export interface YieldSummary {
   recovered: number; unresolved: number; pending: number; firstNondecisive: number;
   repeatRuns: number; repeatHours: number; missingDurations: number;
 }
+/** Burn-in runs started on one UTC day; a unit's first attempt counts as a new unit. */
+export interface YieldDay {
+  day: string; newUnits: number; newPass: number; repeatRuns: number; hours: number; repeatHours: number;
+}
 export interface YieldData {
   summary: YieldSummary;
-  timeline: { month: string; units: number; firstPass: number; latestPass: number }[];
+  /** Same-length period immediately before this one; null for all time or open-ended ranges. */
+  previous: { units: number; firstPass: number } | null;
+  daily: YieldDay[];
+  period: { from: string | null; to: string };
+  /** Units that needed more than one run, by the result of their first attempt. */
+  repeatReasons: { status: string; units: number }[];
+  clearing: {
+    recoveredUnits: number; recoveredMedianHours: number | null; recoveredP90Hours: number | null;
+    firstPassMedianHours: number | null; heldUp: number; heldUpMedianAgeHours: number | null;
+  };
   units: YieldUnit[]; matchingUnits: number; page: number; pageSize: number; asOf: string;
 }
 
@@ -36,24 +49,31 @@ export function buildYieldQuery(params: URLSearchParams): { sql: string; values:
   const rawPage = params.get("page") || "1";
   if (!/^\d+$/.test(rawPage) || Number(rawPage) < 1 || Number(rawPage) > 100000) throw new Error("Invalid page");
   const page = Number(rawPage);
-  const scope = (params.get("scope") || "repeat") as YieldScope;
-  if (!["repeat", "all", "passed", "recovered", "unresolved", "pending"].includes(scope)) throw new Error("Invalid scope");
+  const scope = (params.get("scope") || "held") as YieldScope;
+  if (!["held", "repeat", "all", "passed", "recovered", "unresolved", "pending"].includes(scope)) throw new Error("Invalid scope");
   const search = (params.get("serial") || "").trim();
   if (search.length > 50) throw new Error("Serial search is too long");
   const values: (string | number)[] = [];
   const bind = (value: string | number) => { values.push(value); return `$${values.length}`; };
-  let period = "TRUE";
+  // Period as UTC calendar days [lo, hi). Null bounds are open (all time).
+  const today = "(CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date";
+  let lo: string | null = null;
+  let hi: string | null = null;
   if (dates.dateFrom || dates.dateTo) {
-    const bounds = [];
-    if (dates.dateFrom) bounds.push(`(first_date AT TIME ZONE 'UTC') >= ${bind(dates.dateFrom)}::date`);
-    if (dates.dateTo) bounds.push(`(first_date AT TIME ZONE 'UTC') < ${bind(dates.dateTo)}::date + INTERVAL '1 day'`);
-    period = bounds.join(" AND ");
+    if (dates.dateFrom) lo = `${bind(dates.dateFrom)}::date`;
+    if (dates.dateTo) hi = `(${bind(dates.dateTo)}::date + 1)`;
   } else {
     const days = getTimeRangeDays(timeRange);
-    if (days !== null) period = `(first_date AT TIME ZONE 'UTC') >= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date - INTERVAL '${days} days'`;
+    if (days !== null) { lo = `(${today} - ${days})`; hi = `(${today} + 1)`; }
   }
+  const within = (column: string, from: string | null, to: string | null) => [
+    from ? `(${column} AT TIME ZONE 'UTC') >= ${from}` : null,
+    to ? `(${column} AT TIME ZONE 'UTC') < ${to}` : null,
+  ].filter(Boolean).join(" AND ") || "TRUE";
+  const period = within("first_date", lo, hi);
+  const previous = lo && hi ? within("first_date", `(${lo} - (${hi} - ${lo}))`, lo) : null;
   const scopes: Record<YieldScope, string> = {
-    repeat: "attempts > 1", all: "TRUE", passed: "outcome = 'passed'", recovered: "outcome = 'recovered'",
+    held: "outcome IN ('unresolved', 'pending')", repeat: "attempts > 1", all: "TRUE", passed: "outcome = 'passed'", recovered: "outcome = 'recovered'",
     unresolved: "outcome = 'unresolved'", pending: "outcome = 'pending'",
   };
   const serialFilter = search ? `AND serial ILIKE ${bind(`%${search.replace(/[\\%_]/g, "\\$&")}%`)}` : "";
@@ -69,7 +89,8 @@ export function buildYieldQuery(params: URLSearchParams): { sql: string; values:
         (ARRAY_AGG(overall_status ORDER BY attempt))[1] AS first_status,
         (ARRAY_AGG(overall_status ORDER BY attempt DESC) FILTER (WHERE overall_status IN ('PASS','FAIL')))[1] AS latest_status,
         COALESCE(SUM(hours) FILTER (WHERE attempt > 1), 0)::float AS repeat_hours,
-        COUNT(*) FILTER (WHERE attempt > 1 AND hours IS NULL)::int AS missing_durations
+        COUNT(*) FILTER (WHERE attempt > 1 AND hours IS NULL)::int AS missing_durations,
+        MIN(start_time_utc + COALESCE(hours, 0) * INTERVAL '1 hour') FILTER (WHERE overall_status = 'PASS') AS first_pass_done
       FROM runs GROUP BY inv_id
     ), cohort AS MATERIALIZED (
       SELECT h.*, i.serial_number AS serial,
@@ -77,6 +98,8 @@ export function buildYieldQuery(params: URLSearchParams): { sql: string; values:
           WHEN latest_status = 'PASS' THEN 'recovered'
           WHEN latest_status = 'FAIL' THEN 'unresolved' ELSE 'pending' END AS outcome
       FROM histories h JOIN Inverters i USING (inv_id) WHERE ${period}
+    ), period_runs AS MATERIALIZED (
+      SELECT * FROM runs WHERE ${within("start_time_utc", lo, hi)}
     ), matching AS (
       SELECT * FROM cohort WHERE ${scopes[scope]} ${serialFilter}
     ), page_units AS (
@@ -95,12 +118,31 @@ export function buildYieldQuery(params: URLSearchParams): { sql: string; values:
         'repeatHours', COALESCE(SUM(repeat_hours), 0),
         'missingDurations', COALESCE(SUM(missing_durations), 0)
       ) FROM cohort),
-      'timeline', COALESCE((SELECT json_agg(b ORDER BY b.month) FROM (
-        SELECT TO_CHAR(first_date AT TIME ZONE 'UTC', 'YYYY-MM') AS month,
-          COUNT(*) AS units, COUNT(*) FILTER (WHERE first_status = 'PASS') AS "firstPass",
-          COUNT(*) FILTER (WHERE latest_status = 'PASS') AS "latestPass"
-        FROM cohort GROUP BY 1
-      ) b), '[]'::json),
+      'previous', ${previous ? `(SELECT json_build_object('units', COUNT(*), 'firstPass', COUNT(*) FILTER (WHERE first_status = 'PASS'))
+        FROM histories WHERE ${previous})` : "NULL"},
+      'daily', COALESCE((SELECT json_agg(d ORDER BY d.day) FROM (
+        SELECT TO_CHAR(start_time_utc AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+          COUNT(*) FILTER (WHERE attempt = 1)::int AS "newUnits",
+          COUNT(*) FILTER (WHERE attempt = 1 AND overall_status = 'PASS')::int AS "newPass",
+          COUNT(*) FILTER (WHERE attempt > 1)::int AS "repeatRuns",
+          COALESCE(SUM(hours), 0)::float AS hours,
+          COALESCE(SUM(hours) FILTER (WHERE attempt > 1), 0)::float AS "repeatHours"
+        FROM period_runs GROUP BY 1
+      ) d), '[]'::json),
+      'period', json_build_object(
+        'from', ${lo ? `TO_CHAR(${lo}, 'YYYY-MM-DD')` : "(SELECT TO_CHAR(MIN(first_date) AT TIME ZONE 'UTC', 'YYYY-MM-DD') FROM cohort)"},
+        'to', TO_CHAR(${hi ? `LEAST(${hi} - 1, ${today})` : today}, 'YYYY-MM-DD')),
+      'repeatReasons', COALESCE((SELECT json_agg(r ORDER BY r.units DESC, r.status) FROM (
+        SELECT first_status AS status, COUNT(*)::int AS units FROM cohort WHERE attempts > 1 GROUP BY 1
+      ) r), '[]'::json),
+      'clearing', (SELECT json_build_object(
+        'recoveredUnits', COUNT(*) FILTER (WHERE outcome = 'recovered'),
+        'recoveredMedianHours', PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (first_pass_done - first_date)) / 3600) FILTER (WHERE outcome = 'recovered'),
+        'recoveredP90Hours', PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (first_pass_done - first_date)) / 3600) FILTER (WHERE outcome = 'recovered'),
+        'firstPassMedianHours', PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (first_pass_done - first_date)) / 3600) FILTER (WHERE first_status = 'PASS'),
+        'heldUp', COUNT(*) FILTER (WHERE outcome IN ('unresolved', 'pending')),
+        'heldUpMedianAgeHours', PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - first_date)) / 3600) FILTER (WHERE outcome IN ('unresolved', 'pending'))
+      ) FROM cohort),
       'matchingUnits', (SELECT COUNT(*) FROM matching),
       'units', COALESCE((SELECT json_agg(json_build_object(
         'serial', p.serial, 'firstDate', p.first_date, 'firstStatus', p.first_status,

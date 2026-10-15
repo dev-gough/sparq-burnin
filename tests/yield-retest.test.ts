@@ -11,6 +11,12 @@ describe("yield query validation", () => {
     expect(q.sql).toContain("AT TIME ZONE 'UTC'");
     expect(q.sql).not.toContain("INV%_");
   });
+  it("defaults to held-up units and compares against the same-length previous period", () => {
+    expect(buildYieldQuery(new URLSearchParams("")).scope).toBe("held");
+    const q = buildYieldQuery(new URLSearchParams("dateFrom=2026-09-01&dateTo=2026-09-30"));
+    expect(q.sql).toContain("'previous', (SELECT");
+    expect(buildYieldQuery(new URLSearchParams("timeRange=all")).sql).toContain("'previous', NULL");
+  });
   it("does not present empty populations as zero percent", () => {
     expect(yieldPercent(0, 0)).toBe("—");
     expect(yieldPercent(2, 3)).toBe("66.7%");

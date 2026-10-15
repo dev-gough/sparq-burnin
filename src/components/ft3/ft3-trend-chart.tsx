@@ -4,45 +4,18 @@ import * as React from "react";
 import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import { burninChartColors } from "@/lib/chart-theme";
+import { fillDayBuckets, formatUtcDay as fmt, utcDayMs as utcDay } from "@/lib/day-buckets";
 
 // Pass/fail pair validated for deutan/protan separation on both chart
 // surfaces (dataviz validator: ΔE 8.3, no contrast warnings).
 const PASS = "#059669";
 const FAIL = burninChartColors.failed.base;
-const WEEKLY_AFTER_DAYS = 92;
 
 interface Day { day: string; passed: number; failed: number }
-interface Bucket { start: string; label: string; passed: number; failed: number }
 
-const DAY_MS = 86_400_000;
-const utcDay = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
-const fmt = (ms: number, opts: Intl.DateTimeFormatOptions) =>
-  new Date(ms).toLocaleDateString(undefined, { timeZone: "UTC", ...opts });
-
-/** Continuous UTC days (or ISO weeks for long periods) so gaps read as "no runs". */
-export function ft3Buckets(daily: Day[], from: string | null, to: string): { buckets: Bucket[]; weekly: boolean } {
-  const first = from ?? daily[0]?.day ?? to;
-  const start = utcDay(first);
-  const end = Math.max(utcDay(to), start);
-  const weekly = (end - start) / DAY_MS > WEEKLY_AFTER_DAYS;
-  const byDay = new Map(daily.map(d => [d.day, d]));
-  const buckets = new Map<number, Bucket>();
-  for (let t = start; t <= end; t += DAY_MS) {
-    // Weeks start on Monday (UTC).
-    const key = weekly ? t - ((new Date(t).getUTCDay() + 6) % 7) * DAY_MS : t;
-    let bucket = buckets.get(key);
-    if (!bucket) {
-      bucket = {
-        start: new Date(key).toISOString().slice(0, 10),
-        label: weekly ? `Week of ${fmt(key, { month: "short", day: "numeric", year: "numeric" })}` : fmt(key, { weekday: "short", month: "short", day: "numeric", year: "numeric" }),
-        passed: 0, failed: 0,
-      };
-      buckets.set(key, bucket);
-    }
-    const d = byDay.get(new Date(t).toISOString().slice(0, 10));
-    if (d) { bucket.passed += d.passed; bucket.failed += d.failed; }
-  }
-  return { buckets: [...buckets.values()], weekly };
+/** Continuous UTC days (or weeks for long periods) so gaps read as "no runs". */
+export function ft3Buckets(daily: Day[], from: string | null, to: string) {
+  return fillDayBuckets(daily, ["passed", "failed"] as const, from, to);
 }
 
 function useDarkMode() {

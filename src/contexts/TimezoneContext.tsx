@@ -1,5 +1,6 @@
 "use client"
 
+import { parseUtcTimestamp } from '@/lib/utc-timestamp'
 import React, { createContext, useContext, useState, useEffect } from 'react'
 
 export type TimezoneOption = 'local' | 'utc' | 'delhi'
@@ -81,15 +82,7 @@ export function TimezoneProvider({ children }: { children: React.ReactNode }) {
   }
 
   const formatInTimezone = (utcDateString: string): string => {
-    // Ensure we're working with a proper UTC date
-    let date: Date
-    if (utcDateString.endsWith('Z')) {
-      // Already has UTC marker
-      date = new Date(utcDateString)
-    } else {
-      // Add UTC marker to ensure proper parsing
-      date = new Date(utcDateString + (utcDateString.includes('T') ? 'Z' : 'T00:00:00Z'))
-    }
+    const date = parseUtcTimestamp(utcDateString)
     
     const config = getTimezoneConfig(selectedTimezone)
     
@@ -106,13 +99,7 @@ export function TimezoneProvider({ children }: { children: React.ReactNode }) {
   }
 
   const formatDateInTimezone = (utcDateString: string): string => {
-    // Ensure we're working with a proper UTC date
-    let date: Date
-    if (utcDateString.endsWith('Z')) {
-      date = new Date(utcDateString)
-    } else {
-      date = new Date(utcDateString + (utcDateString.includes('T') ? 'Z' : 'T00:00:00Z'))
-    }
+    const date = parseUtcTimestamp(utcDateString)
     
     const config = getTimezoneConfig(selectedTimezone)
     
@@ -125,13 +112,7 @@ export function TimezoneProvider({ children }: { children: React.ReactNode }) {
   }
 
   const formatTimeInTimezone = (utcDateString: string): string => {
-    // Ensure we're working with a proper UTC date
-    let date: Date
-    if (utcDateString.endsWith('Z')) {
-      date = new Date(utcDateString)
-    } else {
-      date = new Date(utcDateString + (utcDateString.includes('T') ? 'Z' : 'T00:00:00Z'))
-    }
+    const date = parseUtcTimestamp(utcDateString)
 
     const config = getTimezoneConfig(selectedTimezone)
 
@@ -144,13 +125,7 @@ export function TimezoneProvider({ children }: { children: React.ReactNode }) {
   }
 
   const formatTimeWithSecondsInTimezone = (utcDateString: string): string => {
-    // Ensure we're working with a proper UTC date
-    let date: Date
-    if (utcDateString.endsWith('Z')) {
-      date = new Date(utcDateString)
-    } else {
-      date = new Date(utcDateString + (utcDateString.includes('T') ? 'Z' : 'T00:00:00Z'))
-    }
+    const date = parseUtcTimestamp(utcDateString)
 
     const config = getTimezoneConfig(selectedTimezone)
 
